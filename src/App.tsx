@@ -2,6 +2,17 @@ import { type Dispatch, type SetStateAction, useMemo, useState } from 'react'
 
 type View = 'overview' | 'sessions' | 'patients' | 'finances' | 'settings'
 type Role = 'Admin' | 'Reception' | 'Therapist' | 'Super Admin'
+type SessionSlot = { date: string; time: string }
+type CalendarSession = {
+  id: string
+  date: string
+  startTime: string
+  endTime: string
+  patient: string
+  type: string
+  therapist: string
+  room: string
+}
 
 const tenant = {
   tenantId: 'tenant-kids-therapy-centre',
@@ -257,8 +268,50 @@ const invoices = [
   { tenantId: tenant.tenantId, id: 'INV-2050', patient: 'Mila van Wyk', age: 'Today', status: 'Ready', total: 720, paid: 0 },
 ]
 
+const billingItems = [
+  {
+    code: 'F82',
+    description: 'Specific developmental disorder of motor function',
+    sessionType: 'Occupational therapy session',
+    price: 780,
+  },
+  {
+    code: 'R47.9',
+    description: 'Speech disturbance, unspecified',
+    sessionType: 'Speech therapy session',
+    price: 690,
+  },
+  {
+    code: 'Z51.8',
+    description: 'Other specified medical care',
+    sessionType: 'Progress review',
+    price: 950,
+  },
+  {
+    code: 'M62.81',
+    description: 'Muscle weakness',
+    sessionType: 'Physiotherapy rehab',
+    price: 720,
+  },
+]
+
+const therapists = [
+  { name: 'Nadia Botha', color: '#2f6fed', background: '#e2ecff' },
+  { name: 'Megan Pillay', color: '#12805c', background: '#ddf7e8' },
+  { name: 'Johan Kruger', color: '#b4541f', background: '#ffe7da' },
+  { name: 'Team', color: '#111114', background: '#d9d9db' },
+]
+
 const formatMoney = (amount: number) =>
   new Intl.NumberFormat('en-ZA', { style: 'currency', currency: 'ZAR', maximumFractionDigits: 0 }).format(amount)
+
+function therapistCalendarStyle(therapist: string) {
+  const therapistConfig = therapists.find((item) => item.name === therapist) ?? therapists[0]
+  return {
+    background: therapistConfig.background,
+    color: therapistConfig.color,
+  }
+}
 
 const shouldShowGuardianInList = (patientType: string) => ['Child', 'Teen'].includes(patientType)
 const patientWorkspaceTabs = ['Personal Details', 'Notes', 'Sessions', 'Finance', 'Documents & Reports', 'History'] as const
@@ -275,6 +328,15 @@ function App() {
   const [role, setRole] = useState<Role>('Admin')
   const [query, setQuery] = useState('')
   const [patientRecords, setPatientRecords] = useState<Patient[]>(patients)
+  const [isNewSessionOpen, setIsNewSessionOpen] = useState(false)
+  const [newSessionSlot, setNewSessionSlot] = useState<SessionSlot | null>(null)
+  const [calendarSessionRecords, setCalendarSessionRecords] = useState<CalendarSession[]>(weekSessions)
+  const [selectedCalendarSessionId, setSelectedCalendarSessionId] = useState(weekSessions[0]?.id ?? '')
+
+  const openNewSession = (slot?: SessionSlot) => {
+    setNewSessionSlot(slot ?? null)
+    setIsNewSessionOpen(true)
+  }
 
   const filteredPatients = useMemo(() => {
     const needle = query.toLowerCase().trim()
@@ -310,7 +372,14 @@ function App() {
           </div>
           <div className="topbar-actions">
             <span className="role-pill">{role}</span>
-            <button>{role === 'Super Admin' ? 'Manage tenants' : 'New session'}</button>
+            <button
+              type="button"
+              onClick={() => {
+                if (role !== 'Super Admin') openNewSession()
+              }}
+            >
+              {role === 'Super Admin' ? 'Manage tenants' : 'New session'}
+            </button>
           </div>
         </header>
 
@@ -326,7 +395,19 @@ function App() {
             </section>
 
             {view === 'overview' && <Overview role={role} />}
-            {view === 'sessions' && <Sessions />}
+            {view === 'sessions' && (
+              <Sessions
+                calendarSessions={calendarSessionRecords}
+                selectedSessionId={selectedCalendarSessionId}
+                setSelectedSessionId={setSelectedCalendarSessionId}
+                onUpdateSession={(updatedSession) => {
+                  setCalendarSessionRecords((records) =>
+                    records.map((session) => (session.id === updatedSession.id ? updatedSession : session)),
+                  )
+                }}
+                onNewSession={openNewSession}
+              />
+            )}
             {view === 'patients' && (
               <Patients
                 query={query}
@@ -339,6 +420,351 @@ function App() {
           </>
         )}
       </main>
+      {isNewSessionOpen && (
+        <NewSessionModal
+          patients={patientRecords}
+          calendarSessions={calendarSessionRecords}
+          initialDate={newSessionSlot?.date}
+          initialTime={newSessionSlot?.time}
+          onCreate={(session) => {
+            setCalendarSessionRecords((records) => [...records, session])
+            setSelectedCalendarSessionId(session.id)
+            setView('sessions')
+            setIsNewSessionOpen(false)
+          }}
+          onClose={() => setIsNewSessionOpen(false)}
+        />
+      )}
+    </div>
+  )
+}
+
+function NewSessionModal({
+  patients,
+  calendarSessions,
+  initialDate = '2026-06-30',
+  initialTime = '09:00',
+  onCreate,
+  onClose,
+}: {
+  patients: Patient[]
+  calendarSessions: CalendarSession[]
+  initialDate?: string
+  initialTime?: string
+  onCreate: (session: CalendarSession) => void
+  onClose: () => void
+}) {
+  const [patientMode, setPatientMode] = useState<'existing' | 'new'>('existing')
+  const [selectedPatientNumber, setSelectedPatientNumber] = useState(patients[0]?.patientNumber ?? '')
+  const [patientSearch, setPatientSearch] = useState(patients[0]?.name ?? '')
+  const [newPatientName, setNewPatientName] = useState('')
+  const [newPatientType, setNewPatientType] = useState('Child')
+  const [selectedBillingCodes, setSelectedBillingCodes] = useState<string[]>([billingItems[0].code])
+  const [sessionDate, setSessionDate] = useState(initialDate)
+  const [sessionTime, setSessionTime] = useState(initialTime)
+  const [sessionTherapist, setSessionTherapist] = useState('Nadia Botha')
+  const [sessionRoom, setSessionRoom] = useState('Room 1')
+  const [isScheduleCalendarOpen, setIsScheduleCalendarOpen] = useState(false)
+
+  const selectedPatient = patients.find((patient) => patient.patientNumber === selectedPatientNumber)
+  const patientSearchNeedle = patientSearch.toLowerCase().trim()
+  const patientSearchResults = patients.filter((patient) =>
+    [patient.name, patient.patientNumber, patient.guardian, patient.phone].some((item) =>
+      item.toLowerCase().includes(patientSearchNeedle),
+    ),
+  )
+  const selectedBillingItems = billingItems.filter((item) => selectedBillingCodes.includes(item.code))
+  const billingTotal = selectedBillingItems.reduce((total, item) => total + item.price, 0)
+  const requiresGuardian = ['Child', 'Teen'].includes(newPatientType)
+  const scheduleTimes = calendarQuarterSlots
+  const createdSessionType = selectedBillingItems[0]?.sessionType ?? 'Therapy session'
+
+  const toggleBillingCode = (code: string) => {
+    setSelectedBillingCodes((current) =>
+      current.includes(code) ? current.filter((item) => item !== code) : [...current, code],
+    )
+  }
+
+  const isBookedSlot = (date: string, time: string) =>
+    calendarSessions.some((session) => session.date === date && session.startTime === time)
+
+  const scheduleSlotRow = (time: string) => timeToCalendarRow(time)
+
+  return (
+    <div className="modal-backdrop" role="presentation">
+      <form
+        className="modal-window new-session-modal"
+        aria-label="New session"
+        onSubmit={(event) => {
+          event.preventDefault()
+          onCreate({
+            id: `session-${Date.now()}`,
+            date: sessionDate,
+            startTime: sessionTime,
+            endTime: minutesToTime(timeToMinutes(sessionTime) + 60),
+            patient: patientMode === 'existing' ? selectedPatient?.name ?? 'Selected patient' : newPatientName || 'New patient',
+            type: createdSessionType,
+            therapist: sessionTherapist,
+            room: sessionRoom,
+          })
+        }}
+      >
+        <div className="modal-header">
+          <div>
+            <p>Session intake</p>
+            <h2>New session</h2>
+          </div>
+          <button type="button" className="modal-close" onClick={onClose} aria-label="Close new session">
+            x
+          </button>
+        </div>
+
+        <div className="modal-body">
+          <section className="form-section">
+            <div className="section-title">
+              <span>1</span>
+              <div>
+                <strong>Identify patient</strong>
+                <small>Choose an existing patient or start a new intake link.</small>
+              </div>
+            </div>
+
+            <div className="segmented-control" aria-label="Patient type">
+              <button
+                type="button"
+                className={patientMode === 'existing' ? 'active' : ''}
+                onClick={() => setPatientMode('existing')}
+              >
+                Existing patient
+              </button>
+              <button
+                type="button"
+                className={patientMode === 'new' ? 'active' : ''}
+                onClick={() => setPatientMode('new')}
+              >
+                New patient
+              </button>
+            </div>
+
+            {patientMode === 'existing' ? (
+              <div className="form-grid two-col">
+                <div className="field searchable-patient-field">
+                  <span>Patient</span>
+                  <input
+                    value={patientSearch}
+                    onChange={(event) => setPatientSearch(event.target.value)}
+                    placeholder="Search name, patient number, guardian or cell"
+                  />
+                  <div className="patient-search-results" role="listbox" aria-label="Existing patients">
+                    {patientSearchResults.map((patient) => (
+                      <button
+                        type="button"
+                        className={selectedPatientNumber === patient.patientNumber ? 'active' : ''}
+                        key={patient.patientNumber}
+                        onClick={() => {
+                          setSelectedPatientNumber(patient.patientNumber)
+                          setPatientSearch(patient.name)
+                        }}
+                      >
+                        <strong>{patient.name}</strong>
+                        <span>{patient.patientNumber} · {patient.guardian}</span>
+                      </button>
+                    ))}
+                    {patientSearchResults.length === 0 && <small>No matching patients</small>}
+                  </div>
+                </div>
+                <div className="selected-patient-card">
+                  <strong>{selectedPatient?.name ?? 'Select patient'}</strong>
+                  <span>{selectedPatient?.guardian ?? 'Guardian not selected'}</span>
+                  <small>{selectedPatient?.phone ?? 'No cell number'}</small>
+                </div>
+              </div>
+            ) : (
+              <>
+                <div className="form-grid two-col">
+                  <label className="field">
+                    <span>Patient name</span>
+                    <input
+                      value={newPatientName}
+                      onChange={(event) => setNewPatientName(event.target.value)}
+                      placeholder="First name and surname"
+                    />
+                  </label>
+                  <label className="field">
+                    <span>Patient type</span>
+                    <select value={newPatientType} onChange={(event) => setNewPatientType(event.target.value)}>
+                      <option>Child</option>
+                      <option>Teen</option>
+                      <option>Adult</option>
+                    </select>
+                  </label>
+                  <label className="field">
+                    <span>Cell number</span>
+                    <input placeholder="Patient or guardian cell" />
+                  </label>
+                  <label className="field">
+                    <span>Email</span>
+                    <input type="email" placeholder="patient@example.com" />
+                  </label>
+                  {requiresGuardian && (
+                    <label className="field">
+                      <span>Parent / guardian</span>
+                      <input placeholder="Name and surname" />
+                    </label>
+                  )}
+                </div>
+                <div className="patient-link-box">
+                  <span>Patient completion link</span>
+                  <strong>https://allicms.app/patient-link/new-intake</strong>
+                  <small>The patient or guardian completes the remaining personal, consent and account details from this link.</small>
+                </div>
+              </>
+            )}
+          </section>
+
+          <section className="form-section">
+            <div className="section-title with-action">
+              <div className="section-title-copy">
+                <span>2</span>
+                <div>
+                  <strong>Schedule session</strong>
+                  <small>Set the appointment time and responsible therapist.</small>
+                </div>
+              </div>
+              <button
+                type="button"
+                className="text-action-button"
+                onClick={() => setIsScheduleCalendarOpen((current) => !current)}
+              >
+                See calendar
+              </button>
+            </div>
+            <div className="form-grid four-col">
+              <label className="field">
+                <span>Date</span>
+                <input type="date" value={sessionDate} onChange={(event) => setSessionDate(event.target.value)} />
+              </label>
+              <label className="field">
+                <span>Time</span>
+                <input type="time" value={sessionTime} onChange={(event) => setSessionTime(event.target.value)} />
+              </label>
+              <label className="field">
+                <span>Therapist</span>
+                <select value={sessionTherapist} onChange={(event) => setSessionTherapist(event.target.value)}>
+                  {therapists.filter((therapist) => therapist.name !== 'Team').map((therapist) => (
+                    <option key={therapist.name}>{therapist.name}</option>
+                  ))}
+                </select>
+              </label>
+              <label className="field">
+                <span>Room / mode</span>
+                <select value={sessionRoom} onChange={(event) => setSessionRoom(event.target.value)}>
+                  <option>Room 1</option>
+                  <option>Room 2</option>
+                  <option>Gym</option>
+                  <option>Telehealth</option>
+                </select>
+              </label>
+            </div>
+            {isScheduleCalendarOpen && (
+              <div className="quick-schedule-calendar" aria-label="Quick week calendar">
+                <div className="quick-calendar-corner" />
+                {weekDays.map((day) => (
+                  <div className={`quick-calendar-day-head ${day.iso === '2026-06-30' ? 'today' : ''}`} key={day.iso}>
+                    <span>{day.label}</span>
+                    <strong>{day.date}</strong>
+                  </div>
+                ))}
+                {scheduleTimes.filter((_, index) => index % 2 === 0).map((time) => (
+                  <span className="quick-calendar-time" style={{ gridRow: `${scheduleSlotRow(time)} / span 2` }} key={time}>
+                    {time}
+                  </span>
+                ))}
+                {weekDays.map((day, dayIndex) =>
+                  scheduleTimes.map((time) => {
+                    const isBooked = isBookedSlot(day.iso, time)
+                    const isSelected = sessionDate === day.iso && sessionTime === time
+                    return (
+                      <button
+                        type="button"
+                        className={`quick-slot ${isBooked ? 'booked' : ''} ${isSelected ? 'selected' : ''}`}
+                        disabled={isBooked}
+                        style={{ gridColumn: dayIndex + 2, gridRow: scheduleSlotRow(time) }}
+                        key={`${day.iso}-${time}`}
+                        onClick={() => {
+                          setSessionDate(day.iso)
+                          setSessionTime(time)
+                        }}
+                      />
+                    )
+                  }),
+                )}
+                {calendarSessions
+                  .map((session) => ({ ...session, day: weekDays.findIndex((day) => day.iso === session.date) }))
+                  .filter((session) => session.day >= 0)
+                  .map((session) => (
+                    <div
+                      className="quick-calendar-session"
+                      style={{
+                        gridColumn: session.day + 2,
+                        gridRow: `${timeToCalendarRow(session.startTime)} / span ${sessionRowSpan(session.startTime, session.endTime)}`,
+                        ...therapistCalendarStyle(session.therapist),
+                      }}
+                      key={`quick-${session.id}`}
+                    >
+                      <strong>{session.patient}</strong>
+                      <span>{session.startTime}-{session.endTime}</span>
+                    </div>
+                  ))}
+              </div>
+            )}
+          </section>
+
+          <section className="form-section">
+            <div className="section-title">
+              <span>3</span>
+              <div>
+                <strong>Billing and ICD-10</strong>
+                <small>Select one or more configured billing items.</small>
+              </div>
+            </div>
+            <div className="billing-choice-table">
+              <div className="billing-choice-head">
+                <span />
+                <span>Code</span>
+                <span>Session type</span>
+                <span>Price</span>
+              </div>
+              {billingItems.map((item) => (
+                <label className="billing-choice" key={item.code}>
+                  <input
+                    type="checkbox"
+                    checked={selectedBillingCodes.includes(item.code)}
+                    onChange={() => toggleBillingCode(item.code)}
+                  />
+                  <code>{item.code}</code>
+                  <span className="billing-session-type">
+                    <strong>{item.sessionType}</strong>
+                    <small>{item.description}</small>
+                  </span>
+                  <b>{formatMoney(item.price)}</b>
+                </label>
+              ))}
+            </div>
+            <div className="billing-total">
+              <span>Estimated session total</span>
+              <strong>{formatMoney(billingTotal)}</strong>
+            </div>
+          </section>
+        </div>
+
+        <div className="modal-footer">
+          <button type="button" className="secondary-button" onClick={onClose}>
+            Cancel
+          </button>
+          <button type="submit">Create session</button>
+        </div>
+      </form>
     </div>
   )
 }
@@ -449,49 +875,305 @@ function Overview({ role }: { role: string }) {
   )
 }
 
-function Sessions() {
+const dayLabels = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat']
+const monthLabels = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
+
+function parseIsoDate(iso: string) {
+  const [year, month, day] = iso.split('-').map(Number)
+  return new Date(Date.UTC(year, month - 1, day))
+}
+
+function toIsoDate(date: Date) {
+  return date.toISOString().slice(0, 10)
+}
+
+function addDays(date: Date, amount: number) {
+  const next = new Date(date)
+  next.setUTCDate(next.getUTCDate() + amount)
+  return next
+}
+
+function addMonths(date: Date, amount: number) {
+  return new Date(Date.UTC(date.getUTCFullYear(), date.getUTCMonth() + amount, 1))
+}
+
+function getWeekMonday(date: Date) {
+  const day = date.getUTCDay()
+  return addDays(date, day === 0 ? -6 : 1 - day)
+}
+
+function buildWeekDays(iso: string) {
+  const monday = getWeekMonday(parseIsoDate(iso))
+  return Array.from({ length: 6 }, (_, index) => {
+    const date = addDays(monday, index)
+    return {
+      label: dayLabels[date.getUTCDay()],
+      date: String(date.getUTCDate()),
+      iso: toIsoDate(date),
+    }
+  })
+}
+
+function buildMonthDays(iso: string) {
+  const selected = parseIsoDate(iso)
+  const firstOfMonth = new Date(Date.UTC(selected.getUTCFullYear(), selected.getUTCMonth(), 1))
+  const start = getWeekMonday(firstOfMonth)
+  const days = []
+  let cursor = start
+
+  while (days.length < 36) {
+    if (cursor.getUTCDay() !== 0) {
+      days.push({
+        label: dayLabels[cursor.getUTCDay()],
+        date: String(cursor.getUTCDate()),
+        iso: toIsoDate(cursor),
+        inMonth: cursor.getUTCMonth() === selected.getUTCMonth(),
+      })
+    }
+    cursor = addDays(cursor, 1)
+  }
+
+  return days
+}
+
+function getMonthLabel(iso: string) {
+  const date = parseIsoDate(iso)
+  return `${monthLabels[date.getUTCMonth()]} ${date.getUTCFullYear()}`
+}
+
+function getWeekRangeLabel(days: Array<{ date: string; iso: string }>) {
+  const start = parseIsoDate(days[0].iso)
+  const end = parseIsoDate(days[days.length - 1].iso)
+  return `${days[0].date} ${monthLabels[start.getUTCMonth()]} - ${days[days.length - 1].date} ${monthLabels[end.getUTCMonth()]}`
+}
+
+function timeToMinutes(time: string) {
+  const [hours, minutes] = time.split(':').map(Number)
+  return hours * 60 + minutes
+}
+
+function minutesToTime(totalMinutes: number) {
+  const hours = Math.floor(totalMinutes / 60)
+  const minutes = totalMinutes % 60
+  return `${String(hours).padStart(2, '0')}:${String(minutes).padStart(2, '0')}`
+}
+
+function buildTimeSlots(start: string, end: string, intervalMinutes: number) {
+  const slots = []
+  for (let minutes = timeToMinutes(start); minutes <= timeToMinutes(end); minutes += intervalMinutes) {
+    slots.push(minutesToTime(minutes))
+  }
+  return slots
+}
+
+function timeToCalendarRow(time: string) {
+  return Math.floor((timeToMinutes(time) - timeToMinutes('08:00')) / 15) + 2
+}
+
+function sessionRowSpan(startTime: string, endTime: string) {
+  return Math.max(1, Math.ceil((timeToMinutes(endTime) - timeToMinutes(startTime)) / 15))
+}
+
+const sessionCountByDate = {
+  '2026-06-29': 1,
+  '2026-06-30': 1,
+  '2026-07-01': 1,
+  '2026-07-02': 1,
+  '2026-07-03': 4,
+  '2026-07-04': 1,
+} as Record<string, number>
+
+const weekDays = buildWeekDays('2026-06-30')
+const calendarHours = ['08:00', '09:00', '10:00', '11:00', '12:00', '13:00', '14:00', '15:00', '16:00']
+const calendarQuarterSlots = buildTimeSlots('08:00', '16:00', 15)
+const calendarSlots = calendarQuarterSlots.map((time) => ({ time, row: timeToCalendarRow(time) }))
+const weekSessions = [
+  { id: 'cal-1', date: '2026-06-29', startTime: '08:30', endTime: '09:30', patient: 'Liam Jacobs', type: 'OT', therapist: 'Nadia Botha', room: 'Room 2' },
+  { id: 'cal-2', date: '2026-06-30', startTime: '10:00', endTime: '11:00', patient: 'Amahle Dlamini', type: 'Speech', therapist: 'Megan Pillay', room: 'Telehealth' },
+  { id: 'cal-3', date: '2026-07-01', startTime: '12:15', endTime: '13:15', patient: 'Ethan Naidoo', type: 'Review', therapist: 'Nadia Botha', room: 'Room 1' },
+  { id: 'cal-4', date: '2026-07-02', startTime: '14:15', endTime: '15:15', patient: 'Mila van Wyk', type: 'Physio', therapist: 'Johan Kruger', room: 'Gym' },
+  { id: 'cal-5', date: '2026-07-03', startTime: '09:30', endTime: '10:30', patient: 'Jenny Pennig', type: 'OT', therapist: 'Nadia Botha', room: 'Room 2' },
+  { id: 'cal-6', date: '2026-07-03', startTime: '10:30', endTime: '11:30', patient: 'Joe Peterson', type: 'Speech', therapist: 'Megan Pillay', room: 'Room 1' },
+  { id: 'cal-7', date: '2026-07-03', startTime: '12:00', endTime: '13:00', patient: 'Olivia Riley', type: 'Review', therapist: 'Nadia Botha', room: 'Room 1' },
+  { id: 'cal-8', date: '2026-07-03', startTime: '14:00', endTime: '15:00', patient: 'Inkfish Weekly', type: 'Admin', therapist: 'Team', room: 'Admin' },
+  { id: 'cal-9', date: '2026-07-04', startTime: '09:00', endTime: '10:00', patient: 'New intake', type: 'Assessment', therapist: 'Johan Kruger', room: 'Room 1' },
+]
+
+function Sessions({
+  calendarSessions,
+  selectedSessionId,
+  setSelectedSessionId,
+  onUpdateSession,
+  onNewSession,
+}: {
+  calendarSessions: CalendarSession[]
+  selectedSessionId: string
+  setSelectedSessionId: Dispatch<SetStateAction<string>>
+  onUpdateSession: (session: CalendarSession) => void
+  onNewSession: (slot?: SessionSlot) => void
+}) {
+  const [calendarMode, setCalendarMode] = useState<'week' | 'month'>('week')
+  const [selectedWeekIso, setSelectedWeekIso] = useState('2026-06-30')
+  const [selectedMonthIso, setSelectedMonthIso] = useState('2026-07-01')
+  const [isSessionEditMode, setIsSessionEditMode] = useState(false)
+  const [isSessionOpen, setIsSessionOpen] = useState(false)
+  const selectedWeekDays = buildWeekDays(selectedWeekIso)
+  const selectedSession = calendarSessions.find((session) => session.id === selectedSessionId) ?? calendarSessions[0]
+  const monthCalendarDays = buildMonthDays(selectedMonthIso)
+  const visibleWeekSessions = calendarSessions
+    .map((session) => ({ ...session, day: selectedWeekDays.findIndex((day) => day.iso === session.date) }))
+    .filter((session) => session.day >= 0)
+  const sessionCountByDate = calendarSessions.reduce<Record<string, number>>((counts, session) => {
+    counts[session.date] = (counts[session.date] ?? 0) + 1
+    return counts
+  }, {})
+  const navigateCalendar = (direction: -1 | 1) => {
+    if (calendarMode === 'week') {
+      setSelectedWeekIso(toIsoDate(addDays(parseIsoDate(selectedWeekIso), direction * 7)))
+      return
+    }
+
+    setSelectedMonthIso(toIsoDate(addMonths(parseIsoDate(selectedMonthIso), direction)))
+  }
+
   return (
     <div className="page-grid sessions-grid">
-      <section className="panel span-2">
+      <section className="panel span-3 calendar-panel">
         <div className="panel-heading">
           <div>
-            <p>This week</p>
-            <h2>Calendar schedule</h2>
+            <p>{calendarMode === 'week' ? getWeekRangeLabel(selectedWeekDays) : getMonthLabel(selectedMonthIso)}</p>
+            <h2>{calendarMode === 'week' ? 'Week schedule' : 'Month calendar'}</h2>
           </div>
-          <div className="segmented">
-            <button className="active">Today</button>
-            <button>Week</button>
-            <button>Month</button>
+          <div className="calendar-controls">
+            <button type="button" className="calendar-arrow" onClick={() => navigateCalendar(-1)} aria-label="Previous">
+              &lt;
+            </button>
+            <span className="calendar-active-view">{calendarMode === 'week' ? 'Week' : 'Month'}</span>
+            <button type="button" className="calendar-arrow" onClick={() => navigateCalendar(1)} aria-label="Next">
+              &gt;
+            </button>
+            <button
+              type="button"
+              className="calendar-view-switch"
+              onClick={() => setCalendarMode(calendarMode === 'week' ? 'month' : 'week')}
+            >
+              {calendarMode === 'week' ? 'Month' : 'Week'}
+            </button>
           </div>
         </div>
-        <div className="calendar">
-          {['Mon', 'Tue', 'Wed', 'Thu', 'Fri'].map((day, index) => (
-            <div className="day-column" key={day}>
-              <strong>{day}</strong>
-              {sessions.slice(0, index % 3 === 0 ? 2 : 3).map((session) => (
-                <article key={`${day}-${session.patient}`}>
-                  <time>{session.time}</time>
-                  <span>{session.patient}</span>
-                  <small>{session.therapist}</small>
-                </article>
-              ))}
-            </div>
-          ))}
-        </div>
+        {calendarMode === 'week' ? (
+          <div className="week-calendar" aria-label="Weekly session calendar">
+            <div className="calendar-corner" />
+            {selectedWeekDays.map((day) => (
+              <div className={`calendar-day-head ${day.iso === '2026-06-30' ? 'today' : ''}`} key={day.iso}>
+                <span>{day.label}</span>
+                <strong>{day.date}</strong>
+              </div>
+            ))}
+            {calendarHours.map((time, index) => (
+              <div className="calendar-time" style={{ gridRow: `${index * 2 + 2} / span 2` }} key={time}>
+                {time}
+              </div>
+            ))}
+            {selectedWeekDays.map((day, dayIndex) =>
+              calendarSlots.map((slot) => (
+                <button
+                  type="button"
+                  className="calendar-slot"
+                  aria-label={`Add session on ${day.label} at ${slot.time}`}
+                  style={{ gridColumn: dayIndex + 2, gridRow: slot.row }}
+                  key={`${day.iso}-${slot.time}`}
+                  onClick={() => onNewSession({ date: day.iso, time: slot.time })}
+                />
+              )),
+            )}
+            {visibleWeekSessions.map((session) => (
+              <button
+                type="button"
+                className={`calendar-session ${selectedSessionId === session.id ? 'selected' : ''}`}
+                style={{
+                  gridColumn: session.day + 2,
+                  gridRow: `${timeToCalendarRow(session.startTime)} / span ${sessionRowSpan(session.startTime, session.endTime)}`,
+                  ...therapistCalendarStyle(session.therapist),
+                }}
+                key={session.id}
+                onClick={() => {
+                  setSelectedSessionId(session.id)
+                  setIsSessionEditMode(false)
+                  setIsSessionOpen(true)
+                }}
+              >
+                <strong>{session.patient}</strong>
+                <span>{session.startTime}-{session.endTime}</span>
+                <small>{session.type} · {session.therapist}</small>
+              </button>
+            ))}
+          </div>
+        ) : (
+          <div className="month-calendar" aria-label="Monthly session calendar">
+            {['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'].map((day) => (
+              <div className="month-day-label" key={day}>
+                {day}
+              </div>
+            ))}
+            {monthCalendarDays.map((day) => {
+              const sessionCount = sessionCountByDate[day.iso] ?? 0
+              return (
+                <button
+                  type="button"
+                  className={`month-date ${day.inMonth ? '' : 'outside'} ${day.iso === '2026-06-30' ? 'today' : ''}`}
+                  key={day.iso}
+                  onClick={() => {
+                    setSelectedWeekIso(day.iso)
+                    setSelectedMonthIso(toIsoDate(new Date(Date.UTC(parseIsoDate(day.iso).getUTCFullYear(), parseIsoDate(day.iso).getUTCMonth(), 1))))
+                    setCalendarMode('week')
+                  }}
+                >
+                  <span>{day.date}</span>
+                  {sessionCount > 0 && <strong>{sessionCount} session{sessionCount > 1 ? 's' : ''}</strong>}
+                </button>
+              )
+            })}
+          </div>
+        )}
       </section>
-      <section className="panel">
+      {!isSessionOpen && (
+      <section className="panel session-detail-panel">
         <div className="panel-heading">
           <div>
-            <p>Session tools</p>
-            <h2>Manage bookings</h2>
+            <p>Saved session</p>
+            <h2>{selectedSession ? selectedSession.patient : 'No session selected'}</h2>
           </div>
+          {selectedSession && (
+            <button
+              type="button"
+              className={`icon-button ${isSessionEditMode ? 'active' : ''}`}
+              aria-label={isSessionEditMode ? 'Save session' : 'Edit session'}
+              title={isSessionEditMode ? 'Save session' : 'Edit session'}
+              onClick={() => setIsSessionEditMode((current) => !current)}
+            >
+              <PencilIcon />
+            </button>
+          )}
         </div>
-        <div className="tool-list">
-          {['Reschedule selected session', 'Cancel with reason', 'Mark no show', 'Create recurring series', 'Allocate therapist', 'Send WhatsApp reminder'].map((tool) => (
-            <button key={tool}>{tool}</button>
-          ))}
-        </div>
+        {selectedSession && (
+          <SessionDetailView
+            session={selectedSession}
+            isEditing={isSessionEditMode}
+            onChange={onUpdateSession}
+          />
+        )}
       </section>
+      )}
+      {isSessionOpen && selectedSession && (
+        <SessionDetailModal
+          session={selectedSession}
+          isEditing={isSessionEditMode}
+          setIsEditing={setIsSessionEditMode}
+          onChange={onUpdateSession}
+          onClose={() => setIsSessionOpen(false)}
+        />
+      )}
       <section className="panel span-3">
         <div className="panel-heading">
           <div>
@@ -510,6 +1192,116 @@ function Sessions() {
           ))}
         </div>
       </section>
+    </div>
+  )
+}
+
+function SessionDetailModal({
+  session,
+  isEditing,
+  setIsEditing,
+  onChange,
+  onClose,
+}: {
+  session: CalendarSession
+  isEditing: boolean
+  setIsEditing: Dispatch<SetStateAction<boolean>>
+  onChange: (session: CalendarSession) => void
+  onClose: () => void
+}) {
+  return (
+    <div className="modal-backdrop" role="presentation">
+      <section className="modal-window session-modal" aria-label="Saved session">
+        <div className="modal-header">
+          <div>
+            <p>Saved session</p>
+            <h2>{session.patient}</h2>
+          </div>
+          <div className="session-modal-actions">
+            <button
+              type="button"
+              className={`icon-button ${isEditing ? 'active' : ''}`}
+              aria-label={isEditing ? 'Save session' : 'Edit session'}
+              title={isEditing ? 'Save session' : 'Edit session'}
+              onClick={() => setIsEditing((current) => !current)}
+            >
+              <PencilIcon />
+            </button>
+            <button type="button" className="modal-close" onClick={onClose} aria-label="Close saved session">
+              x
+            </button>
+          </div>
+        </div>
+        <div className="modal-body">
+          <SessionDetailView session={session} isEditing={isEditing} onChange={onChange} />
+        </div>
+      </section>
+    </div>
+  )
+}
+
+function SessionDetailView({
+  session,
+  isEditing,
+  onChange,
+}: {
+  session: CalendarSession
+  isEditing: boolean
+  onChange: (session: CalendarSession) => void
+}) {
+  const updateSessionField = (field: keyof CalendarSession, value: string) => {
+    onChange({ ...session, [field]: value })
+  }
+
+  return (
+    <div className="session-detail-view">
+      <div className="session-detail-banner" style={therapistCalendarStyle(session.therapist)}>
+        <div>
+          <span>Session</span>
+          <strong>{session.patient}</strong>
+        </div>
+        <small>{session.type}</small>
+      </div>
+      <div className="session-meta-grid">
+        <article>
+          <span>Date</span>
+          <strong>{session.date}</strong>
+        </article>
+        <article>
+          <span>Time</span>
+          <strong>{session.startTime}-{session.endTime}</strong>
+        </article>
+        <article>
+          <span>Therapist</span>
+          <strong>{session.therapist}</strong>
+        </article>
+        <article>
+          <span>Room</span>
+          <strong>{session.room}</strong>
+        </article>
+      </div>
+      <section className="session-detail-card">
+        <div className="panel-heading compact-heading">
+          <div>
+            <p>Session information</p>
+            <h2>{isEditing ? 'Edit saved session' : 'Saved record'}</h2>
+          </div>
+        </div>
+        <dl className="session-detail-list">
+          <EditableDetail label="Patient" value={session.patient} isEditing={isEditing} onChange={(value) => updateSessionField('patient', value)} />
+          <EditableDetail label="Date" value={session.date} isEditing={isEditing} onChange={(value) => updateSessionField('date', value)} />
+          <EditableDetail label="Start time" value={session.startTime} isEditing={isEditing} onChange={(value) => updateSessionField('startTime', value)} />
+          <EditableDetail label="End time" value={session.endTime} isEditing={isEditing} onChange={(value) => updateSessionField('endTime', value)} />
+          <EditableDetail label="Session type" value={session.type} isEditing={isEditing} onChange={(value) => updateSessionField('type', value)} />
+          <EditableDetail label="Therapist" value={session.therapist} isEditing={isEditing} onChange={(value) => updateSessionField('therapist', value)} />
+          <EditableDetail label="Room / mode" value={session.room} isEditing={isEditing} onChange={(value) => updateSessionField('room', value)} />
+        </dl>
+      </section>
+      <div className="session-detail-actions">
+        <button>Send reminder</button>
+        <button>Mark no show</button>
+        <button className="danger-text-button">Cancel session</button>
+      </div>
     </div>
   )
 }
@@ -749,16 +1541,54 @@ function Patients({
           <div className="workspace-tab-panel">
             <div className="workspace-panel-header">
               <h3>Patient History</h3>
-              <div className="workspace-panel-actions">
-                <PatientEditActions isEditMode={isPatientEditMode} setIsEditMode={setIsPatientEditMode} />
-                <button>Export timeline</button>
-              </div>
             </div>
-            <ol className="history-timeline">
-              <li><strong>{selectedPatient.nextSession}</strong><span>Upcoming session scheduled.</span></li>
-              <li><strong>{selectedPatient.lastSession}</strong><span>Last session completed with {selectedPatient.therapist}.</span></li>
-              <li><strong>Referral received</strong><span>{selectedPatient.referralSource}</span></li>
-            </ol>
+            <ul className="history-list">
+              <li>
+                <strong>Session planned · {selectedPatient.nextSession}</strong>
+                <em>Available on patient link</em>
+                <span>Upcoming session scheduled with {selectedPatient.therapist}.</span>
+              </li>
+              <li>
+                <strong>Session completed · {selectedPatient.lastSession}</strong>
+                <em>Available on patient link</em>
+                <span>Session completed and attendance confirmed.</span>
+              </li>
+              <li>
+                <strong>Session feedback shared · {selectedPatient.lastSession}</strong>
+                <em>Available on patient link</em>
+                <span>Parent-facing feedback added to the patient timeline.</span>
+              </li>
+              <li>
+                <strong>Session process note added · {selectedPatient.lastSession}</strong>
+                <em>Internal only</em>
+                <span>Internal clinical process note added. Hidden from patient link.</span>
+              </li>
+              <li>
+                <strong>Patient information updated · Today</strong>
+                <em>Available on patient link</em>
+                <span>Personal details, guardian details, medical aid or consent information changed.</span>
+              </li>
+              <li>
+                <strong>Invoice available · Today</strong>
+                <em>Available on patient link</em>
+                <span>New invoice linked to session billing and visible to the customer.</span>
+              </li>
+              <li>
+                <strong>Payment received · Today</strong>
+                <em>Available on patient link</em>
+                <span>Payment allocated to the patient account.</span>
+              </li>
+              <li>
+                <strong>Report available · {selectedPatient.reportStatus}</strong>
+                <em>Available on patient link</em>
+                <span>Report or assessment document made available for customer viewing.</span>
+              </li>
+              <li>
+                <strong>Referral received · Intake</strong>
+                <em>Internal and patient record</em>
+                <span>{selectedPatient.referralSource}</span>
+              </li>
+            </ul>
           </div>
         )}
       </section>
@@ -829,174 +1659,223 @@ function Finances() {
 }
 
 function Settings({ role, setRole }: { role: Role; setRole: (role: Role) => void }) {
+  const settingOptions = [
+    { id: 'users', label: 'Users', detail: 'Add receptionists or therapists' },
+    { id: 'practice', label: 'Practice Configuration', detail: 'Tenant workspace setup' },
+    { id: 'patients', label: 'Patient Configuration', detail: 'Patient form fields' },
+    { id: 'billing', label: 'Billing Configuration', detail: 'ICD-10 and prices' },
+    { id: 'guides', label: 'How To Guides', detail: 'Operating procedure' },
+    { id: 'updates', label: "What's New", detail: 'Latest deployments' },
+  ] as const
+  const [activeSetting, setActiveSetting] = useState<(typeof settingOptions)[number]['id']>('users')
+  const activeOption = settingOptions.find((option) => option.id === activeSetting) ?? settingOptions[0]
+
   return (
-    <div className="page-grid">
-      <section className="panel span-3">
+    <div className="settings-layout">
+      <section className="panel settings-menu-panel">
         <div className="panel-heading">
           <div>
-            <p>Experience switcher</p>
-            <h2>Choose a user type to preview the right app feel</h2>
+            <p>Settings</p>
+            <h2>Configuration areas</h2>
           </div>
         </div>
-        <div className="role-card-grid">
-          {roles.map((item) => (
+        <div className="settings-option-list">
+          {settingOptions.map((option) => (
             <button
-              className={`role-card ${role === item.role ? 'active' : ''}`}
-              key={item.role}
-              onClick={() => setRole(item.role)}
+              type="button"
+              className={activeSetting === option.id ? 'active' : ''}
+              key={option.id}
+              onClick={() => setActiveSetting(option.id)}
             >
-              <span>{item.scope}</span>
-              <strong>{item.role}</strong>
-              <small>{item.description}</small>
+              <strong>{option.label}</strong>
+              <span>{option.detail}</span>
             </button>
           ))}
         </div>
       </section>
 
-      <section className="panel span-2">
+      <section className="panel settings-detail-panel">
         <div className="panel-heading">
           <div>
-            <p>Selected permissions</p>
-            <h2>{role}</h2>
+            <p>{activeOption.detail}</p>
+            <h2>{activeOption.label}</h2>
           </div>
         </div>
-        <Permissions role={role} />
-      </section>
-
-      <section className="panel">
-        <div className="panel-heading">
-          <div>
-            <p>Tenant rule</p>
-            <h2>Practice Admin scope</h2>
-          </div>
-        </div>
-        <p className="quiet">
-          Every practice has at least one Admin. That Admin can activate therapists and receptionists inside the
-          practice, and may either work as a therapist or act as a practice manager.
+        <p className="tenant-note">
+          Settings are tenant-specific. Some practices will have these details configured; others will only show the
+          sections that apply to their setup.
         </p>
-      </section>
 
-      <section className="panel span-3">
-        <div className="panel-heading">
-          <div>
-            <p>Patient profile</p>
-            <h2>Complete record sections</h2>
+        {activeSetting === 'users' && (
+          <div className="settings-detail-stack">
+            <div className="role-card-grid">
+              {roles.map((item) => (
+                <button
+                  className={`role-card ${role === item.role ? 'active' : ''}`}
+                  key={item.role}
+                  onClick={() => setRole(item.role)}
+                >
+                  <span>{item.scope}</span>
+                  <strong>{item.role}</strong>
+                  <small>{item.description}</small>
+                </button>
+              ))}
+            </div>
+            <div className="settings-split">
+              <section>
+                <div className="panel-heading compact-heading">
+                  <div>
+                    <p>Selected permissions</p>
+                    <h2>{role}</h2>
+                  </div>
+                </div>
+                <Permissions role={role} />
+              </section>
+              <section>
+                <div className="panel-heading compact-heading">
+                  <div>
+                    <p>User lifecycle</p>
+                    <h2>Admin activation</h2>
+                  </div>
+                </div>
+                <p className="quiet">
+                  Every practice has at least one Admin. Admin users activate therapists and receptionists inside the tenant.
+                </p>
+              </section>
+            </div>
+            <div>
+              <div className="panel-heading compact-heading">
+                <div>
+                  <p>Therapist calendar colours</p>
+                  <h2>Colour selected when creating a therapist</h2>
+                </div>
+                <button>Add therapist</button>
+              </div>
+              <div className="therapist-colour-list">
+                {therapists.filter((therapist) => therapist.name !== 'Team').map((therapist) => (
+                  <article className="therapist-colour-row" key={therapist.name}>
+                    <span style={{ background: therapist.background, color: therapist.color }} />
+                    <strong>{therapist.name}</strong>
+                    <small>{therapist.color}</small>
+                  </article>
+                ))}
+              </div>
+            </div>
           </div>
-        </div>
-        <div className="module-grid settings-modules">
-          {[
-            'Patient details',
-            'Parent / Guardian info',
-            'Emergency contact',
-            'Referring doctor',
-            'Medical aid details',
-            'Member responsible for account',
-            'Next of kin',
-            'Consent and signatures',
-            'Account responsibility',
-            'Documents',
-            'Reports and assessments',
-            'Financial history'
-          ].map((module) => (
-            <span key={module}>{module}</span>
-          ))}
-        </div>
-      </section>
+        )}
 
-      <section className="panel span-3">
-        <div className="panel-heading">
-          <div>
-            <p>Tenant lifecycle</p>
-            <h2>How users are created and restricted</h2>
+        {activeSetting === 'practice' && (
+          <div className="settings-detail-stack">
+            <div className="module-grid settings-modules">
+              {[
+                'Practice profile',
+                'Rooms',
+                'Working hours',
+                'Report templates',
+                'Reminder templates',
+                'Patient portal access',
+                'Audit log',
+                'Tenant branding',
+                'Default appointment length',
+              ].map((setting) => (
+                <span key={setting}>{setting}</span>
+              ))}
+            </div>
+            <div className="rules-grid">
+              <div>
+                <strong>1. Super Admin</strong>
+                <span>Creates the practice tenant and first tenant Admin user.</span>
+              </div>
+              <div>
+                <strong>2. Practice Admin</strong>
+                <span>Controls practice settings and activates therapist or receptionist users.</span>
+              </div>
+              <div>
+                <strong>3. Staff users</strong>
+                <span>Operate inside the tenant according to their assigned permissions.</span>
+              </div>
+            </div>
           </div>
-        </div>
-        <div className="rules-grid">
-          <div>
-            <strong>1. Super Admin</strong>
-            <span>Creates the practice tenant, activates or suspends the tenant, and creates the first practice Admin.</span>
-          </div>
-          <div>
-            <strong>2. Practice Admin</strong>
-            <span>Runs the practice workspace and activates therapist or receptionist users for that tenant.</span>
-          </div>
-          <div>
-            <strong>3. Staff users</strong>
-            <span>Therapists and receptionists only operate inside their tenant and follow their role permissions.</span>
-          </div>
-        </div>
-      </section>
+        )}
 
-      <section className="panel span-3">
-        <div className="panel-heading">
-          <div>
-            <p>Practice settings preview</p>
-            <h2>Tenant configuration areas</h2>
+        {activeSetting === 'patients' && (
+          <div className="module-grid settings-modules">
+            {[
+              'Patient details',
+              'Parent / Guardian info',
+              'Emergency contact',
+              'Referring doctor',
+              'Medical aid details',
+              'Member responsible for account',
+              'Next of kin',
+              'Consent and signatures',
+              'Account responsibility',
+              'Documents',
+              'Reports and assessments',
+              'Financial history',
+            ].map((module) => (
+              <span key={module}>{module}</span>
+            ))}
           </div>
-        </div>
-        <div className="module-grid settings-modules">
-          {[
-            'Practice profile',
-            'Activate therapists',
-            'Activate receptionists',
-            'Rooms',
-            'Working hours',
-            'Report templates',
-            'Reminder templates',
-            'Billing preferences',
-            'Patient portal access',
-            'Audit log',
-          ].map((setting) => (
-            <span key={setting}>{setting}</span>
-          ))}
-        </div>
-      </section>
+        )}
 
-      <section className="panel span-3">
-        <div className="panel-heading">
-          <div>
-            <p>Operating procedure</p>
-            <h2>How To guides</h2>
+        {activeSetting === 'billing' && (
+          <div className="settings-detail-stack">
+            <div className="panel-heading compact-heading">
+              <div>
+                <p>Billing setup</p>
+                <h2>ICD-10 codes, session types and prices</h2>
+              </div>
+              <button>Add billing item</button>
+            </div>
+            <div className="billing-config-list">
+              {billingItems.map((item) => (
+                <article className="billing-config-row" key={item.code}>
+                  <div>
+                    <strong>{item.sessionType}</strong>
+                    <span>{item.description}</span>
+                  </div>
+                  <code>{item.code}</code>
+                  <b>{formatMoney(item.price)}</b>
+                </article>
+              ))}
+            </div>
           </div>
-          <button>View all</button>
-        </div>
-        <div className="how-to-grid">
-          {[
-            ['Patient setup', 'Register a patient, add guardians, medical aid and consent forms.'],
-            ['Booking sessions', 'Create, reschedule, cancel and mark no-show appointments.'],
-            ['Session notes', 'Complete SOAP notes, process notes, goals and progress updates.'],
-            ['Reports', 'Create parent, school, referral, progress and discharge reports.'],
-            ['Finance flow', 'Create invoices, allocate payments and send statements.'],
-            ['Staff setup', 'Activate therapists and receptionists inside the practice tenant.'],
-          ].map(([title, detail]) => (
-            <button className="how-to-card" key={title}>
-              <strong>{title}</strong>
-              <span>{detail}</span>
-            </button>
-          ))}
-        </div>
-      </section>
+        )}
 
-      <section className="panel span-3">
-        <div className="panel-heading">
-          <div>
-            <p>What's new</p>
-            <h2>Latest app updates</h2>
+        {activeSetting === 'guides' && (
+          <div className="how-to-grid">
+            {[
+              ['Patient setup', 'Register a patient, add guardians, medical aid and consent forms.'],
+              ['Booking sessions', 'Create, reschedule, cancel and mark no-show appointments.'],
+              ['Session notes', 'Complete SOAP notes, process notes, goals and progress updates.'],
+              ['Reports', 'Create parent, school, referral, progress and discharge reports.'],
+              ['Finance flow', 'Create invoices, allocate payments and send statements.'],
+              ['Staff setup', 'Activate therapists and receptionists inside the practice tenant.'],
+            ].map(([title, detail]) => (
+              <button className="how-to-card" key={title}>
+                <strong>{title}</strong>
+                <span>{detail}</span>
+              </button>
+            ))}
           </div>
-          <button>Release history</button>
-        </div>
-        <div className="whats-new-list">
-          {[
-            ['27 Jun 2026', 'Patients', 'Shared base Patients view for Admin, Therapist and Reception users.'],
-            ['27 Jun 2026', 'Settings', 'Added Operating Procedure with How To guides for common app workflows.'],
-            ['27 Jun 2026', 'Platform', 'Clarified tenant Admin setup and Super Admin tenant restrictions.'],
-          ].map(([date, area, update]) => (
-            <article className="whats-new-card" key={`${date}-${area}`}>
-              <time>{date}</time>
-              <strong>{area}</strong>
-              <span>{update}</span>
-            </article>
-          ))}
-        </div>
+        )}
+
+        {activeSetting === 'updates' && (
+          <div className="whats-new-list">
+            {[
+              ['30 Jun 2026', 'Sessions', 'Added immediate calendar creation from New session.'],
+              ['30 Jun 2026', 'Settings', 'Grouped tenant configuration into navigable settings sections.'],
+              ['27 Jun 2026', 'Patients', 'Shared base Patients view for Admin, Therapist and Reception users.'],
+            ].map(([date, area, update]) => (
+              <article className="whats-new-card" key={`${date}-${area}`}>
+                <time>{date}</time>
+                <strong>{area}</strong>
+                <span>{update}</span>
+              </article>
+            ))}
+          </div>
+        )}
       </section>
     </div>
   )

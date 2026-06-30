@@ -69,13 +69,15 @@ button {
 
 .brand-logo {
   display: block;
-  width: min(164px, 100%);
+  width: min(128px, 100%);
   height: auto;
+  transform: translateY(-4px);
 }
 
 .main-nav {
   display: grid;
   gap: 4px;
+  margin-top: -26px;
 }
 
 .main-nav button {
@@ -401,36 +403,411 @@ input {
   color: var(--indigo);
 }
 
-.calendar {
-  display: grid;
-  grid-template-columns: repeat(5, minmax(0, 1fr));
+.calendar-panel {
+  overflow: hidden;
+}
+
+.calendar-panel .panel-heading {
+  align-items: center;
+}
+
+.calendar-controls {
+  display: flex;
+  align-items: center;
   gap: 8px;
 }
 
-.day-column {
-  min-height: 320px;
-  padding: 8px;
+.panel-heading .calendar-arrow {
+  appearance: none;
+  width: auto;
+  height: auto;
+  min-height: auto;
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+  color: var(--indigo);
+  font-size: 1rem;
+  font-weight: 900;
+  line-height: 1;
+}
+
+.panel-heading .calendar-arrow:hover {
+  background: transparent;
+  color: var(--coral);
+}
+
+.calendar-active-view {
+  color: var(--indigo);
+  font-size: 0.82rem;
+  font-weight: 900;
+}
+
+.calendar-view-switch {
+  min-height: 30px;
+  padding: 0 10px;
   border-radius: 8px;
-  background: var(--cloud);
+  background: var(--lilac);
+  color: var(--indigo);
+  font-size: 0.78rem;
+  font-weight: 800;
 }
 
-.day-column > strong {
-  display: block;
-  margin-bottom: 10px;
+.calendar-view-switch:hover {
+  background: #d6d8f2;
 }
 
-.day-column article {
-  padding: 8px;
-  border-left: 4px solid var(--coral);
+.week-calendar {
+  --slot-height: 18px;
+  display: grid;
+  grid-template-columns: 58px repeat(6, minmax(112px, 1fr));
+  grid-template-rows: 44px repeat(33, var(--slot-height));
+  overflow-x: auto;
+  border: 1px solid var(--line);
   border-radius: 8px;
   background: white;
-  display: grid;
-  gap: 2px;
-  margin-bottom: 8px;
 }
 
-.day-column small {
+.calendar-corner,
+.calendar-day-head,
+.calendar-time,
+.calendar-slot,
+.calendar-session {
+  position: relative;
+}
+
+.calendar-corner {
+  grid-column: 1;
+  grid-row: 1;
+  border-right: 1px solid var(--line);
+  border-bottom: 1px solid var(--line);
+  background: #fbfbfe;
+}
+
+.calendar-day-head {
+  grid-row: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  border-right: 1px solid var(--line);
+  border-bottom: 1px solid var(--line);
+  background: #fbfbfe;
   color: var(--muted);
+  font-size: 0.74rem;
+  font-weight: 800;
+  text-transform: uppercase;
+}
+
+.calendar-day-head strong {
+  width: 24px;
+  height: 24px;
+  border-radius: 999px;
+  display: grid;
+  place-items: center;
+  color: var(--ink);
+  font-size: 0.8rem;
+}
+
+.calendar-day-head.today strong {
+  background: var(--indigo);
+  color: white;
+}
+
+.calendar-time {
+  grid-column: 1;
+  align-self: start;
+  padding: 5px 8px 0 0;
+  border-right: 1px solid var(--line);
+  color: #7b7b84;
+  font-size: 0.78rem;
+  font-weight: 700;
+  text-align: right;
+}
+
+.calendar-time::after {
+  content: "";
+  position: absolute;
+  top: 0;
+  left: 58px;
+  width: calc(100vw - 320px);
+  max-width: 1280px;
+  border-top: 1px solid rgba(222, 223, 240, 0.92);
+}
+
+.calendar-slot {
+  min-width: 112px;
+  min-height: var(--slot-height);
+  border-right: 1px solid rgba(222, 223, 240, 0.78);
+  border-top: 1px solid rgba(222, 223, 240, 0.45);
+  background: transparent;
+}
+
+.calendar-slot:hover {
+  background: rgba(153, 153, 237, 0.11);
+}
+
+.calendar-slot:hover::after {
+  content: "+";
+  position: absolute;
+  inset: 2px 5px;
+  display: grid;
+  place-items: center;
+  border: 1px dashed rgba(34, 22, 114, 0.22);
+  border-radius: 6px;
+  color: var(--indigo);
+  font-weight: 800;
+}
+
+.calendar-session {
+  z-index: 2;
+  margin: 3px 5px;
+  padding: 7px 8px 7px 10px;
+  border-radius: 7px;
+  background: #d7d7d9;
+  color: #0f0f12;
+  display: grid;
+  align-content: start;
+  gap: 1px;
+  text-align: left;
+  overflow: hidden;
+  box-shadow: 0 1px 0 rgba(21, 18, 51, 0.05);
+}
+
+.calendar-session::before {
+  content: "";
+  position: absolute;
+  top: 6px;
+  bottom: 6px;
+  left: 5px;
+  width: 3px;
+  border-radius: 999px;
+  background: currentColor;
+}
+
+.calendar-session strong {
+  overflow: hidden;
+  color: inherit;
+  font-size: 0.86rem;
+  line-height: 1.12;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.calendar-session span {
+  color: inherit;
+  font-size: 0.76rem;
+  font-weight: 800;
+}
+
+.calendar-session small {
+  overflow: hidden;
+  color: rgba(15, 15, 18, 0.68);
+  font-size: 0.68rem;
+  font-weight: 700;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.calendar-session.selected {
+  box-shadow: inset 0 0 0 2px currentColor, 0 2px 8px rgba(21, 18, 51, 0.12);
+}
+
+.session-detail-panel .panel-heading {
+  align-items: center;
+}
+
+.session-detail-view {
+  display: grid;
+  gap: 12px;
+}
+
+.session-modal {
+  width: min(620px, 100%);
+}
+
+.session-modal-actions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.session-detail-banner {
+  min-height: 86px;
+  padding: 14px;
+  border-radius: 8px;
+  display: flex;
+  align-items: end;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.session-detail-banner div {
+  display: grid;
+  gap: 4px;
+}
+
+.session-detail-banner strong {
+  font-size: 1.2rem;
+}
+
+.session-detail-banner span,
+.session-detail-banner small {
+  font-size: 0.72rem;
+  font-weight: 800;
+  text-transform: uppercase;
+}
+
+.session-detail-banner strong,
+.session-detail-banner span,
+.session-detail-banner small {
+  color: inherit;
+}
+
+.session-detail-banner small {
+  padding: 5px 8px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.45);
+  text-align: right;
+}
+
+.session-meta-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.session-meta-grid article {
+  padding: 10px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #fbfbfe;
+  display: grid;
+  gap: 3px;
+}
+
+.session-meta-grid span {
+  color: var(--muted);
+  font-size: 0.68rem;
+  font-weight: 800;
+  text-transform: uppercase;
+}
+
+.session-meta-grid strong {
+  overflow: hidden;
+  color: var(--indigo);
+  font-size: 0.82rem;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.session-detail-card {
+  padding: 12px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: white;
+}
+
+.session-detail-list {
+  display: grid;
+  gap: 8px;
+  margin: 0;
+}
+
+.session-detail-list .editable-field {
+  background: #fbfbfe;
+}
+
+.session-detail-actions {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.session-detail-actions button {
+  min-height: 34px;
+  padding: 0 10px;
+  border-radius: 8px;
+  background: var(--lilac);
+  color: var(--indigo);
+  font-weight: 800;
+}
+
+.session-detail-actions .danger-text-button {
+  background: #ffe4d7;
+  color: #9d3b11;
+}
+
+.month-calendar {
+  display: grid;
+  grid-template-columns: repeat(6, minmax(96px, 1fr));
+  overflow: hidden;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: white;
+}
+
+.month-day-label {
+  min-height: 34px;
+  padding: 9px 10px;
+  border-right: 1px solid var(--line);
+  border-bottom: 1px solid var(--line);
+  background: #fbfbfe;
+  color: var(--muted);
+  font-size: 0.72rem;
+  font-weight: 800;
+  text-align: center;
+  text-transform: uppercase;
+}
+
+.month-date {
+  min-height: 78px;
+  padding: 8px;
+  border-right: 1px solid rgba(222, 223, 240, 0.78);
+  border-bottom: 1px solid rgba(222, 223, 240, 0.78);
+  background: white;
+  color: var(--ink);
+  display: grid;
+  align-content: start;
+  justify-items: start;
+  gap: 7px;
+  text-align: left;
+}
+
+.month-date:hover {
+  background: rgba(153, 153, 237, 0.11);
+}
+
+.month-date span {
+  width: 24px;
+  height: 24px;
+  border-radius: 999px;
+  display: grid;
+  place-items: center;
+  font-weight: 800;
+}
+
+.month-date.today span {
+  background: var(--indigo);
+  color: white;
+}
+
+.month-date.outside {
+  background: #fbfbfe;
+  color: #a6a3b8;
+}
+
+.month-date strong {
+  max-width: 100%;
+  padding: 3px 7px;
+  border-radius: 999px;
+  background: var(--lilac);
+  color: var(--indigo);
+  font-size: 0.68rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .table {
@@ -736,8 +1113,7 @@ input {
   gap: 8px;
 }
 
-.workspace-list article,
-.history-timeline li {
+.workspace-list article {
   display: grid;
   gap: 4px;
   padding: 10px;
@@ -746,19 +1122,20 @@ input {
   background: white;
 }
 
-.workspace-list span,
-.history-timeline span {
+.workspace-list span {
   color: var(--muted);
 }
 
-.notes-list {
+.notes-list,
+.history-list {
   display: grid;
   gap: 14px;
   margin: 0;
   padding-left: 18px;
 }
 
-.notes-list li {
+.notes-list li,
+.history-list li {
   padding: 0 0 14px 4px;
   border-bottom: 1px solid var(--line);
 }
@@ -784,20 +1161,26 @@ input {
 
 .notes-list strong,
 .notes-list span,
-.notes-list em {
+.notes-list em,
+.history-list strong,
+.history-list span,
+.history-list em {
   display: block;
 }
 
-.notes-list strong {
+.notes-list strong,
+.history-list strong {
   color: var(--ink);
 }
 
-.notes-list span {
+.notes-list span,
+.history-list span {
   margin-top: 6px;
   color: var(--muted);
 }
 
-.notes-list em {
+.notes-list em,
+.history-list em {
   margin-top: 2px;
   color: var(--muted);
   font-size: 0.72rem;
@@ -828,13 +1211,6 @@ input {
   padding: 10px;
   border-radius: 8px;
   background: white;
-}
-
-.history-timeline {
-  display: grid;
-  gap: 8px;
-  margin: 0;
-  padding-left: 18px;
 }
 
 .patient-grid {
@@ -1006,6 +1382,659 @@ input {
   color: var(--muted);
 }
 
+.therapist-colour-list {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.therapist-colour-row {
+  display: grid;
+  grid-template-columns: 26px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 8px;
+  padding: 10px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #fbfbfe;
+}
+
+.therapist-colour-row > span {
+  width: 18px;
+  height: 18px;
+  border-radius: 999px;
+  box-shadow: inset 0 0 0 3px currentColor;
+}
+
+.therapist-colour-row small {
+  color: var(--muted);
+  font-weight: 800;
+}
+
+.billing-config-list {
+  display: grid;
+  gap: 8px;
+}
+
+.billing-config-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 90px 110px;
+  align-items: center;
+  gap: 10px;
+  padding: 10px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #fbfbfe;
+}
+
+.billing-config-row div {
+  display: grid;
+  gap: 3px;
+}
+
+.billing-config-row span {
+  color: var(--muted);
+}
+
+.billing-config-row code {
+  justify-self: start;
+  padding: 4px 8px;
+  border-radius: 999px;
+  background: var(--lilac);
+  color: var(--indigo);
+  font-weight: 800;
+}
+
+.billing-config-row b {
+  justify-self: end;
+  color: var(--indigo);
+}
+
+.settings-layout {
+  display: grid;
+  grid-template-columns: minmax(220px, 280px) minmax(0, 1fr);
+  gap: 10px;
+  max-width: 1440px;
+}
+
+.settings-menu-panel {
+  align-self: start;
+  position: sticky;
+  top: 18px;
+}
+
+.settings-option-list {
+  display: grid;
+  gap: 6px;
+}
+
+.settings-option-list button {
+  padding: 10px;
+  border: 1px solid transparent;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--ink);
+  display: grid;
+  gap: 3px;
+  text-align: left;
+}
+
+.settings-option-list button:hover,
+.settings-option-list button.active {
+  border-color: rgba(153, 153, 237, 0.45);
+  background: var(--lilac);
+  color: var(--indigo);
+}
+
+.settings-option-list span,
+.tenant-note {
+  color: var(--muted);
+}
+
+.settings-detail-panel {
+  min-height: 520px;
+}
+
+.tenant-note {
+  margin-bottom: 12px;
+  padding: 9px 10px;
+  border: 1px solid rgba(153, 153, 237, 0.35);
+  border-radius: 8px;
+  background: #fbfbfe;
+}
+
+.settings-detail-stack {
+  display: grid;
+  gap: 12px;
+}
+
+.settings-split {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.settings-split section {
+  padding: 12px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #fbfbfe;
+}
+
+.compact-heading {
+  margin-bottom: 8px;
+}
+
+.modal-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 30;
+  display: grid;
+  place-items: center;
+  padding: 18px;
+  background: rgba(21, 18, 51, 0.38);
+}
+
+.modal-window {
+  width: min(760px, 100%);
+  max-height: calc(100vh - 36px);
+  overflow: hidden;
+  border: 1px solid rgba(222, 223, 240, 0.95);
+  border-radius: 8px;
+  background: white;
+  box-shadow: 0 22px 70px rgba(21, 18, 51, 0.26);
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr) auto;
+}
+
+.modal-header,
+.modal-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 14px;
+  border-bottom: 1px solid var(--line);
+}
+
+.modal-header p {
+  margin-bottom: 2px;
+  color: var(--muted);
+  font-size: 0.72rem;
+  font-weight: 800;
+  text-transform: uppercase;
+}
+
+.modal-close {
+  width: 34px;
+  height: 34px;
+  border-radius: 8px;
+  background: var(--cloud);
+  color: var(--indigo);
+  font-size: 1.35rem;
+  line-height: 1;
+}
+
+.modal-body {
+  overflow: auto;
+  padding: 14px;
+  display: grid;
+  gap: 12px;
+}
+
+.modal-footer {
+  border-top: 1px solid var(--line);
+  border-bottom: 0;
+  justify-content: flex-end;
+}
+
+.modal-footer button {
+  min-height: 34px;
+  padding: 0 12px;
+  border-radius: 8px;
+  background: var(--indigo);
+  color: white;
+  font-weight: 800;
+}
+
+.modal-footer .secondary-button {
+  background: var(--lilac);
+  color: var(--indigo);
+}
+
+.form-section {
+  display: grid;
+  gap: 10px;
+  padding: 12px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #fbfbfe;
+}
+
+.section-title {
+  display: flex;
+  align-items: start;
+  gap: 10px;
+}
+
+.section-title.with-action {
+  align-items: center;
+  justify-content: space-between;
+}
+
+.section-title-copy {
+  display: flex;
+  align-items: start;
+  gap: 10px;
+}
+
+.section-title > span,
+.section-title-copy > span {
+  width: 24px;
+  height: 24px;
+  border-radius: 999px;
+  background: var(--indigo);
+  color: white;
+  display: grid;
+  place-items: center;
+  font-size: 0.72rem;
+  font-weight: 800;
+}
+
+.section-title div {
+  display: grid;
+  gap: 2px;
+}
+
+.section-title .section-title-copy {
+  display: flex;
+  gap: 10px;
+}
+
+.section-title small {
+  color: var(--muted);
+}
+
+.text-action-button {
+  min-height: auto;
+  padding: 0;
+  background: transparent;
+  color: var(--coral);
+  font-size: 0.78rem;
+  font-weight: 800;
+  white-space: nowrap;
+}
+
+.text-action-button:hover {
+  color: #d95f27;
+  text-decoration: underline;
+}
+
+.quick-schedule-calendar {
+  --quick-slot-height: 15px;
+  display: grid;
+  grid-template-columns: 50px repeat(6, minmax(78px, 1fr));
+  grid-template-rows: 36px repeat(33, var(--quick-slot-height));
+  overflow-x: auto;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: white;
+}
+
+.quick-calendar-corner,
+.quick-calendar-day-head,
+.quick-calendar-time,
+.quick-slot,
+.quick-calendar-session {
+  position: relative;
+}
+
+.quick-calendar-corner {
+  grid-column: 1;
+  grid-row: 1;
+  border-right: 1px solid var(--line);
+  border-bottom: 1px solid var(--line);
+  background: #fbfbfe;
+}
+
+.quick-calendar-day-head {
+  grid-row: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+  border-right: 1px solid var(--line);
+  border-bottom: 1px solid var(--line);
+  background: #fbfbfe;
+  color: var(--muted);
+  font-size: 0.68rem;
+  font-weight: 800;
+  text-transform: uppercase;
+}
+
+.quick-calendar-day-head strong {
+  width: 21px;
+  height: 21px;
+  border-radius: 999px;
+  display: grid;
+  place-items: center;
+  color: var(--ink);
+  font-size: 0.74rem;
+}
+
+.quick-calendar-day-head.today strong {
+  background: var(--indigo);
+  color: white;
+}
+
+.quick-calendar-time {
+  grid-column: 1;
+  align-self: start;
+  padding: 4px 7px 0 0;
+  border-right: 1px solid var(--line);
+  color: var(--muted);
+  font-size: 0.7rem;
+  font-weight: 800;
+  text-align: right;
+}
+
+.quick-calendar-time::after {
+  content: "";
+  position: absolute;
+  top: 0;
+  left: 50px;
+  width: 640px;
+  border-top: 1px solid rgba(222, 223, 240, 0.9);
+}
+
+.quick-slot {
+  min-width: 78px;
+  min-height: var(--quick-slot-height);
+  border-right: 1px solid rgba(222, 223, 240, 0.78);
+  border-top: 1px solid rgba(222, 223, 240, 0.45);
+  background: transparent;
+}
+
+.quick-slot:hover:not(:disabled) {
+  background: rgba(153, 153, 237, 0.11);
+}
+
+.quick-slot:hover:not(:disabled)::after {
+  content: "+";
+  position: absolute;
+  inset: 2px 4px;
+  display: grid;
+  place-items: center;
+  border: 1px dashed rgba(34, 22, 114, 0.22);
+  border-radius: 6px;
+  color: var(--indigo);
+  font-weight: 800;
+}
+
+.quick-slot.selected::after {
+  content: "";
+  position: absolute;
+  inset: 2px 4px;
+  border-radius: 6px;
+  background: var(--indigo);
+}
+
+.quick-slot.booked {
+  cursor: not-allowed;
+}
+
+.quick-calendar-session {
+  z-index: 2;
+  margin: 3px 4px;
+  padding: 5px 6px 5px 9px;
+  border-radius: 7px;
+  display: grid;
+  align-content: start;
+  gap: 1px;
+  overflow: hidden;
+  background: #d9d9db;
+  color: #111114;
+  pointer-events: none;
+}
+
+.quick-calendar-session::before {
+  content: "";
+  position: absolute;
+  top: 5px;
+  bottom: 5px;
+  left: 4px;
+  width: 3px;
+  border-radius: 999px;
+  background: currentColor;
+}
+
+.quick-calendar-session strong,
+.quick-calendar-session span {
+  overflow: hidden;
+  color: inherit;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.quick-calendar-session strong {
+  font-size: 0.72rem;
+  line-height: 1.1;
+}
+
+.quick-calendar-session span {
+  font-size: 0.64rem;
+  font-weight: 800;
+}
+
+.segmented-control {
+  display: inline-grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  width: min(360px, 100%);
+  padding: 3px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: white;
+}
+
+.segmented-control button {
+  min-height: 32px;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--muted);
+  font-weight: 800;
+}
+
+.segmented-control button.active {
+  background: var(--lilac);
+  color: var(--indigo);
+}
+
+.form-grid {
+  display: grid;
+  gap: 10px;
+}
+
+.form-grid.two-col {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.form-grid.four-col {
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+}
+
+.field {
+  display: grid;
+  gap: 5px;
+}
+
+.field span {
+  color: var(--muted);
+  font-size: 0.72rem;
+  font-weight: 800;
+  text-transform: uppercase;
+}
+
+.field input,
+.field select {
+  width: 100%;
+}
+
+.searchable-patient-field {
+  align-content: start;
+}
+
+.patient-search-results {
+  max-height: 148px;
+  overflow: auto;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: white;
+  display: grid;
+}
+
+.patient-search-results button {
+  padding: 8px 10px;
+  border-bottom: 1px solid rgba(222, 223, 240, 0.7);
+  background: white;
+  color: var(--ink);
+  display: grid;
+  gap: 2px;
+  text-align: left;
+}
+
+.patient-search-results button:last-of-type {
+  border-bottom: 0;
+}
+
+.patient-search-results button:hover,
+.patient-search-results button.active {
+  background: var(--lilac);
+  color: var(--indigo);
+}
+
+.patient-search-results span,
+.patient-search-results small {
+  color: var(--muted);
+}
+
+.patient-search-results > small {
+  padding: 10px;
+}
+
+.selected-patient-card,
+.patient-link-box {
+  min-height: 72px;
+  padding: 10px;
+  border: 1px solid rgba(153, 153, 237, 0.45);
+  border-radius: 8px;
+  background: white;
+  display: grid;
+  align-content: center;
+  gap: 3px;
+}
+
+.selected-patient-card span,
+.selected-patient-card small,
+.patient-link-box span,
+.patient-link-box small {
+  color: var(--muted);
+}
+
+.patient-link-box strong {
+  color: var(--indigo);
+  overflow-wrap: anywhere;
+}
+
+.billing-choice-table {
+  display: grid;
+  overflow: hidden;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: white;
+}
+
+.billing-choice-head {
+  display: grid;
+  grid-template-columns: 28px 72px minmax(0, 1fr) 86px;
+  gap: 8px;
+  padding: 7px 9px;
+  border-bottom: 1px solid var(--line);
+  background: #fbfbfe;
+  color: var(--muted);
+  font-size: 0.68rem;
+  font-weight: 800;
+  text-transform: uppercase;
+}
+
+.billing-choice {
+  display: grid;
+  grid-template-columns: 28px 72px minmax(0, 1fr) 86px;
+  align-items: center;
+  gap: 8px;
+  min-height: 42px;
+  padding: 6px 9px;
+  border-bottom: 1px solid rgba(222, 223, 240, 0.72);
+  background: white;
+}
+
+.billing-choice:last-child {
+  border-bottom: 0;
+}
+
+.billing-choice:hover {
+  background: rgba(224, 225, 246, 0.42);
+}
+
+.billing-choice input {
+  width: 16px;
+  min-height: auto;
+}
+
+.billing-choice code {
+  justify-self: start;
+  padding: 3px 7px;
+  border-radius: 999px;
+  background: var(--lilac);
+  color: var(--indigo);
+  font-size: 0.72rem;
+  font-weight: 800;
+}
+
+.billing-session-type {
+  display: grid;
+  gap: 1px;
+  min-width: 0;
+}
+
+.billing-session-type strong,
+.billing-session-type small {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.billing-session-type small {
+  color: var(--muted);
+  font-size: 0.72rem;
+}
+
+.billing-choice b,
+.billing-total strong {
+  color: var(--indigo);
+}
+
+.billing-total {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 8px 10px;
+  border-radius: 8px;
+  background: var(--lilac);
+  color: var(--indigo);
+  font-weight: 800;
+}
+
 .super-admin-table .table-row {
   grid-template-columns: 1.3fr auto 1fr auto;
 }
@@ -1026,16 +2055,19 @@ input {
 
   .main-nav {
     grid-template-columns: repeat(5, auto);
+    margin-top: 0;
   }
 
   .admin-strip,
   .page-grid,
+  .settings-layout,
   .patients-layout,
   .patient-grid,
   .role-card-grid,
   .rules-grid,
   .how-to-grid,
-  .whats-new-list {
+  .whats-new-list,
+  .form-grid.four-col {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
@@ -1043,8 +2075,12 @@ input {
     grid-column: span 2;
   }
 
-  .calendar {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
+  .week-calendar {
+    grid-template-columns: 54px repeat(6, minmax(106px, 1fr));
+  }
+
+  .settings-menu-panel {
+    position: static;
   }
 }
 
@@ -1060,6 +2096,7 @@ input {
   .main-nav,
   .admin-strip,
   .page-grid,
+  .settings-layout,
   .patients-layout,
   .profile-summary-grid,
   .profile-section-grid,
@@ -1069,7 +2106,6 @@ input {
   .rules-grid,
   .how-to-grid,
   .whats-new-list,
-  .calendar,
   .action-grid,
   .module-grid {
     grid-template-columns: 1fr;
@@ -1110,5 +2146,32 @@ input {
 
   .settings-modules {
     grid-template-columns: 1fr;
+  }
+
+  .settings-split,
+  .therapist-colour-list,
+  .session-meta-grid,
+  .session-detail-actions {
+    grid-template-columns: 1fr;
+  }
+
+  .form-grid.two-col,
+  .form-grid.four-col,
+  .billing-config-row {
+    grid-template-columns: 1fr;
+  }
+
+  .billing-choice,
+  .billing-choice-head {
+    grid-template-columns: 28px 64px minmax(180px, 1fr) 76px;
+  }
+
+  .billing-config-row b {
+    justify-self: start;
+  }
+
+  .modal-footer {
+    align-items: stretch;
+    flex-direction: column-reverse;
   }
 }
