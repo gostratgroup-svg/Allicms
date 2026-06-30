@@ -2,7 +2,7 @@ import { type Dispatch, type SetStateAction, useMemo, useState } from 'react'
 
 type View = 'overview' | 'sessions' | 'patients' | 'finances' | 'settings'
 type Role = 'Admin' | 'Reception' | 'Therapist' | 'Super Admin'
-type SessionSlot = { date: string; time: string }
+type SessionSlot = { date: string; time: string; patientName?: string }
 type CalendarSession = {
   id: string
   date: string
@@ -12,6 +12,16 @@ type CalendarSession = {
   type: string
   therapist: string
   room: string
+}
+type PatientHistoryEvent = {
+  title: string
+  visibility: string
+  detail: string
+}
+type PatientNote = {
+  noteType: string
+  date: string
+  detail: string
 }
 
 const tenant = {
@@ -23,11 +33,11 @@ const tenant = {
 }
 
 const navItems: Array<{ id: View; label: string; icon: string }> = [
-  { id: 'overview', label: 'Overview', icon: '⌂' },
-  { id: 'sessions', label: 'Sessions', icon: '□' },
-  { id: 'patients', label: 'Patients', icon: '◉' },
-  { id: 'finances', label: 'Finances', icon: 'R' },
-  { id: 'settings', label: 'Settings', icon: '⚙' },
+  { id: 'overview', label: 'Overview', icon: 'home' },
+  { id: 'sessions', label: 'Sessions', icon: 'blocks' },
+  { id: 'patients', label: 'Patients', icon: 'person' },
+  { id: 'finances', label: 'Finances', icon: 'coins' },
+  { id: 'settings', label: 'Settings', icon: 'gear' },
 ]
 
 const roles: Array<{
@@ -152,6 +162,8 @@ const patients = [
     lastSession: '24 Jun 2026',
     nextSession: 'Today · 08:30',
     reportStatus: 'School report due',
+    notes: [] as PatientNote[],
+    historyEvents: [] as PatientHistoryEvent[],
   },
   {
     tenantId: tenant.tenantId,
@@ -185,6 +197,8 @@ const patients = [
     lastSession: '25 Jun 2026',
     nextSession: 'Today · 10:00',
     reportStatus: 'Progress note current',
+    notes: [] as PatientNote[],
+    historyEvents: [] as PatientHistoryEvent[],
   },
   {
     tenantId: tenant.tenantId,
@@ -218,6 +232,8 @@ const patients = [
     lastSession: '20 Jun 2026',
     nextSession: 'Today · 12:15',
     reportStatus: 'Progress review pending',
+    notes: [] as PatientNote[],
+    historyEvents: [] as PatientHistoryEvent[],
   },
   {
     tenantId: tenant.tenantId,
@@ -251,6 +267,8 @@ const patients = [
     lastSession: '21 Jun 2026',
     nextSession: 'Today · 15:00',
     reportStatus: 'Goal review due',
+    notes: [] as PatientNote[],
+    historyEvents: [] as PatientHistoryEvent[],
   },
 ]
 
@@ -262,7 +280,7 @@ const activity = [
 ]
 
 const invoices = [
-  { tenantId: tenant.tenantId, id: 'INV-2046', patient: 'Ethan Naidoo', age: '18 days', status: 'Overdue', total: 2340, paid: 0 },
+  { tenantId: tenant.tenantId, id: 'INV-2046', patient: 'Ethan Naidoo', age: '34 days', status: 'Overdue', total: 2340, paid: 0 },
   { tenantId: tenant.tenantId, id: 'INV-2047', patient: 'Liam Jacobs', age: '7 days', status: 'Partial', total: 1560, paid: 780 },
   { tenantId: tenant.tenantId, id: 'INV-2049', patient: 'Amahle Dlamini', age: 'Today', status: 'Draft', total: 690, paid: 0 },
   { tenantId: tenant.tenantId, id: 'INV-2050', patient: 'Mila van Wyk', age: 'Today', status: 'Ready', total: 720, paid: 0 },
@@ -313,6 +331,12 @@ function therapistCalendarStyle(therapist: string) {
   }
 }
 
+function therapistDiscipline(therapist: string) {
+  if (therapist === 'Megan Pillay') return 'Speech Therapist'
+  if (therapist === 'Johan Kruger') return 'Physiotherapist'
+  return 'Occupational Therapist'
+}
+
 const shouldShowGuardianInList = (patientType: string) => ['Child', 'Teen'].includes(patientType)
 const patientWorkspaceTabs = ['Personal Details', 'Notes', 'Sessions', 'Finance', 'Documents & Reports', 'History'] as const
 type PatientWorkspaceTab = (typeof patientWorkspaceTabs)[number]
@@ -332,10 +356,63 @@ function App() {
   const [newSessionSlot, setNewSessionSlot] = useState<SessionSlot | null>(null)
   const [calendarSessionRecords, setCalendarSessionRecords] = useState<CalendarSession[]>(weekSessions)
   const [selectedCalendarSessionId, setSelectedCalendarSessionId] = useState(weekSessions[0]?.id ?? '')
+  const [selectedPatientName, setSelectedPatientName] = useState(patients[0].name)
+  const patientLinkMatch = window.location.hash.match(/^#\/patient-link\/([^/]+)\/([^/]+)$/)
 
   const openNewSession = (slot?: SessionSlot) => {
     setNewSessionSlot(slot ?? null)
     setIsNewSessionOpen(true)
+  }
+
+  const addPatientHistoryEvent = (patientName: string, event: PatientHistoryEvent) => {
+    setPatientRecords((records) =>
+      records.map((patient) =>
+        patient.name === patientName
+          ? { ...patient, historyEvents: [event, ...patient.historyEvents] }
+          : patient,
+      ),
+    )
+  }
+
+  const addPatientNote = (patientName: string, note: PatientNote) => {
+    setPatientRecords((records) =>
+      records.map((patient) =>
+        patient.name === patientName
+          ? { ...patient, notes: [note, ...patient.notes] }
+          : patient,
+      ),
+    )
+  }
+
+  const removeSessionFromCalendar = (sessionId: string) => {
+    setCalendarSessionRecords((records) => {
+      const remainingSessions = records.filter((session) => session.id !== sessionId)
+      setSelectedCalendarSessionId(remainingSessions[0]?.id ?? '')
+      return remainingSessions
+    })
+  }
+
+  const markSessionNoShow = (session: CalendarSession) => {
+    removeSessionFromCalendar(session.id)
+    addPatientHistoryEvent(session.patient, {
+      title: `No show marked · ${session.date} ${session.startTime}`,
+      visibility: 'Available on patient link',
+      detail: `${session.type} session with ${session.therapist} was marked as no-show and removed from the calendar.`,
+    })
+  }
+
+  const cancelSession = (session: CalendarSession, shouldReschedule: boolean) => {
+    removeSessionFromCalendar(session.id)
+    addPatientHistoryEvent(session.patient, {
+      title: `Session cancelled · ${session.date} ${session.startTime}`,
+      visibility: 'Available on patient link',
+      detail: shouldReschedule
+        ? `${session.type} session was cancelled and a reschedule was started.`
+        : `${session.type} session with ${session.therapist} was cancelled.`,
+    })
+    if (shouldReschedule) {
+      openNewSession({ date: session.date, time: session.startTime, patientName: session.patient })
+    }
   }
 
   const filteredPatients = useMemo(() => {
@@ -345,6 +422,31 @@ function App() {
       [patient.name, patient.phone, patient.guardian, patient.medicalAid].some((item) => item.toLowerCase().includes(needle)),
     )
   }, [patientRecords, query])
+
+  if (patientLinkMatch) {
+    const [, linkTenantId, linkPatientNumber] = patientLinkMatch
+    const linkedPatient = patientRecords.find(
+      (patient) =>
+        patient.tenantId === linkTenantId &&
+        patient.patientNumber.toLowerCase() === linkPatientNumber.toLowerCase(),
+    )
+
+    if (linkedPatient) {
+      return (
+        <PatientLinkPage
+          patient={linkedPatient}
+          sessions={sessions.filter((session) => session.patient === linkedPatient.name)}
+          onUpdatePatientField={(field, value) => {
+            setPatientRecords((records) =>
+              records.map((patient) =>
+                patient.patientNumber === linkedPatient.patientNumber ? { ...patient, [field]: value } : patient,
+              ),
+            )
+          }}
+        />
+      )
+    }
+  }
 
   return (
     <div className="app-shell">
@@ -356,7 +458,7 @@ function App() {
         <nav className="main-nav" aria-label="Main navigation">
           {navItems.map((item) => (
             <button className={view === item.id ? 'active' : ''} key={item.id} onClick={() => setView(item.id)}>
-              <span>{item.icon}</span>
+              <span className={`nav-icon ${item.icon}`} aria-hidden="true" />
               {item.label}
             </button>
           ))}
@@ -405,7 +507,15 @@ function App() {
                     records.map((session) => (session.id === updatedSession.id ? updatedSession : session)),
                   )
                 }}
+                onOpenPatientProfile={(patientName) => {
+                  setSelectedPatientName(patientName)
+                  setQuery('')
+                  setView('patients')
+                }}
                 onNewSession={openNewSession}
+                onMarkNoShow={markSessionNoShow}
+                onCancelSession={cancelSession}
+                onSavePatientNote={addPatientNote}
               />
             )}
             {view === 'patients' && (
@@ -413,6 +523,8 @@ function App() {
                 query={query}
                 setQuery={setQuery}
                 filteredPatients={filteredPatients}
+                selectedPatientName={selectedPatientName}
+                setSelectedPatientName={setSelectedPatientName}
                 setPatientRecords={setPatientRecords}
               />
             )}
@@ -426,7 +538,14 @@ function App() {
           calendarSessions={calendarSessionRecords}
           initialDate={newSessionSlot?.date}
           initialTime={newSessionSlot?.time}
-          onCreate={(session) => {
+          initialPatientName={newSessionSlot?.patientName}
+          onCreate={(session, newPatient) => {
+            if (newPatient) {
+              setPatientRecords((records) =>
+                records.some((patient) => patient.patientNumber === newPatient.patientNumber) ? records : [...records, newPatient],
+              )
+              setSelectedPatientName(newPatient.name)
+            }
             setCalendarSessionRecords((records) => [...records, session])
             setSelectedCalendarSessionId(session.id)
             setView('sessions')
@@ -444,6 +563,7 @@ function NewSessionModal({
   calendarSessions,
   initialDate = '2026-06-30',
   initialTime = '09:00',
+  initialPatientName,
   onCreate,
   onClose,
 }: {
@@ -451,14 +571,22 @@ function NewSessionModal({
   calendarSessions: CalendarSession[]
   initialDate?: string
   initialTime?: string
-  onCreate: (session: CalendarSession) => void
+  initialPatientName?: string
+  onCreate: (session: CalendarSession, patient?: Patient) => void
   onClose: () => void
 }) {
+  const initialPatient = patients.find((patient) => patient.name === initialPatientName) ?? patients[0]
   const [patientMode, setPatientMode] = useState<'existing' | 'new'>('existing')
-  const [selectedPatientNumber, setSelectedPatientNumber] = useState(patients[0]?.patientNumber ?? '')
-  const [patientSearch, setPatientSearch] = useState(patients[0]?.name ?? '')
+  const [selectedPatientNumber, setSelectedPatientNumber] = useState(initialPatient?.patientNumber ?? '')
+  const [patientSearch, setPatientSearch] = useState(initialPatient?.name ?? '')
   const [newPatientName, setNewPatientName] = useState('')
   const [newPatientType, setNewPatientType] = useState('Child')
+  const [newPatientPhone, setNewPatientPhone] = useState('')
+  const [newPatientEmail, setNewPatientEmail] = useState('')
+  const [newPatientGuardian, setNewPatientGuardian] = useState('')
+  const [newAdultSecondaryName, setNewAdultSecondaryName] = useState('')
+  const [newAdultSecondaryPhone, setNewAdultSecondaryPhone] = useState('')
+  const [newAdultSecondaryRelation, setNewAdultSecondaryRelation] = useState('Spouse / Partner')
   const [selectedBillingCodes, setSelectedBillingCodes] = useState<string[]>([billingItems[0].code])
   const [sessionDate, setSessionDate] = useState(initialDate)
   const [sessionTime, setSessionTime] = useState(initialTime)
@@ -489,6 +617,60 @@ function NewSessionModal({
     calendarSessions.some((session) => session.date === date && session.startTime === time)
 
   const scheduleSlotRow = (time: string) => timeToCalendarRow(time)
+  const nextPatientNumber = `PT-${String(
+    Math.max(...patients.map((patient) => Number(patient.patientNumber.replace('PT-', '')) || 0)) + 1,
+  ).padStart(4, '0')}`
+  const createdPatientName = newPatientName.trim() || 'New patient'
+  const adultSecondaryContact = [
+    newAdultSecondaryName || 'Needs capture',
+    newAdultSecondaryPhone || 'Needs capture',
+    newAdultSecondaryRelation || 'Relation needs capture',
+  ].join(' · ')
+  const createdPatient: Patient | undefined = patientMode === 'new'
+    ? {
+        tenantId: tenant.tenantId,
+        patientNumber: nextPatientNumber,
+        name: createdPatientName,
+        phone: newPatientPhone || 'Needs capture',
+        guardian: requiresGuardian ? newPatientGuardian || 'Needs capture' : newAdultSecondaryName || 'Needs capture',
+        title: 'Needs capture',
+        idNumber: 'Needs capture',
+        residentialAddress: 'Needs completion from patient link',
+        guardianEmail: newPatientEmail || 'Needs capture',
+        guardianOccupation: 'Needs capture',
+        guardianEmployer: 'Needs capture',
+        guardianPostalAddress: 'Needs capture',
+        homeTel: 'Needs capture',
+        workTel: 'Needs capture',
+        practiceNo: tenant.tenantId,
+        medicalAidPlan: 'Needs capture',
+        accountResponsibility: 'Needs completion from patient link',
+        dateSigned: 'Pending',
+        dateOfBirth: 'Needs capture',
+        emergencyContact: requiresGuardian
+          ? `${newPatientGuardian || 'Needs capture'} · ${newPatientPhone || 'Needs capture'} · Parent / guardian`
+          : adultSecondaryContact,
+        type: newPatientType,
+        medicalAid: 'Needs capture',
+        referralSource: 'New session intake',
+        diagnosis: 'Needs capture',
+        consentStatus: 'Pending',
+        alert: 'Patient link incomplete',
+        balance: 0,
+        therapist: sessionTherapist,
+        lastSession: 'No completed sessions',
+        nextSession: `${sessionDate} · ${sessionTime}`,
+        reportStatus: 'No reports yet',
+        notes: [] as PatientNote[],
+        historyEvents: [
+          {
+            title: `Patient profile created · ${sessionDate}`,
+            visibility: 'Available on patient link',
+            detail: 'Partial patient profile created from new session intake.',
+          },
+        ],
+      }
+    : undefined
 
   return (
     <div className="modal-backdrop" role="presentation">
@@ -502,11 +684,11 @@ function NewSessionModal({
             date: sessionDate,
             startTime: sessionTime,
             endTime: minutesToTime(timeToMinutes(sessionTime) + 60),
-            patient: patientMode === 'existing' ? selectedPatient?.name ?? 'Selected patient' : newPatientName || 'New patient',
+            patient: patientMode === 'existing' ? selectedPatient?.name ?? 'Selected patient' : createdPatientName,
             type: createdSessionType,
             therapist: sessionTherapist,
             room: sessionRoom,
-          })
+          }, createdPatient)
         }}
       >
         <div className="modal-header">
@@ -525,7 +707,7 @@ function NewSessionModal({
               <span>1</span>
               <div>
                 <strong>Identify patient</strong>
-                <small>Choose an existing patient or start a new intake link.</small>
+                <small>Choose an existing patient or start a new Patient Profile.</small>
               </div>
             </div>
 
@@ -599,18 +781,66 @@ function NewSessionModal({
                     </select>
                   </label>
                   <label className="field">
-                    <span>Cell number</span>
-                    <input placeholder="Patient or guardian cell" />
+                    <span>{requiresGuardian ? 'Parent / guardian cell' : 'Patient cell'}</span>
+                    <input
+                      value={newPatientPhone}
+                      onChange={(event) => setNewPatientPhone(event.target.value)}
+                      placeholder={requiresGuardian ? 'Parent or guardian cell' : 'Patient cell number'}
+                    />
                   </label>
                   <label className="field">
-                    <span>Email</span>
-                    <input type="email" placeholder="patient@example.com" />
+                    <span>{requiresGuardian ? 'Parent / guardian email' : 'Patient email'}</span>
+                    <input
+                      type="email"
+                      value={newPatientEmail}
+                      onChange={(event) => setNewPatientEmail(event.target.value)}
+                      placeholder="patient@example.com"
+                    />
                   </label>
                   {requiresGuardian && (
                     <label className="field">
                       <span>Parent / guardian</span>
-                      <input placeholder="Name and surname" />
+                      <input
+                        value={newPatientGuardian}
+                        onChange={(event) => setNewPatientGuardian(event.target.value)}
+                        placeholder="Name and surname"
+                      />
                     </label>
+                  )}
+                  {!requiresGuardian && (
+                    <>
+                      <label className="field">
+                        <span>Secondary contact</span>
+                        <input
+                          value={newAdultSecondaryName}
+                          onChange={(event) => setNewAdultSecondaryName(event.target.value)}
+                          placeholder="Name and surname"
+                        />
+                      </label>
+                      <label className="field">
+                        <span>Secondary number</span>
+                        <input
+                          value={newAdultSecondaryPhone}
+                          onChange={(event) => setNewAdultSecondaryPhone(event.target.value)}
+                          placeholder="Alternative contact number"
+                        />
+                      </label>
+                      <label className="field">
+                        <span>Relationship</span>
+                        <select
+                          value={newAdultSecondaryRelation}
+                          onChange={(event) => setNewAdultSecondaryRelation(event.target.value)}
+                        >
+                          <option>Spouse / Partner</option>
+                          <option>Parent</option>
+                          <option>Sibling</option>
+                          <option>Adult child</option>
+                          <option>Friend</option>
+                          <option>Caregiver</option>
+                          <option>Other</option>
+                        </select>
+                      </label>
+                    </>
                   )}
                 </div>
                 <div className="patient-link-box">
@@ -1004,13 +1234,21 @@ function Sessions({
   selectedSessionId,
   setSelectedSessionId,
   onUpdateSession,
+  onOpenPatientProfile,
   onNewSession,
+  onMarkNoShow,
+  onCancelSession,
+  onSavePatientNote,
 }: {
   calendarSessions: CalendarSession[]
   selectedSessionId: string
   setSelectedSessionId: Dispatch<SetStateAction<string>>
   onUpdateSession: (session: CalendarSession) => void
+  onOpenPatientProfile: (patientName: string) => void
   onNewSession: (slot?: SessionSlot) => void
+  onMarkNoShow: (session: CalendarSession) => void
+  onCancelSession: (session: CalendarSession, shouldReschedule: boolean) => void
+  onSavePatientNote: (patientName: string, note: PatientNote) => void
 }) {
   const [calendarMode, setCalendarMode] = useState<'week' | 'month'>('week')
   const [selectedWeekIso, setSelectedWeekIso] = useState('2026-06-30')
@@ -1137,61 +1375,25 @@ function Sessions({
           </div>
         )}
       </section>
-      {!isSessionOpen && (
-      <section className="panel session-detail-panel">
-        <div className="panel-heading">
-          <div>
-            <p>Saved session</p>
-            <h2>{selectedSession ? selectedSession.patient : 'No session selected'}</h2>
-          </div>
-          {selectedSession && (
-            <button
-              type="button"
-              className={`icon-button ${isSessionEditMode ? 'active' : ''}`}
-              aria-label={isSessionEditMode ? 'Save session' : 'Edit session'}
-              title={isSessionEditMode ? 'Save session' : 'Edit session'}
-              onClick={() => setIsSessionEditMode((current) => !current)}
-            >
-              <PencilIcon />
-            </button>
-          )}
-        </div>
-        {selectedSession && (
-          <SessionDetailView
-            session={selectedSession}
-            isEditing={isSessionEditMode}
-            onChange={onUpdateSession}
-          />
-        )}
-      </section>
-      )}
       {isSessionOpen && selectedSession && (
         <SessionDetailModal
           session={selectedSession}
           isEditing={isSessionEditMode}
           setIsEditing={setIsSessionEditMode}
           onChange={onUpdateSession}
+          onOpenPatientProfile={onOpenPatientProfile}
+          onMarkNoShow={(session) => {
+            onMarkNoShow(session)
+            setIsSessionOpen(false)
+          }}
+          onCancelSession={(session, shouldReschedule) => {
+            onCancelSession(session, shouldReschedule)
+            setIsSessionOpen(false)
+          }}
+          onSavePatientNote={onSavePatientNote}
           onClose={() => setIsSessionOpen(false)}
         />
       )}
-      <section className="panel span-3">
-        <div className="panel-heading">
-          <div>
-            <p>Clinical documentation</p>
-            <h2>Notes waiting to close</h2>
-          </div>
-        </div>
-        <div className="table">
-          {sessions.map((session) => (
-            <div className="table-row" key={session.patient}>
-              <span>{session.patient}</span>
-              <span>{session.type}</span>
-              <span>{session.therapist}</span>
-              <Status label={session.status === 'Needs note' ? 'Process note due' : 'Ready'} />
-            </div>
-          ))}
-        </div>
-      </section>
     </div>
   )
 }
@@ -1201,14 +1403,41 @@ function SessionDetailModal({
   isEditing,
   setIsEditing,
   onChange,
+  onOpenPatientProfile,
+  onMarkNoShow,
+  onCancelSession,
+  onSavePatientNote,
   onClose,
 }: {
   session: CalendarSession
   isEditing: boolean
   setIsEditing: Dispatch<SetStateAction<boolean>>
   onChange: (session: CalendarSession) => void
+  onOpenPatientProfile: (patientName: string) => void
+  onMarkNoShow: (session: CalendarSession) => void
+  onCancelSession: (session: CalendarSession, shouldReschedule: boolean) => void
+  onSavePatientNote: (patientName: string, note: PatientNote) => void
   onClose: () => void
 }) {
+  const [draftSessionDate, setDraftSessionDate] = useState(session.date)
+  const [draftSessionStartTime, setDraftSessionStartTime] = useState(session.startTime)
+  const [draftSessionEndTime, setDraftSessionEndTime] = useState(session.endTime)
+  const toggleSessionEdit = () => {
+    if (isEditing) {
+      onChange({
+        ...session,
+        date: draftSessionDate,
+        startTime: draftSessionStartTime,
+        endTime: draftSessionEndTime,
+      })
+    } else {
+      setDraftSessionDate(session.date)
+      setDraftSessionStartTime(session.startTime)
+      setDraftSessionEndTime(session.endTime)
+    }
+    setIsEditing((current) => !current)
+  }
+
   return (
     <div className="modal-backdrop" role="presentation">
       <section className="modal-window session-modal" aria-label="Saved session">
@@ -1223,7 +1452,7 @@ function SessionDetailModal({
               className={`icon-button ${isEditing ? 'active' : ''}`}
               aria-label={isEditing ? 'Save session' : 'Edit session'}
               title={isEditing ? 'Save session' : 'Edit session'}
-              onClick={() => setIsEditing((current) => !current)}
+              onClick={toggleSessionEdit}
             >
               <PencilIcon />
             </button>
@@ -1233,7 +1462,20 @@ function SessionDetailModal({
           </div>
         </div>
         <div className="modal-body">
-          <SessionDetailView session={session} isEditing={isEditing} onChange={onChange} />
+          <SessionDetailView
+            session={session}
+            isEditing={isEditing}
+            onOpenPatientProfile={onOpenPatientProfile}
+            onMarkNoShow={onMarkNoShow}
+            onCancelSession={onCancelSession}
+            onSavePatientNote={onSavePatientNote}
+            draftSessionDate={draftSessionDate}
+            setDraftSessionDate={setDraftSessionDate}
+            draftSessionStartTime={draftSessionStartTime}
+            setDraftSessionStartTime={setDraftSessionStartTime}
+            draftSessionEndTime={draftSessionEndTime}
+            setDraftSessionEndTime={setDraftSessionEndTime}
+          />
         </div>
       </section>
     </div>
@@ -1243,14 +1485,72 @@ function SessionDetailModal({
 function SessionDetailView({
   session,
   isEditing,
-  onChange,
+  onOpenPatientProfile,
+  onMarkNoShow,
+  onCancelSession,
+  onSavePatientNote,
+  draftSessionDate,
+  setDraftSessionDate,
+  draftSessionStartTime,
+  setDraftSessionStartTime,
+  draftSessionEndTime,
+  setDraftSessionEndTime,
 }: {
   session: CalendarSession
   isEditing: boolean
-  onChange: (session: CalendarSession) => void
+  onOpenPatientProfile: (patientName: string) => void
+  onMarkNoShow: (session: CalendarSession) => void
+  onCancelSession: (session: CalendarSession, shouldReschedule: boolean) => void
+  onSavePatientNote: (patientName: string, note: PatientNote) => void
+  draftSessionDate: string
+  setDraftSessionDate: Dispatch<SetStateAction<string>>
+  draftSessionStartTime: string
+  setDraftSessionStartTime: Dispatch<SetStateAction<string>>
+  draftSessionEndTime: string
+  setDraftSessionEndTime: Dispatch<SetStateAction<string>>
 }) {
-  const updateSessionField = (field: keyof CalendarSession, value: string) => {
-    onChange({ ...session, [field]: value })
+  const [isBillingEditMode, setIsBillingEditMode] = useState(false)
+  const [isCancelChoiceOpen, setIsCancelChoiceOpen] = useState(false)
+  const [isPlanningOpen, setIsPlanningOpen] = useState(false)
+  const [isSessionNoteOpen, setIsSessionNoteOpen] = useState(false)
+  const [sessionPlanning, setSessionPlanning] = useState('')
+  const [sessionNoteType, setSessionNoteType] = useState<string>(noteTypeOptions[0].label)
+  const [sessionNoteDetail, setSessionNoteDetail] = useState('')
+  const [lastSavedSessionNoteKey, setLastSavedSessionNoteKey] = useState('')
+  const [draftBillingItem, setDraftBillingItem] = useState(session.type)
+  const [draftIcdCodes, setDraftIcdCodes] = useState<string[]>([])
+  const matchingBillingItems = billingItems.filter((item) =>
+    draftBillingItem.toLowerCase().includes(item.sessionType.split(' ')[0].toLowerCase()),
+  )
+  const displayedBillingItems = matchingBillingItems.length ? matchingBillingItems : billingItems.slice(0, 2)
+  const selectedBillingItems = draftIcdCodes.length
+    ? billingItems.filter((item) => draftIcdCodes.includes(item.code))
+    : displayedBillingItems
+  const sessionBillingTotal = selectedBillingItems.reduce((total, item) => total + item.price, 0)
+  const patientInvoices = invoices.filter((invoice) => invoice.patient === session.patient)
+  const patientOutstanding = patientInvoices
+    .reduce((total, invoice) => total + invoice.total - invoice.paid, 0)
+  const oldestOverdueDays = Math.max(
+    0,
+    ...patientInvoices
+      .filter((invoice) => invoice.total > invoice.paid)
+      .map((invoice) => Number.parseInt(invoice.age, 10))
+      .filter((age) => Number.isFinite(age)),
+  )
+  const toggleSessionNoteEditor = () => {
+    if (isSessionNoteOpen) {
+      const noteDetail = sessionNoteDetail.trim()
+      const noteKey = `${sessionNoteType}|${noteDetail}`
+      if (noteDetail && noteKey !== lastSavedSessionNoteKey) {
+        onSavePatientNote(session.patient, {
+          noteType: sessionNoteType,
+          date: session.date,
+          detail: noteDetail,
+        })
+        setLastSavedSessionNoteKey(noteKey)
+      }
+    }
+    setIsSessionNoteOpen((current) => !current)
   }
 
   return (
@@ -1259,17 +1559,46 @@ function SessionDetailView({
         <div>
           <span>Session</span>
           <strong>{session.patient}</strong>
+          <button type="button" className="session-profile-link" onClick={() => onOpenPatientProfile(session.patient)}>
+            Patient profile
+          </button>
         </div>
         <small>{session.type}</small>
       </div>
       <div className="session-meta-grid">
         <article>
           <span>Date</span>
-          <strong>{session.date}</strong>
+          {isEditing ? (
+            <input
+              className="session-meta-input"
+              type="date"
+              value={draftSessionDate}
+              onChange={(event) => setDraftSessionDate(event.target.value)}
+            />
+          ) : (
+            <strong>{session.date}</strong>
+          )}
         </article>
         <article>
           <span>Time</span>
-          <strong>{session.startTime}-{session.endTime}</strong>
+          {isEditing ? (
+            <div className="session-time-edit">
+              <input
+                className="session-meta-input"
+                type="time"
+                value={draftSessionStartTime}
+                onChange={(event) => setDraftSessionStartTime(event.target.value)}
+              />
+              <input
+                className="session-meta-input"
+                type="time"
+                value={draftSessionEndTime}
+                onChange={(event) => setDraftSessionEndTime(event.target.value)}
+              />
+            </div>
+          ) : (
+            <strong>{session.startTime}-{session.endTime}</strong>
+          )}
         </article>
         <article>
           <span>Therapist</span>
@@ -1280,28 +1609,192 @@ function SessionDetailView({
           <strong>{session.room}</strong>
         </article>
       </div>
-      <section className="session-detail-card">
-        <div className="panel-heading compact-heading">
-          <div>
-            <p>Session information</p>
-            <h2>{isEditing ? 'Edit saved session' : 'Saved record'}</h2>
+      {isCancelChoiceOpen ? (
+        <div className="session-cancel-choice" role="dialog" aria-label="Cancel session options">
+          <div className="session-cancel-copy">
+            <strong>Cancel this session?</strong>
+            <span>This removes the session from the calendar and logs the change in patient history.</span>
+          </div>
+          <div className="session-cancel-buttons">
+            <button type="button" onClick={() => onCancelSession(session, true)}>Reschedule</button>
+            <button type="button" className="danger-text-button" onClick={() => onCancelSession(session, false)}>Just cancel</button>
+            <button type="button" className="secondary-text-button" onClick={() => setIsCancelChoiceOpen(false)}>Keep session</button>
           </div>
         </div>
-        <dl className="session-detail-list">
-          <EditableDetail label="Patient" value={session.patient} isEditing={isEditing} onChange={(value) => updateSessionField('patient', value)} />
-          <EditableDetail label="Date" value={session.date} isEditing={isEditing} onChange={(value) => updateSessionField('date', value)} />
-          <EditableDetail label="Start time" value={session.startTime} isEditing={isEditing} onChange={(value) => updateSessionField('startTime', value)} />
-          <EditableDetail label="End time" value={session.endTime} isEditing={isEditing} onChange={(value) => updateSessionField('endTime', value)} />
-          <EditableDetail label="Session type" value={session.type} isEditing={isEditing} onChange={(value) => updateSessionField('type', value)} />
-          <EditableDetail label="Therapist" value={session.therapist} isEditing={isEditing} onChange={(value) => updateSessionField('therapist', value)} />
-          <EditableDetail label="Room / mode" value={session.room} isEditing={isEditing} onChange={(value) => updateSessionField('room', value)} />
-        </dl>
-      </section>
-      <div className="session-detail-actions">
-        <button>Send reminder</button>
-        <button>Mark no show</button>
-        <button className="danger-text-button">Cancel session</button>
+      ) : (
+        <>
+      <div className="session-workspace-grid">
+        <section className="session-detail-card">
+          <div className="panel-heading compact-heading">
+            <div>
+              <p>Session information</p>
+            </div>
+          </div>
+          <div className="session-section-list">
+            <article>
+              <div className="session-section-action-row">
+                <strong>Session planning</strong>
+                <div className="session-section-actions">
+                  {sessionPlanning && !isPlanningOpen && (
+                    <button
+                      type="button"
+                      className="session-planning-edit-icon"
+                      aria-label="Edit session planning"
+                      title="Edit session planning"
+                      onClick={() => setIsPlanningOpen(true)}
+                    >
+                      <PencilIcon />
+                    </button>
+                  )}
+                  <button
+                    type="button"
+                    className={isPlanningOpen ? 'save-mode' : ''}
+                    onClick={() => setIsPlanningOpen((current) => !current)}
+                  >
+                    {isPlanningOpen ? 'Save planning' : '+ Planning'}
+                  </button>
+                </div>
+              </div>
+              {isPlanningOpen ? (
+                <textarea
+                  value={sessionPlanning}
+                  onChange={(event) => setSessionPlanning(event.target.value)}
+                  placeholder="Add session planning, goals, prep items and therapist plan."
+                />
+              ) : (
+                <p className={`session-planning-display ${sessionPlanning ? '' : 'empty'}`}>
+                  {sessionPlanning || `${session.type} goals, prep items and therapist plan for this session.`}
+                </p>
+              )}
+            </article>
+            <article>
+              <div className="session-section-action-row">
+                <strong>Notes</strong>
+                <button
+                  type="button"
+                  className={isSessionNoteOpen ? 'save-mode' : ''}
+                  onClick={toggleSessionNoteEditor}
+                >
+                  {isSessionNoteOpen ? 'Save note' : '+ Note'}
+                </button>
+              </div>
+              {isSessionNoteOpen ? (
+                <div className="session-note-editor">
+                  <select value={sessionNoteType} onChange={(event) => setSessionNoteType(event.target.value)}>
+                    {noteTypeOptions.map((option) => (
+                      <option key={option.label} value={option.label}>{option.label}</option>
+                    ))}
+                  </select>
+                  {sessionNoteType === 'Session Feedback' && (
+                    <small className="session-note-visibility">Available on patient link</small>
+                  )}
+                  <textarea
+                    value={sessionNoteDetail}
+                    onChange={(event) => setSessionNoteDetail(event.target.value)}
+                    placeholder="Add a note connected to this session and patient profile."
+                  />
+                </div>
+              ) : (
+                <span>{sessionNoteDetail || 'Add session feedback, process notes or case management notes.'}</span>
+              )}
+            </article>
+          </div>
+        </section>
+
+        <section className="session-detail-card">
+          <div className="panel-heading compact-heading billing-finance-heading">
+            <div>
+              <p>Billing and finances</p>
+            </div>
+            <button
+              type="button"
+              className={`billing-edit-icon ${isBillingEditMode ? 'save-mode' : ''}`}
+              aria-label={isBillingEditMode ? 'Save billing edits' : 'Edit billing and finance'}
+              title={isBillingEditMode ? 'Save billing edits' : 'Edit billing and finance'}
+              onClick={() => setIsBillingEditMode((current) => !current)}
+            >
+              <PencilIcon />
+            </button>
+          </div>
+          <div className="session-finance-summary">
+            <article className="finance-row-one">
+              <span>Billing item</span>
+              {isBillingEditMode ? (
+                <select value={draftBillingItem} onChange={(event) => setDraftBillingItem(event.target.value)}>
+                  {billingItems.map((item) => (
+                    <option key={item.code} value={item.sessionType}>{item.sessionType}</option>
+                  ))}
+                </select>
+              ) : (
+                <strong>{draftBillingItem}</strong>
+              )}
+            </article>
+            <article className="finance-row-one">
+              <span>Price</span>
+              <strong>{formatMoney(sessionBillingTotal)}</strong>
+            </article>
+            <article className="finance-row-two">
+              <span>ICD codes</span>
+              {isBillingEditMode ? (
+                <details className="session-icd-dropdown">
+                  <summary>
+                    {selectedBillingItems.length} selected
+                  </summary>
+                  <div className="session-icd-edit-list">
+                    {billingItems.map((item) => (
+                      <label key={item.code}>
+                        <input
+                          type="checkbox"
+                          checked={selectedBillingItems.some((selectedItem) => selectedItem.code === item.code)}
+                          onChange={() =>
+                            setDraftIcdCodes((current) =>
+                              current.includes(item.code)
+                                ? current.filter((code) => code !== item.code)
+                                : [...current, item.code],
+                            )
+                          }
+                        />
+                        <span>{item.code}</span>
+                        <small>{item.sessionType}</small>
+                      </label>
+                    ))}
+                  </div>
+                </details>
+              ) : (
+                <div className="session-code-pills">
+                  {selectedBillingItems.map((item) => (
+                    <code key={item.code}>{item.code}</code>
+                  ))}
+                </div>
+              )}
+            </article>
+            <article className="finance-row-two">
+              <div className="patient-account-heading">
+                <span>Patient account</span>
+                {oldestOverdueDays >= 30 && (
+                  <small className="overdue-account-label">{oldestOverdueDays} days overdue</small>
+                )}
+              </div>
+              <strong>{formatMoney(patientOutstanding)} outstanding from previous invoices</strong>
+            </article>
+            <article className="finance-row-three">
+              <span>Status</span>
+              <div className="session-status-action">
+                <strong>Draft invoice</strong>
+                <button>Confirm invoice</button>
+              </div>
+            </article>
+          </div>
+        </section>
       </div>
+      <div className="session-detail-actions">
+        <button type="button" onClick={() => onMarkNoShow(session)}>Mark no show</button>
+        <button type="button" className="danger-text-button" onClick={() => setIsCancelChoiceOpen((current) => !current)}>
+          Cancel session
+        </button>
+      </div>
+        </>
+      )}
     </div>
   )
 }
@@ -1310,18 +1803,23 @@ function Patients({
   query,
   setQuery,
   filteredPatients,
+  selectedPatientName,
+  setSelectedPatientName,
   setPatientRecords,
 }: {
   query: string
   setQuery: (query: string) => void
   filteredPatients: Patient[]
+  selectedPatientName: string
+  setSelectedPatientName: Dispatch<SetStateAction<string>>
   setPatientRecords: Dispatch<SetStateAction<Patient[]>>
 }) {
-  const [selectedPatientName, setSelectedPatientName] = useState(patients[0].name)
   const [activePatientTab, setActivePatientTab] = useState<PatientWorkspaceTab>('Personal Details')
   const [isPatientEditMode, setIsPatientEditMode] = useState(false)
+  const [patientLinkCopied, setPatientLinkCopied] = useState(false)
   const selectedPatient = filteredPatients.find((patient) => patient.name === selectedPatientName) ?? filteredPatients[0] ?? patients[0]
   const selectedPatientSessions = sessions.filter((session) => session.patient === selectedPatient.name)
+  const patientProfileUrl = `${window.location.origin}${window.location.pathname}#/patient-link/${tenant.tenantId}/${selectedPatient.patientNumber.toLowerCase()}`
   const updatePatientField = (field: keyof Patient, value: string) => {
     setPatientRecords((records) =>
       records.map((patient) =>
@@ -1331,6 +1829,15 @@ function Patients({
     if (field === 'name') {
       setSelectedPatientName(value)
     }
+  }
+  const copyPatientProfileLink = async () => {
+    try {
+      await navigator.clipboard.writeText(patientProfileUrl)
+    } catch {
+      // Clipboard access can be unavailable in preview contexts; the URL remains visible in the preview modal.
+    }
+    setPatientLinkCopied(true)
+    window.setTimeout(() => setPatientLinkCopied(false), 1800)
   }
 
   return (
@@ -1369,7 +1876,12 @@ function Patients({
               <h2>{selectedPatient.name}</h2>
               <span>{selectedPatient.patientNumber} · {selectedPatient.type} · {selectedPatient.therapist}</span>
             </div>
-            <Status label={selectedPatient.alert} />
+            <div className="patient-profile-actions">
+              <button type="button" onClick={copyPatientProfileLink}>
+                {patientLinkCopied ? 'Link copied' : 'Patient Profile Link'}
+              </button>
+              <Status label={selectedPatient.alert} />
+            </div>
           </div>
 
           <div className="profile-summary-grid">
@@ -1473,6 +1985,14 @@ function Patients({
               </div>
             </div>
             <ul className="notes-list">
+              {selectedPatient.notes.map((note, index) => (
+                <NoteLineItem
+                  key={`${note.noteType}-${note.date}-${index}`}
+                  noteType={note.noteType}
+                  date={note.date}
+                  detail={note.detail}
+                />
+              ))}
               <NoteLineItem noteType="Session Feedback" date={selectedPatient.lastSession} detail="Goals and progress reviewed." />
               <NoteLineItem noteType="Session Process Note" date={selectedPatient.lastSession} detail="Therapist-only working note for session planning and follow-up." />
               <NoteLineItem noteType="Case Management" date="Today" detail="Fine motor, sensory regulation and parent carry-over tasks." />
@@ -1543,6 +2063,13 @@ function Patients({
               <h3>Patient History</h3>
             </div>
             <ul className="history-list">
+              {selectedPatient.historyEvents.map((event) => (
+                <li key={`${event.title}-${event.detail}`}>
+                  <strong>{event.title}</strong>
+                  <em>{event.visibility}</em>
+                  <span>{event.detail}</span>
+                </li>
+              ))}
               <li>
                 <strong>Session planned · {selectedPatient.nextSession}</strong>
                 <em>Available on patient link</em>
@@ -1593,6 +2120,194 @@ function Patients({
         )}
       </section>
     </div>
+  )
+}
+
+function PatientLinkPage({
+  patient,
+  sessions: patientSessions,
+  onUpdatePatientField,
+}: {
+  patient: Patient
+  sessions: typeof sessions
+  onUpdatePatientField: (field: keyof Patient, value: string) => void
+}) {
+  const [isPersonalEditMode, setIsPersonalEditMode] = useState(false)
+  const patientFeedbackNotes = patient.notes.filter((note) => note.noteType === 'Session Feedback')
+  const visibleHistory = [
+    ...patient.historyEvents.filter((event) => event.visibility !== 'Internal only'),
+    {
+      title: `Session planned · ${patient.nextSession}`,
+      visibility: 'Available on patient link',
+      detail: `Upcoming session scheduled with ${patient.therapist}.`,
+    },
+    {
+      title: `Invoice available · Today`,
+      visibility: 'Available on patient link',
+      detail: 'New invoice linked to session billing and visible to the customer.',
+    },
+    {
+      title: `Report available · ${patient.reportStatus}`,
+      visibility: 'Available on patient link',
+      detail: 'Report or assessment document made available for customer viewing.',
+    },
+  ]
+  const patientInvoice = invoices.find((invoice) => invoice.patient === patient.name && invoice.total > invoice.paid)
+  const patientInvoiceAge = patientInvoice ? Number.parseInt(patientInvoice.age, 10) : 0
+  const isPatientProfileIncomplete =
+    patient.alert === 'Patient link incomplete' ||
+    [
+      patient.phone,
+      patient.guardianEmail,
+      patient.residentialAddress,
+      patient.dateOfBirth,
+      patient.emergencyContact,
+    ].some((value) => value.toLowerCase().includes('needs'))
+  const noticeBoardItems = [
+    isPatientProfileIncomplete
+      ? { title: 'Personal details incomplete', detail: 'Please complete the remaining profile details.', action: 'Update profile', urgent: true }
+      : null,
+    patient.nextSession && patient.nextSession !== 'No completed sessions'
+      ? { title: 'Upcoming session', detail: patient.nextSession, action: 'View sessions', urgent: false }
+      : null,
+    patientFeedbackNotes.length
+      ? { title: 'Session feedback', detail: patientFeedbackNotes[0].detail, action: 'View feedback', urgent: false }
+      : null,
+    patientInvoice && patientInvoiceAge >= 30
+      ? { title: 'Unpaid invoice', detail: `${patientInvoice.id} · ${patientInvoiceAge} days overdue`, action: 'View finance', urgent: true }
+      : null,
+    patientInvoice && patientInvoiceAge < 30
+      ? { title: 'New invoice', detail: `${patientInvoice.id} · ${formatMoney(patientInvoice.total - patientInvoice.paid)} due`, action: 'View finance', urgent: true }
+      : null,
+    patient.balance > 0 && !patientInvoice
+      ? { title: 'New statement', detail: `${formatMoney(patient.balance)} outstanding`, action: 'View finance', urgent: true }
+      : null,
+  ].filter((item): item is { title: string; detail: string; action: string; urgent: boolean } => Boolean(item))
+
+  return (
+    <main className="patient-link-page">
+      <section className="patient-link-shell" aria-label="Patient profile link">
+        <div className="patient-link-header">
+          <div>
+            <p>Patient Profile Link</p>
+            <h2>{patient.name}</h2>
+          </div>
+          <img src="/assets/AlliHealth_Poweredby_Logo.png" alt="Powered by AlliHealth" className="patient-link-logo" />
+        </div>
+        <div className="patient-link-body">
+          <section className="patient-link-intro">
+            <div>
+              <strong>{patient.therapist}</strong>
+              <span className="therapist-field-pill">{therapistDiscipline(patient.therapist)}</span>
+            </div>
+            <span>{patient.phone} · {patient.guardianEmail}</span>
+            <span>{tenant.name}</span>
+          </section>
+
+          {noticeBoardItems.length > 0 && (
+            <section className="patient-link-notice-board">
+              <h3>Notice board</h3>
+              <div>
+                {noticeBoardItems.map((notice, index) => (
+                  <article className={notice.urgent ? 'urgent' : ''} key={`${notice.title}-${index}`}>
+                    <div>
+                      <strong>{notice.title}</strong>
+                      <span>{notice.detail}</span>
+                    </div>
+                    <a href={`#${notice.action.toLowerCase().replaceAll(' ', '-')}`}>{notice.action}</a>
+                  </article>
+                ))}
+              </div>
+            </section>
+          )}
+
+          <section className="patient-link-section">
+            <div className="patient-link-section-header">
+              <h3>Personal details</h3>
+              <button
+                type="button"
+                className={`icon-button ${isPersonalEditMode ? 'active' : ''}`}
+                aria-label={isPersonalEditMode ? 'Save personal details' : 'Edit personal details'}
+                title={isPersonalEditMode ? 'Save personal details' : 'Edit personal details'}
+                onClick={() => setIsPersonalEditMode((current) => !current)}
+              >
+                <PencilIcon />
+              </button>
+            </div>
+            <dl className="profile-detail-list">
+              <EditableDetail label="Patient name" value={patient.name} isEditing={isPersonalEditMode} onChange={(value) => onUpdatePatientField('name', value)} />
+              <EditableDetail label="Cell number" value={patient.phone} isEditing={isPersonalEditMode} onChange={(value) => onUpdatePatientField('phone', value)} />
+              <EditableDetail label="Email address" value={patient.guardianEmail} isEditing={isPersonalEditMode} onChange={(value) => onUpdatePatientField('guardianEmail', value)} />
+              <EditableDetail label="Residential address" value={patient.residentialAddress} isEditing={isPersonalEditMode} onChange={(value) => onUpdatePatientField('residentialAddress', value)} />
+              <EditableDetail label={shouldShowGuardianInList(patient.type) ? 'Parent / guardian' : 'Secondary contact'} value={patient.guardian} isEditing={isPersonalEditMode} onChange={(value) => onUpdatePatientField('guardian', value)} />
+              <EditableDetail label="Emergency contact" value={patient.emergencyContact} isEditing={isPersonalEditMode} onChange={(value) => onUpdatePatientField('emergencyContact', value)} />
+            </dl>
+          </section>
+
+          <section className="patient-link-section">
+            <h3>Sessions</h3>
+            <div className="patient-link-session-groups">
+              <div className="patient-link-session-group">
+                <h4>Planned sessions</h4>
+                <div className="patient-link-list">
+                  {(patientSessions.length ? patientSessions : sessions.slice(0, 1)).map((session) => (
+                    <article className="patient-link-session-card" key={`${patient.patientNumber}-planned-${session.time}`}>
+                      <strong>{session.type}</strong>
+                      <span>{session.time} · {session.therapist}</span>
+                      <small>{session.room} · {session.status}</small>
+                    </article>
+                  ))}
+                </div>
+              </div>
+              <div className="patient-link-session-group">
+                <h4>Sessions completed</h4>
+                <div className="patient-link-list">
+                  <article className="patient-link-session-card">
+                    <strong>{patient.lastSession}</strong>
+                    <span>{patient.therapist} · Attendance confirmed</span>
+                    <small>Feedback and progress visible in the Feedback section.</small>
+                  </article>
+                </div>
+              </div>
+            </div>
+          </section>
+
+          <section className="patient-link-section">
+            <h3>Feedback</h3>
+            <div className="patient-link-list">
+              {(patientFeedbackNotes.length ? patientFeedbackNotes : [{ noteType: 'Session Feedback', date: patient.lastSession, detail: 'Goals and progress reviewed.' }]).map((note, index) => (
+                <article key={`${note.noteType}-${note.date}-${index}`}>
+                  <strong>{note.noteType} · {note.date}</strong>
+                  <span>{note.detail}</span>
+                </article>
+              ))}
+            </div>
+          </section>
+
+          <section className="patient-link-section">
+            <h3>History</h3>
+            <div className="patient-link-list">
+              {visibleHistory.map((event) => (
+                <article key={`${event.title}-${event.detail}`}>
+                  <strong>{event.title}</strong>
+                  <span>{event.detail}</span>
+                </article>
+              ))}
+            </div>
+          </section>
+
+          <section className="patient-link-section">
+            <h3>Finance and documents</h3>
+            <dl className="profile-detail-list finance-detail-list">
+              <div><dt>Outstanding balance</dt><dd>{formatMoney(patient.balance)}</dd></div>
+              <div><dt>Payment status</dt><dd>{patient.balance > 0 ? 'Outstanding' : 'Paid up'}</dd></div>
+              <div><dt>Consent forms</dt><dd>{patient.consentStatus}</dd></div>
+              <div><dt>Reports</dt><dd>{patient.reportStatus}</dd></div>
+            </dl>
+          </section>
+        </div>
+      </section>
+    </main>
   )
 }
 
