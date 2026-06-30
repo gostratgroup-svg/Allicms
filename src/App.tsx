@@ -50,13 +50,7 @@ const roles: Array<{
     role: 'Admin',
     scope: 'Practice admin workspace',
     description: 'The tenant-level owner or practice manager. Admin may also be a therapist, or may manage a team of therapists.',
-    permissions: [
-      'Activate therapists',
-      'Activate receptionists',
-      'Manage practice settings',
-      'View finances',
-      'Access all practice information',
-    ],
+    permissions: [],
   },
   {
     role: 'Reception',
@@ -341,11 +335,36 @@ const shouldShowGuardianInList = (patientType: string) => ['Child', 'Teen'].incl
 const patientWorkspaceTabs = ['Personal Details', 'Notes', 'Sessions', 'Finance', 'Documents & Reports', 'History'] as const
 type PatientWorkspaceTab = (typeof patientWorkspaceTabs)[number]
 type Patient = (typeof patients)[number]
+type SessionInvoiceDetail = CalendarSession & {
+  invoiceId?: string
+  price: number
+  isConfirmed: boolean
+}
 const noteTypeOptions = [
   { label: 'Session Feedback', visibility: 'Available to patient link' },
   { label: 'Session Process Note', visibility: 'Internal only' },
   { label: 'Case Management', visibility: 'Internal only' },
 ] as const
+
+function buildSessionInvoiceDetails(calendarSessions: CalendarSession[], confirmedSessionInvoices: string[]): SessionInvoiceDetail[] {
+  return calendarSessions.map((session) => {
+    const matchingDailySession = sessions.find((item) => item.patient === session.patient && item.time === session.startTime)
+    const matchingPatientInvoice = invoices.find((invoice) => invoice.patient === session.patient)
+    const billingItem = billingItems.find((item) =>
+      session.type.toLowerCase().includes(item.sessionType.split(' ')[0].toLowerCase()) ||
+      item.sessionType.toLowerCase().includes(session.type.toLowerCase()),
+    )
+    const confirmedInvoiceId = matchingDailySession?.invoice.startsWith('INV-')
+      ? matchingDailySession.invoice
+      : matchingPatientInvoice?.id
+    return {
+      ...session,
+      invoiceId: confirmedInvoiceId,
+      price: matchingDailySession?.amount ?? billingItem?.price ?? 780,
+      isConfirmed: Boolean(confirmedInvoiceId) || confirmedSessionInvoices.includes(session.id),
+    }
+  })
+}
 
 function App() {
   const [view, setView] = useState<View>('overview')
@@ -357,6 +376,7 @@ function App() {
   const [calendarSessionRecords, setCalendarSessionRecords] = useState<CalendarSession[]>(weekSessions)
   const [selectedCalendarSessionId, setSelectedCalendarSessionId] = useState(weekSessions[0]?.id ?? '')
   const [selectedPatientName, setSelectedPatientName] = useState(patients[0].name)
+  const [confirmedSessionInvoices, setConfirmedSessionInvoices] = useState<string[]>([])
   const patientLinkMatch = window.location.hash.match(/^#\/patient-link\/([^/]+)\/([^/]+)$/)
 
   const openNewSession = (slot?: SessionSlot) => {
@@ -422,6 +442,26 @@ function App() {
       [patient.name, patient.phone, patient.guardian, patient.medicalAid].some((item) => item.toLowerCase().includes(needle)),
     )
   }, [patientRecords, query])
+  const todayIso = '2026-06-30'
+  const todaySessions = calendarSessionRecords.filter((session) => session.date === todayIso)
+  const todaySessionsNeedingNotes = todaySessions.filter((session) => {
+    const patient = patientRecords.find((record) => record.name === session.patient)
+    return !patient?.notes.some((note) => note.date === session.date)
+  })
+  const feedbackDue = todaySessionsNeedingNotes.length
+  const outstandingInvoiceTotal = invoices.reduce((total, invoice) => total + invoice.total - invoice.paid, 0)
+  const sessionInvoiceDetails = buildSessionInvoiceDetails(calendarSessionRecords, confirmedSessionInvoices)
+  const sessionsNeedingInvoiceConfirmation = sessionInvoiceDetails.filter((session) => !session.isConfirmed)
+  const confirmSessionInvoice = (sessionId: string) => {
+    setConfirmedSessionInvoices((current) => current.includes(sessionId) ? current : [...current, sessionId])
+  }
+  const patientAlertCount = patientRecords.reduce((total, patient) => {
+    const hasPatientAlert = !['consent signed', ''].includes(patient.alert.toLowerCase())
+    const hasConsentAlert = patient.consentStatus.toLowerCase() !== 'signed'
+    const hasBalanceAlert = patient.balance > 0
+    const hasReportAlert = ['due', 'pending', 'overdue'].some((term) => patient.reportStatus.toLowerCase().includes(term))
+    return total + [hasPatientAlert, hasConsentAlert, hasBalanceAlert, hasReportAlert].filter(Boolean).length
+  }, 0)
 
   if (patientLinkMatch) {
     const [, linkTenantId, linkPatientNumber] = patientLinkMatch
@@ -490,13 +530,33 @@ function App() {
         {view !== 'settings' && role !== 'Super Admin' && (
           <>
             <section className="admin-strip" aria-label="Practice health">
-              <Metric label="Today's sessions" value="18" detail="4 still need notes" />
-              <Metric label="Reports due" value="7" detail="3 parent reports overdue" />
-              <Metric label="Outstanding" value={formatMoney(5310)} detail="session-linked balances" />
-              <Metric label="Patient alerts" value="9" detail="risk, consent and admin flags" />
+              <Metric label="Today's sessions" value={String(todaySessions.length)} detail={`${todaySessionsNeedingNotes.length} still need notes`} />
+              <Metric label="Feedback due" value={String(feedbackDue)} detail={`${feedbackDue} session feedback items outstanding`} />
+              <Metric label="Outstanding" value={formatMoney(outstandingInvoiceTotal)} detail="session-linked balances" />
+              <Metric label="Patient alerts" value={String(patientAlertCount)} detail="risk, consent and admin flags" />
             </section>
 
-            {view === 'overview' && <Overview role={role} />}
+            {view === 'overview' && (
+              <Overview
+                role={role}
+                calendarSessions={calendarSessionRecords}
+                pendingInvoiceSessions={sessionsNeedingInvoiceConfirmation}
+                onOpenFinances={() => setView('finances')}
+                onUpdateSession={(updatedSession) => {
+                  setCalendarSessionRecords((records) =>
+                    records.map((session) => (session.id === updatedSession.id ? updatedSession : session)),
+                  )
+                }}
+                onOpenPatientProfile={(patientName) => {
+                  setSelectedPatientName(patientName)
+                  setQuery('')
+                  setView('patients')
+                }}
+                onMarkNoShow={markSessionNoShow}
+                onCancelSession={cancelSession}
+                onSavePatientNote={addPatientNote}
+              />
+            )}
             {view === 'sessions' && (
               <Sessions
                 calendarSessions={calendarSessionRecords}
@@ -528,7 +588,12 @@ function App() {
                 setPatientRecords={setPatientRecords}
               />
             )}
-            {view === 'finances' && <Finances />}
+            {view === 'finances' && (
+              <Finances
+                sessionInvoiceDetails={sessionInvoiceDetails}
+                onConfirmSessionInvoice={confirmSessionInvoice}
+              />
+            )}
           </>
         )}
       </main>
@@ -905,8 +970,8 @@ function NewSessionModal({
                     <strong>{day.date}</strong>
                   </div>
                 ))}
-                {scheduleTimes.filter((_, index) => index % 2 === 0).map((time) => (
-                  <span className="quick-calendar-time" style={{ gridRow: `${scheduleSlotRow(time)} / span 2` }} key={time}>
+                {calendarHours.map((time) => (
+                  <span className="quick-calendar-time" style={{ gridRow: timeToCalendarRow(time) }} key={time}>
                     {time}
                   </span>
                 ))}
@@ -1019,44 +1084,127 @@ function Metric({ label, value, detail }: { label: string; value: string; detail
   )
 }
 
-function Overview({ role }: { role: string }) {
+function Overview({
+  role,
+  calendarSessions,
+  pendingInvoiceSessions,
+  onOpenFinances,
+  onUpdateSession,
+  onOpenPatientProfile,
+  onMarkNoShow,
+  onCancelSession,
+  onSavePatientNote,
+}: {
+  role: string
+  calendarSessions: CalendarSession[]
+  pendingInvoiceSessions: SessionInvoiceDetail[]
+  onOpenFinances: () => void
+  onUpdateSession: (session: CalendarSession) => void
+  onOpenPatientProfile: (patientName: string) => void
+  onMarkNoShow: (session: CalendarSession) => void
+  onCancelSession: (session: CalendarSession, shouldReschedule: boolean) => void
+  onSavePatientNote: (patientName: string, note: PatientNote) => void
+}) {
+  const [selectedDayIso, setSelectedDayIso] = useState('2026-06-30')
+  const [selectedOverviewSessionId, setSelectedOverviewSessionId] = useState('')
+  const [isOverviewSessionOpen, setIsOverviewSessionOpen] = useState(false)
+  const [isOverviewSessionEditMode, setIsOverviewSessionEditMode] = useState(false)
+  const selectedDate = parseIsoDate(selectedDayIso)
+  const selectedDayLabel = selectedDayIso === '2026-06-30'
+    ? 'Today'
+    : `${dayLabels[selectedDate.getUTCDay()]} ${selectedDate.getUTCDate()} ${monthLabels[selectedDate.getUTCMonth()]}`
+  const overviewDaySessions = calendarSessions
+    .filter((session) => session.date === selectedDayIso)
+    .sort((a, b) => timeToMinutes(a.startTime) - timeToMinutes(b.startTime))
+  const selectedOverviewSession = calendarSessions.find((session) => session.id === selectedOverviewSessionId)
+
   return (
     <div className="page-grid overview-grid">
-      <section className="panel span-2">
+      <section className="panel overview-command-panel">
         <div className="panel-heading">
           <div>
-            <p>Today</p>
+            <p>{selectedDayLabel}</p>
             <h2>Sessions command centre</h2>
           </div>
-          <button>Book session</button>
+          <div className="calendar-nav-pill overview-day-controls" aria-label="Day navigation">
+            <button type="button" onClick={() => setSelectedDayIso(toIsoDate(addDays(parseIsoDate(selectedDayIso), -1)))} aria-label="Previous day">
+              &lt;
+            </button>
+            <span>{selectedDayIso === '2026-06-30' ? 'Today' : selectedDayLabel}</span>
+            <button type="button" onClick={() => setSelectedDayIso(toIsoDate(addDays(parseIsoDate(selectedDayIso), 1)))} aria-label="Next day">
+              &gt;
+            </button>
+          </div>
         </div>
-        <div className="session-list">
-          {sessions.map((session) => (
-            <article className="session-row" key={`${session.time}-${session.patient}`}>
-              <time>{session.time}</time>
-              <div>
-                <strong>{session.patient}</strong>
-                <span>{session.type} · {session.therapist} · {session.room}</span>
-              </div>
-              <Status label={session.status} />
-            </article>
+        <div className="overview-day-calendar" aria-label={`${selectedDayLabel} sessions`}>
+          <div className="overview-day-corner" />
+          <div className="overview-day-head">
+            <span>{selectedDayLabel}</span>
+          </div>
+          {calendarHours.map((time, index) => (
+            <div className="overview-calendar-time" style={{ gridRow: index * 4 + 2 }} key={time}>
+              {time}
+            </div>
           ))}
+          {calendarSlots.map((slot) => (
+            <div className="overview-calendar-slot" style={{ gridRow: slot.row }} key={slot.time} />
+          ))}
+          {overviewDaySessions.map((session) => (
+            <button
+              type="button"
+              className="overview-calendar-session"
+              style={{
+                gridRow: `${timeToCalendarRow(session.startTime)} / span ${sessionRowSpan(session.startTime, session.endTime)}`,
+                ...therapistCalendarStyle(session.therapist),
+              }}
+              key={session.id}
+              onClick={() => {
+                setSelectedOverviewSessionId(session.id)
+                setIsOverviewSessionEditMode(false)
+                setIsOverviewSessionOpen(true)
+              }}
+            >
+              <strong>{session.patient}</strong>
+              <span>{session.startTime}-{session.endTime}</span>
+              <small>{session.type} · {session.therapist} · {session.room}</small>
+            </button>
+          ))}
+          {!overviewDaySessions.length && (
+            <div className="overview-calendar-empty">
+              No sessions booked for this day.
+            </div>
+          )}
         </div>
       </section>
 
-      <section className="panel">
+      <section className="panel overview-task-panel">
         <div className="panel-heading">
           <div>
-            <p>Quick actions</p>
-            <h2>Daily admin</h2>
+            <p>Outstanding task</p>
+            <h2>Confirm invoices</h2>
           </div>
+          <strong>{pendingInvoiceSessions.length}</strong>
         </div>
-        <div className="action-grid">
-          <button>Register patient</button>
-          <button>Send reminders</button>
-          <button>Create report</button>
-          <button>Capture payment</button>
+        <div className="overview-task-list">
+          {pendingInvoiceSessions.length ? (
+            pendingInvoiceSessions.slice(0, 4).map((session) => (
+              <article key={session.id}>
+                <div>
+                  <strong>{session.patient}</strong>
+                  <span>{session.date} · {session.startTime}-{session.endTime}</span>
+                </div>
+                <b>{formatMoney(session.price)}</b>
+              </article>
+            ))
+          ) : (
+            <p className="quiet">No invoices waiting for confirmation.</p>
+          )}
         </div>
+        {pendingInvoiceSessions.length > 0 && (
+          <button type="button" className="overview-task-action" onClick={onOpenFinances}>
+            Review in Finance
+          </button>
+        )}
       </section>
 
       <section className="panel">
@@ -1076,31 +1224,27 @@ function Overview({ role }: { role: string }) {
         </div>
       </section>
 
-      <section className="panel">
-        <div className="panel-heading">
-          <div>
-            <p>Recent activity</p>
-            <h2>Audit trail</h2>
-          </div>
-        </div>
-        <ol className="activity-list">
-          {activity.map((item) => (
-            <li key={item}>{item}</li>
-          ))}
-        </ol>
-      </section>
-
       <PatientPortal />
 
-      <section className="panel">
-        <div className="panel-heading">
-          <div>
-            <p>Role preview</p>
-            <h2>{role} permissions</h2>
-          </div>
-        </div>
-        <Permissions role={role} />
-      </section>
+      {isOverviewSessionOpen && selectedOverviewSession && (
+        <SessionDetailModal
+          session={selectedOverviewSession}
+          isEditing={isOverviewSessionEditMode}
+          setIsEditing={setIsOverviewSessionEditMode}
+          onChange={onUpdateSession}
+          onOpenPatientProfile={onOpenPatientProfile}
+          onMarkNoShow={(session) => {
+            onMarkNoShow(session)
+            setIsOverviewSessionOpen(false)
+          }}
+          onCancelSession={(session, shouldReschedule) => {
+            onCancelSession(session, shouldReschedule)
+            setIsOverviewSessionOpen(false)
+          }}
+          onSavePatientNote={onSavePatientNote}
+          onClose={() => setIsOverviewSessionOpen(false)}
+        />
+      )}
     </div>
   )
 }
@@ -1218,10 +1362,10 @@ const calendarHours = ['08:00', '09:00', '10:00', '11:00', '12:00', '13:00', '14
 const calendarQuarterSlots = buildTimeSlots('08:00', '16:00', 15)
 const calendarSlots = calendarQuarterSlots.map((time) => ({ time, row: timeToCalendarRow(time) }))
 const weekSessions = [
-  { id: 'cal-1', date: '2026-06-29', startTime: '08:30', endTime: '09:30', patient: 'Liam Jacobs', type: 'OT', therapist: 'Nadia Botha', room: 'Room 2' },
+  { id: 'cal-1', date: '2026-06-30', startTime: '08:30', endTime: '09:30', patient: 'Liam Jacobs', type: 'OT', therapist: 'Nadia Botha', room: 'Room 2' },
   { id: 'cal-2', date: '2026-06-30', startTime: '10:00', endTime: '11:00', patient: 'Amahle Dlamini', type: 'Speech', therapist: 'Megan Pillay', room: 'Telehealth' },
-  { id: 'cal-3', date: '2026-07-01', startTime: '12:15', endTime: '13:15', patient: 'Ethan Naidoo', type: 'Review', therapist: 'Nadia Botha', room: 'Room 1' },
-  { id: 'cal-4', date: '2026-07-02', startTime: '14:15', endTime: '15:15', patient: 'Mila van Wyk', type: 'Physio', therapist: 'Johan Kruger', room: 'Gym' },
+  { id: 'cal-3', date: '2026-06-30', startTime: '12:15', endTime: '13:15', patient: 'Ethan Naidoo', type: 'Review', therapist: 'Nadia Botha', room: 'Room 1' },
+  { id: 'cal-4', date: '2026-06-30', startTime: '15:00', endTime: '16:00', patient: 'Mila van Wyk', type: 'Physio', therapist: 'Johan Kruger', room: 'Gym' },
   { id: 'cal-5', date: '2026-07-03', startTime: '09:30', endTime: '10:30', patient: 'Jenny Pennig', type: 'OT', therapist: 'Nadia Botha', room: 'Room 2' },
   { id: 'cal-6', date: '2026-07-03', startTime: '10:30', endTime: '11:30', patient: 'Joe Peterson', type: 'Speech', therapist: 'Megan Pillay', room: 'Room 1' },
   { id: 'cal-7', date: '2026-07-03', startTime: '12:00', endTime: '13:00', patient: 'Olivia Riley', type: 'Review', therapist: 'Nadia Botha', room: 'Room 1' },
@@ -1283,13 +1427,15 @@ function Sessions({
             <h2>{calendarMode === 'week' ? 'Week schedule' : 'Month calendar'}</h2>
           </div>
           <div className="calendar-controls">
-            <button type="button" className="calendar-arrow" onClick={() => navigateCalendar(-1)} aria-label="Previous">
-              &lt;
-            </button>
-            <span className="calendar-active-view">{calendarMode === 'week' ? 'Week' : 'Month'}</span>
-            <button type="button" className="calendar-arrow" onClick={() => navigateCalendar(1)} aria-label="Next">
-              &gt;
-            </button>
+            <div className="calendar-nav-pill" aria-label="Calendar navigation">
+              <button type="button" className="calendar-arrow" onClick={() => navigateCalendar(-1)} aria-label="Previous">
+                &lt;
+              </button>
+              <span className="calendar-active-view">{calendarMode === 'week' ? 'Week' : 'Month'}</span>
+              <button type="button" className="calendar-arrow" onClick={() => navigateCalendar(1)} aria-label="Next">
+                &gt;
+              </button>
+            </div>
             <button
               type="button"
               className="calendar-view-switch"
@@ -1309,7 +1455,7 @@ function Sessions({
               </div>
             ))}
             {calendarHours.map((time, index) => (
-              <div className="calendar-time" style={{ gridRow: `${index * 2 + 2} / span 2` }} key={time}>
+              <div className="calendar-time" style={{ gridRow: index * 4 + 2 }} key={time}>
                 {time}
               </div>
             ))}
@@ -2132,8 +2278,24 @@ function PatientLinkPage({
   sessions: typeof sessions
   onUpdatePatientField: (field: keyof Patient, value: string) => void
 }) {
+  type PatientLinkSection = 'personal' | 'sessions' | 'feedback' | 'finance' | 'history'
   const [isPersonalEditMode, setIsPersonalEditMode] = useState(false)
+  const [isNoticeSessionOpen, setIsNoticeSessionOpen] = useState(false)
+  const [isCompletedSessionOpen, setIsCompletedSessionOpen] = useState(false)
+  const [activePatientLinkSection, setActivePatientLinkSection] = useState<PatientLinkSection>('personal')
   const patientFeedbackNotes = patient.notes.filter((note) => note.noteType === 'Session Feedback')
+  const patientLinkSessions = patientSessions.length ? patientSessions : sessions.slice(0, 1)
+  const noticeSession = patientLinkSessions[0]
+  const completedSessionNote = patientFeedbackNotes[0] ?? { noteType: 'Session Feedback', date: patient.lastSession, detail: 'Goals and progress reviewed.' }
+  const completedSessionInvoice = invoices.find((invoice) => invoice.patient === patient.name)
+  const sessionFeedbackDetail = noticeSession ? `${patient.lastSession} · ${noticeSession.time}` : `${patient.lastSession} · session time`
+  const patientLinkSections: Array<{ id: PatientLinkSection; label: string }> = [
+    { id: 'personal', label: 'Personal Details' },
+    { id: 'sessions', label: 'Sessions' },
+    { id: 'feedback', label: 'Feedback' },
+    { id: 'finance', label: 'Finance' },
+    { id: 'history', label: 'History' },
+  ]
   const visibleHistory = [
     ...patient.historyEvents.filter((event) => event.visibility !== 'Internal only'),
     {
@@ -2153,6 +2315,31 @@ function PatientLinkPage({
     },
   ]
   const patientInvoice = invoices.find((invoice) => invoice.patient === patient.name && invoice.total > invoice.paid)
+  const patientFinanceItems = [
+    {
+      title: 'March statement',
+      detail: 'Monthly statement',
+      amount: 0,
+      status: 'Paid',
+    },
+    ...(patientInvoice
+      ? [
+          {
+            title: `${patientInvoice.id} session invoice`,
+            detail: patientInvoice.age,
+            amount: patientInvoice.total - patientInvoice.paid,
+            status: 'Unpaid',
+          },
+        ]
+      : [
+          {
+            title: 'Latest session invoice',
+            detail: 'No outstanding invoice',
+            amount: 0,
+            status: 'Paid',
+          },
+        ]),
+  ]
   const patientInvoiceAge = patientInvoice ? Number.parseInt(patientInvoice.age, 10) : 0
   const isPatientProfileIncomplete =
     patient.alert === 'Patient link incomplete' ||
@@ -2168,7 +2355,7 @@ function PatientLinkPage({
       ? { title: 'Personal details incomplete', detail: 'Please complete the remaining profile details.', action: 'Update profile', urgent: true }
       : null,
     patient.nextSession && patient.nextSession !== 'No completed sessions'
-      ? { title: 'Upcoming session', detail: patient.nextSession, action: 'View sessions', urgent: false }
+      ? { title: 'Upcoming session', detail: patient.nextSession, action: 'View Sessions', urgent: false }
       : null,
     patientFeedbackNotes.length
       ? { title: 'Session feedback', detail: patientFeedbackNotes[0].detail, action: 'View feedback', urgent: false }
@@ -2214,13 +2401,42 @@ function PatientLinkPage({
                       <strong>{notice.title}</strong>
                       <span>{notice.detail}</span>
                     </div>
-                    <a href={`#${notice.action.toLowerCase().replaceAll(' ', '-')}`}>{notice.action}</a>
+                    {notice.action === 'View Sessions' ? (
+                      <button type="button" onClick={() => setIsNoticeSessionOpen((current) => !current)}>
+                        {notice.action}
+                      </button>
+                    ) : (
+                      <a href={`#${notice.action.toLowerCase().replaceAll(' ', '-')}`}>{notice.action}</a>
+                    )}
                   </article>
                 ))}
+                {isNoticeSessionOpen && noticeSession && (
+                  <article className="patient-link-notice-session-card">
+                    <div>
+                      <strong>{noticeSession.type}</strong>
+                      <span>{noticeSession.time} · {noticeSession.therapist}</span>
+                      <small>{noticeSession.room} · {noticeSession.status}</small>
+                    </div>
+                  </article>
+                )}
               </div>
             </section>
           )}
 
+          <nav className="patient-link-quick-nav" aria-label="Patient link sections">
+            {patientLinkSections.map((section) => (
+              <button
+                type="button"
+                className={activePatientLinkSection === section.id ? 'active' : ''}
+                onClick={() => setActivePatientLinkSection(section.id)}
+                key={section.id}
+              >
+                {section.label}
+              </button>
+            ))}
+          </nav>
+
+          {activePatientLinkSection === 'personal' && (
           <section className="patient-link-section">
             <div className="patient-link-section-header">
               <h3>Personal details</h3>
@@ -2234,27 +2450,81 @@ function PatientLinkPage({
                 <PencilIcon />
               </button>
             </div>
-            <dl className="profile-detail-list">
-              <EditableDetail label="Patient name" value={patient.name} isEditing={isPersonalEditMode} onChange={(value) => onUpdatePatientField('name', value)} />
-              <EditableDetail label="Cell number" value={patient.phone} isEditing={isPersonalEditMode} onChange={(value) => onUpdatePatientField('phone', value)} />
-              <EditableDetail label="Email address" value={patient.guardianEmail} isEditing={isPersonalEditMode} onChange={(value) => onUpdatePatientField('guardianEmail', value)} />
-              <EditableDetail label="Residential address" value={patient.residentialAddress} isEditing={isPersonalEditMode} onChange={(value) => onUpdatePatientField('residentialAddress', value)} />
-              <EditableDetail label={shouldShowGuardianInList(patient.type) ? 'Parent / guardian' : 'Secondary contact'} value={patient.guardian} isEditing={isPersonalEditMode} onChange={(value) => onUpdatePatientField('guardian', value)} />
-              <EditableDetail label="Emergency contact" value={patient.emergencyContact} isEditing={isPersonalEditMode} onChange={(value) => onUpdatePatientField('emergencyContact', value)} />
-            </dl>
-          </section>
+            <div className="profile-section-grid patient-link-profile-grid">
+              <section>
+                <h3>Patient Details</h3>
+                <dl className="profile-detail-list">
+                  <EditableDetail label="Patient name" value={patient.name} isEditing={isPersonalEditMode} onChange={(value) => onUpdatePatientField('name', value)} />
+                  <EditableDetail label="Patient number" value={patient.patientNumber} isEditing={isPersonalEditMode} onChange={(value) => onUpdatePatientField('patientNumber', value)} />
+                  <EditableDetail label="Title" value={patient.title} isEditing={isPersonalEditMode} onChange={(value) => onUpdatePatientField('title', value)} />
+                  <EditableDetail label="Date of birth" value={patient.dateOfBirth} isEditing={isPersonalEditMode} onChange={(value) => onUpdatePatientField('dateOfBirth', value)} />
+                  <EditableDetail label="ID number" value={patient.idNumber} isEditing={isPersonalEditMode} onChange={(value) => onUpdatePatientField('idNumber', value)} />
+                  <EditableDetail label="Residential address" value={patient.residentialAddress} isEditing={isPersonalEditMode} onChange={(value) => onUpdatePatientField('residentialAddress', value)} />
+                  <EditableDetail label="Cell number" value={patient.phone} isEditing={isPersonalEditMode} onChange={(value) => onUpdatePatientField('phone', value)} />
+                  <EditableDetail label="Referring doctor" value={patient.referralSource} isEditing={isPersonalEditMode} onChange={(value) => onUpdatePatientField('referralSource', value)} />
+                </dl>
+              </section>
 
+              <section>
+                <h3>{shouldShowGuardianInList(patient.type) ? 'Parent / Guardian Info' : 'Contact Info'}</h3>
+                <dl className="profile-detail-list">
+                  <EditableDetail label={shouldShowGuardianInList(patient.type) ? 'Parent / guardian' : 'Secondary contact'} value={patient.guardian} isEditing={isPersonalEditMode} onChange={(value) => onUpdatePatientField('guardian', value)} />
+                  <EditableDetail label="Mobile" value={patient.phone} isEditing={isPersonalEditMode} onChange={(value) => onUpdatePatientField('phone', value)} />
+                  <EditableDetail label="Email address" value={patient.guardianEmail} isEditing={isPersonalEditMode} onChange={(value) => onUpdatePatientField('guardianEmail', value)} />
+                  <EditableDetail label="Occupation" value={patient.guardianOccupation} isEditing={isPersonalEditMode} onChange={(value) => onUpdatePatientField('guardianOccupation', value)} />
+                  <EditableDetail label="Employer" value={patient.guardianEmployer} isEditing={isPersonalEditMode} onChange={(value) => onUpdatePatientField('guardianEmployer', value)} />
+                  <EditableDetail label="Postal address" value={patient.guardianPostalAddress} isEditing={isPersonalEditMode} onChange={(value) => onUpdatePatientField('guardianPostalAddress', value)} />
+                  <EditableDetail label="Home tel" value={patient.homeTel} isEditing={isPersonalEditMode} onChange={(value) => onUpdatePatientField('homeTel', value)} />
+                  <EditableDetail label="Work tel" value={patient.workTel} isEditing={isPersonalEditMode} onChange={(value) => onUpdatePatientField('workTel', value)} />
+                  <EditableDetail label="Emergency contact" value={patient.emergencyContact} isEditing={isPersonalEditMode} onChange={(value) => onUpdatePatientField('emergencyContact', value)} />
+                  <EditableDetail label="Practice no." value={patient.practiceNo} isEditing={isPersonalEditMode} onChange={(value) => onUpdatePatientField('practiceNo', value)} />
+                </dl>
+              </section>
+
+              <section>
+                <h3>Medical Aid Details</h3>
+                <dl className="profile-detail-list">
+                  <EditableDetail label="Medical aid" value={patient.medicalAid} isEditing={isPersonalEditMode} onChange={(value) => onUpdatePatientField('medicalAid', value)} />
+                  <EditableDetail label="Plan / option" value={patient.medicalAidPlan} isEditing={isPersonalEditMode} onChange={(value) => onUpdatePatientField('medicalAidPlan', value)} />
+                  <EditableDetail label="Medical aid no." value={patient.medicalAid} isEditing={isPersonalEditMode} onChange={(value) => onUpdatePatientField('medicalAid', value)} />
+                  <EditableDetail label="Member responsible" value={patient.guardian} isEditing={isPersonalEditMode} onChange={(value) => onUpdatePatientField('guardian', value)} />
+                  <EditableDetail label="Dependent" value={patient.name} isEditing={isPersonalEditMode} onChange={(value) => onUpdatePatientField('name', value)} />
+                  <EditableDetail label="Next of kin" value={patient.emergencyContact} isEditing={isPersonalEditMode} onChange={(value) => onUpdatePatientField('emergencyContact', value)} />
+                </dl>
+              </section>
+
+              <section>
+                <h3>Consent & Account Responsibility</h3>
+                <dl className="profile-detail-list">
+                  <EditableDetail label="Medical aid consent" value={patient.consentStatus} isEditing={isPersonalEditMode} onChange={(value) => onUpdatePatientField('consentStatus', value)} />
+                  <EditableDetail label="Therapy consent" value={patient.consentStatus} isEditing={isPersonalEditMode} onChange={(value) => onUpdatePatientField('consentStatus', value)} />
+                  <EditableDetail label="Account responsibility" value={patient.accountResponsibility} isEditing={isPersonalEditMode} onChange={(value) => onUpdatePatientField('accountResponsibility', value)} />
+                  <EditableDetail label="Date signed" value={patient.dateSigned} isEditing={isPersonalEditMode} onChange={(value) => onUpdatePatientField('dateSigned', value)} />
+                  <div><dt>Outstanding balance</dt><dd>{formatMoney(patient.balance)}</dd></div>
+                  <EditableDetail label="Signed by" value={patient.guardian} isEditing={isPersonalEditMode} onChange={(value) => onUpdatePatientField('guardian', value)} />
+                </dl>
+              </section>
+            </div>
+          </section>
+          )}
+
+          {activePatientLinkSection === 'sessions' && (
           <section className="patient-link-section">
             <h3>Sessions</h3>
             <div className="patient-link-session-groups">
               <div className="patient-link-session-group">
                 <h4>Planned sessions</h4>
                 <div className="patient-link-list">
-                  {(patientSessions.length ? patientSessions : sessions.slice(0, 1)).map((session) => (
-                    <article className="patient-link-session-card" key={`${patient.patientNumber}-planned-${session.time}`}>
-                      <strong>{session.type}</strong>
-                      <span>{session.time} · {session.therapist}</span>
-                      <small>{session.room} · {session.status}</small>
+                  {patientLinkSessions.map((session) => (
+                    <article
+                      className="patient-link-session-card planned"
+                      key={`${patient.patientNumber}-planned-${session.time}`}
+                      style={therapistCalendarStyle(session.therapist)}
+                    >
+                      <strong>{session.patient}</strong>
+                      <span>{session.time}</span>
+                      <small>{session.type} · {session.therapist}</small>
+                      <em>{session.room} · {session.status}</em>
                     </article>
                   ))}
                 </div>
@@ -2262,57 +2532,176 @@ function PatientLinkPage({
               <div className="patient-link-session-group">
                 <h4>Sessions completed</h4>
                 <div className="patient-link-list">
-                  <article className="patient-link-session-card">
+                  <button
+                    type="button"
+                    className="patient-link-session-card completed"
+                    onClick={() => setIsCompletedSessionOpen(true)}
+                  >
                     <strong>{patient.lastSession}</strong>
                     <span>{patient.therapist} · Attendance confirmed</span>
                     <small>Feedback and progress visible in the Feedback section.</small>
-                  </article>
+                  </button>
                 </div>
               </div>
             </div>
           </section>
+          )}
 
+          {isCompletedSessionOpen && (
+            <PatientLinkCompletedSessionModal
+              patient={patient}
+              session={noticeSession}
+              note={completedSessionNote}
+              invoice={completedSessionInvoice}
+              onClose={() => setIsCompletedSessionOpen(false)}
+            />
+          )}
+
+          {activePatientLinkSection === 'feedback' && (
           <section className="patient-link-section">
             <h3>Feedback</h3>
-            <div className="patient-link-list">
+            <div className="patient-link-feedback-list">
               {(patientFeedbackNotes.length ? patientFeedbackNotes : [{ noteType: 'Session Feedback', date: patient.lastSession, detail: 'Goals and progress reviewed.' }]).map((note, index) => (
-                <article key={`${note.noteType}-${note.date}-${index}`}>
-                  <strong>{note.noteType} · {note.date}</strong>
+                <article className="patient-link-feedback-bubble" key={`${note.noteType}-${note.date}-${index}`}>
+                  <strong>{note.noteType}<small>{sessionFeedbackDetail}</small></strong>
                   <span>{note.detail}</span>
+                  <time>{note.date}</time>
                 </article>
               ))}
             </div>
           </section>
+          )}
 
+          {activePatientLinkSection === 'finance' && (
+          <section className="patient-link-section">
+            <h3>Finance and Billing</h3>
+            <div className="patient-link-finance-dashboard">
+              <div className="finance-dashboard-summary">
+                <span>Outstanding payments</span>
+                <strong>{formatMoney(patient.balance)}</strong>
+                <small>{patient.balance > 0 ? 'Payment still required' : 'No payments outstanding'}</small>
+              </div>
+              <div className="patient-link-finance-list">
+                {patientFinanceItems.map((item) => (
+                  <article className={item.status === 'Unpaid' ? 'unpaid' : ''} key={`${item.title}-${item.status}`}>
+                    <div>
+                      <strong>{item.title}</strong>
+                      <span>{item.detail}</span>
+                    </div>
+                    <div>
+                      <strong>{formatMoney(item.amount)}</strong>
+                      <em>{item.status}</em>
+                    </div>
+                  </article>
+                ))}
+              </div>
+            </div>
+          </section>
+          )}
+
+          {activePatientLinkSection === 'history' && (
           <section className="patient-link-section">
             <h3>History</h3>
-            <div className="patient-link-list">
+            <ul className="history-list patient-link-history-list">
               {visibleHistory.map((event) => (
-                <article key={`${event.title}-${event.detail}`}>
+                <li key={`${event.title}-${event.detail}`}>
                   <strong>{event.title}</strong>
+                  <em>{event.visibility}</em>
                   <span>{event.detail}</span>
-                </article>
+                </li>
               ))}
-            </div>
+            </ul>
           </section>
-
-          <section className="patient-link-section">
-            <h3>Finance and documents</h3>
-            <dl className="profile-detail-list finance-detail-list">
-              <div><dt>Outstanding balance</dt><dd>{formatMoney(patient.balance)}</dd></div>
-              <div><dt>Payment status</dt><dd>{patient.balance > 0 ? 'Outstanding' : 'Paid up'}</dd></div>
-              <div><dt>Consent forms</dt><dd>{patient.consentStatus}</dd></div>
-              <div><dt>Reports</dt><dd>{patient.reportStatus}</dd></div>
-            </dl>
-          </section>
+          )}
         </div>
       </section>
     </main>
   )
 }
 
-function Finances() {
+function PatientLinkCompletedSessionModal({
+  patient,
+  session,
+  note,
+  invoice,
+  onClose,
+}: {
+  patient: Patient
+  session?: (typeof sessions)[number]
+  note: PatientNote
+  invoice?: (typeof invoices)[number]
+  onClose: () => void
+}) {
+  const invoiceOutstanding = invoice ? invoice.total - invoice.paid : 0
+  const paymentStatus = invoice ? (invoiceOutstanding > 0 ? 'Awaiting payment' : 'Paid') : 'Not issued'
+
+  return (
+    <div className="modal-backdrop" role="presentation">
+      <section className="modal-window patient-link-session-modal" aria-label="Completed session details">
+        <div className="modal-header">
+          <div>
+            <p>Completed session</p>
+            <h2>{patient.name}</h2>
+          </div>
+          <button type="button" className="modal-close" onClick={onClose} aria-label="Close completed session">
+            x
+          </button>
+        </div>
+        <div className="modal-body patient-link-session-modal-body">
+          <div className="patient-link-completed-banner" style={therapistCalendarStyle(session?.therapist ?? patient.therapist)}>
+            <div>
+              <strong>{session?.type ?? 'Therapy session'}</strong>
+              <span>{patient.lastSession} · {session?.time ?? 'Time confirmed'}</span>
+            </div>
+            <small>{session?.therapist ?? patient.therapist}</small>
+          </div>
+
+          <section className="patient-link-modal-card">
+            <h3>Session detail</h3>
+            <dl className="session-modal-detail-grid">
+              <div><dt>Status</dt><dd>Completed</dd></div>
+              <div><dt>Attendance</dt><dd>Confirmed</dd></div>
+              <div><dt>Room / mode</dt><dd>{session?.room ?? 'Practice room'}</dd></div>
+              <div><dt>Therapist</dt><dd>{session?.therapist ?? patient.therapist}</dd></div>
+            </dl>
+          </section>
+
+          <section className="patient-link-modal-card">
+            <h3>Session note</h3>
+            <article className="patient-link-feedback-bubble compact">
+              <strong>{note.noteType}<small>{note.date} · {session?.time ?? 'session time'}</small></strong>
+              <span>{note.detail}</span>
+            </article>
+          </section>
+
+          <section className="patient-link-modal-card">
+            <h3>Finance and Billing</h3>
+            {invoice ? (
+              <dl className="session-modal-detail-grid">
+                <div><dt>Invoice number</dt><dd>{invoice.id}</dd></div>
+                <div><dt>Price</dt><dd>{formatMoney(invoice.total)}</dd></div>
+                <div><dt>Status</dt><dd>{paymentStatus}</dd></div>
+                <div><dt>Outstanding</dt><dd>{formatMoney(invoiceOutstanding)}</dd></div>
+              </dl>
+            ) : (
+              <p className="patient-link-empty-copy">No invoice has been shared for this completed session yet.</p>
+            )}
+          </section>
+        </div>
+      </section>
+    </div>
+  )
+}
+
+function Finances({
+  sessionInvoiceDetails,
+  onConfirmSessionInvoice,
+}: {
+  sessionInvoiceDetails: SessionInvoiceDetail[]
+  onConfirmSessionInvoice: (sessionId: string) => void
+}) {
   const outstanding = invoices.reduce((sum, invoice) => sum + invoice.total - invoice.paid, 0)
+  const sessionsNeedingInvoiceConfirmation = sessionInvoiceDetails.filter((session) => !session.isConfirmed)
 
   return (
     <div className="page-grid">
@@ -2322,10 +2711,41 @@ function Finances() {
       <section className="panel span-3">
         <div className="panel-heading">
           <div>
+            <p>Billing queue</p>
+            <h2>Confirm invoices</h2>
+          </div>
+        </div>
+        <div className="confirm-invoice-list">
+          {sessionsNeedingInvoiceConfirmation.length ? (
+            sessionsNeedingInvoiceConfirmation.map((session) => (
+              <article key={session.id}>
+                <div>
+                  <strong>{session.patient}</strong>
+                  <span>{session.date} · {session.startTime}-{session.endTime} · {session.type} · {session.therapist}</span>
+                </div>
+                <div>
+                  <b>{formatMoney(session.price)}</b>
+                  <small>No invoice yet</small>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => onConfirmSessionInvoice(session.id)}
+                >
+                  Confirm invoice
+                </button>
+              </article>
+            ))
+          ) : (
+            <p className="quiet">All session invoices have been confirmed.</p>
+          )}
+        </div>
+      </section>
+      <section className="panel span-3">
+        <div className="panel-heading">
+          <div>
             <p>Finance</p>
             <h2>Invoices and payments</h2>
           </div>
-          <button>Create invoice</button>
         </div>
         <div className="table finance-table">
           {invoices.map((invoice) => (
@@ -2347,11 +2767,11 @@ function Finances() {
           </div>
         </div>
         <div className="allocation-list">
-          {sessions.map((session) => (
-            <div key={session.patient}>
+          {sessionInvoiceDetails.map((session) => (
+            <div key={session.id}>
               <span>{session.patient}</span>
-              <strong>{session.invoice}</strong>
-              <small>{formatMoney(session.amount)}</small>
+              <strong>{session.isConfirmed ? session.invoiceId ?? 'Invoice confirmed' : 'No invoice yet'}</strong>
+              <small>{formatMoney(session.price)}</small>
             </div>
           ))}
         </div>
@@ -2444,7 +2864,11 @@ function Settings({ role, setRole }: { role: Role; setRole: (role: Role) => void
                     <h2>{role}</h2>
                   </div>
                 </div>
-                <Permissions role={role} />
+                <ul className="permission-list">
+                  {(roles.find((item) => item.role === role)?.permissions ?? []).map((permission) => (
+                    <li key={permission}>{permission}</li>
+                  ))}
+                </ul>
               </section>
               <section>
                 <div className="panel-heading compact-heading">
@@ -2489,7 +2913,6 @@ function Settings({ role, setRole }: { role: Role; setRole: (role: Role) => void
                 'Report templates',
                 'Reminder templates',
                 'Patient portal access',
-                'Audit log',
                 'Tenant branding',
                 'Default appointment length',
               ].map((setting) => (
@@ -2566,7 +2989,7 @@ function Settings({ role, setRole }: { role: Role; setRole: (role: Role) => void
               ['Session notes', 'Complete SOAP notes, process notes, goals and progress updates.'],
               ['Reports', 'Create parent, school, referral, progress and discharge reports.'],
               ['Finance flow', 'Create invoices, allocate payments and send statements.'],
-              ['Staff setup', 'Activate therapists and receptionists inside the practice tenant.'],
+              ['Staff setup', 'Manage practice team access inside the tenant.'],
             ].map(([title, detail]) => (
               <button className="how-to-card" key={title}>
                 <strong>{title}</strong>
@@ -2688,18 +3111,6 @@ function PatientPortal() {
         <button>Request booking change</button>
       </div>
     </section>
-  )
-}
-
-function Permissions({ role }: { role: string }) {
-  const permissions = roles.find((item) => item.role === role)?.permissions ?? []
-
-  return (
-    <ul className="permission-list">
-      {permissions.map((permission) => (
-        <li key={permission}>{permission}</li>
-      ))}
-    </ul>
   )
 }
 
