@@ -1578,6 +1578,17 @@ input {
   background: rgba(252, 132, 76, 0.07);
 }
 
+.confirm-invoice-session-card {
+  cursor: pointer;
+}
+
+.confirm-invoice-session-card:hover,
+.confirm-invoice-session-card:focus-visible {
+  border-color: rgba(252, 132, 76, 0.52);
+  background: rgba(252, 132, 76, 0.12);
+  outline: none;
+}
+
 .confirm-invoice-list article > div {
   display: grid;
   gap: 2px;
@@ -1612,6 +1623,406 @@ input {
   color: white;
   font-size: 0.74rem;
   font-weight: 900;
+}
+
+.invoice-workflow-list {
+  display: grid;
+  gap: 12px;
+}
+
+.invoice-workflow-list.compact {
+  gap: 8px;
+}
+
+.invoice-filter-controls {
+  display: flex;
+  align-items: center;
+  flex-wrap: nowrap;
+  justify-content: flex-end;
+  gap: 5px;
+  max-width: 100%;
+}
+
+.invoice-date-range {
+  flex: 0 0 auto;
+  min-height: 26px;
+  max-width: 132px;
+  padding: 0 8px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: #fbfbfe;
+  color: var(--indigo);
+  font-size: 0.68rem;
+  font-weight: 900;
+}
+
+.invoice-filter-controls button {
+  flex: 0 0 auto;
+  min-height: 26px;
+  padding: 0 9px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: #fbfbfe;
+  color: var(--indigo);
+  font-size: 0.68rem;
+  font-weight: 900;
+}
+
+.invoice-filter-controls button.active {
+  border-color: var(--indigo);
+  background: var(--indigo);
+  color: white;
+}
+
+.invoice-workflow-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto auto;
+  align-items: center;
+  gap: 9px;
+  padding: 9px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: white;
+}
+
+.invoice-workflow-row > div {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+}
+
+.invoice-workflow-row strong {
+  color: var(--ink);
+  font-size: 0.82rem;
+}
+
+.invoice-workflow-row span,
+.invoice-workflow-row small,
+.invoice-workflow-row em {
+  overflow: hidden;
+  color: var(--muted);
+  font-size: 0.68rem;
+  font-style: normal;
+  font-weight: 800;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.invoice-row-status {
+  justify-items: end;
+}
+
+.invoice-overdue-pill {
+  display: inline-flex;
+  min-height: 20px;
+  align-items: center;
+  padding: 0 7px;
+  border-radius: 999px;
+  background: rgba(214, 42, 42, 0.1);
+  color: #b42318 !important;
+  font-size: 0.64rem !important;
+}
+
+.invoice-statement-pill {
+  display: inline-flex;
+  min-height: 20px;
+  align-items: center;
+  padding: 0 7px;
+  border-radius: 999px;
+  background: rgba(153, 153, 237, 0.16);
+  color: var(--indigo) !important;
+  font-size: 0.64rem !important;
+}
+
+.invoice-row-actions {
+  display: flex !important;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 5px;
+}
+
+.invoice-row-actions button,
+.invoice-row-actions a,
+.payment-confirm-panel button {
+  min-height: 28px;
+  padding: 0 8px;
+  border-radius: 999px;
+  background: var(--lilac);
+  color: var(--indigo);
+  font-size: 0.68rem;
+  font-weight: 900;
+  text-decoration: none;
+}
+
+.invoice-row-actions button:hover,
+.invoice-row-actions a:hover,
+.payment-confirm-panel button:hover {
+  background: var(--indigo);
+  color: white;
+}
+
+.invoice-row-actions button.payment-received-active {
+  background: #116b3d;
+  color: white;
+}
+
+.invoice-row-actions .invoice-document-link {
+  display: inline-grid;
+  place-items: center;
+  min-height: 0;
+  width: 24px;
+  height: 24px;
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  color: var(--indigo);
+  box-shadow: none;
+}
+
+.invoice-row-actions .invoice-document-link:hover {
+  background: transparent;
+  color: var(--coral);
+}
+
+.invoice-row-actions .invoice-document-link svg {
+  width: 16px;
+  height: 16px;
+}
+
+.payment-confirm-panel {
+  grid-column: 1 / -1;
+  display: grid;
+  grid-template-columns: minmax(0, 1.2fr) minmax(96px, 0.55fr);
+  align-items: end;
+  gap: 8px;
+  padding: 8px;
+  border-radius: 8px;
+  background: #fbfbfe;
+}
+
+.payment-upload-area {
+  display: grid;
+  grid-template-columns: 24px minmax(0, 1fr);
+  align-items: center;
+  gap: 7px;
+  min-height: 48px;
+  padding: 7px;
+  border: 1px dashed rgba(117, 111, 173, 0.34);
+  border-radius: 8px;
+  background: white;
+}
+
+.payment-attachment-icon {
+  display: inline-grid;
+  place-items: center;
+  width: 24px;
+  height: 24px;
+  color: var(--indigo);
+  cursor: pointer;
+}
+
+.payment-attachment-icon input {
+  display: none;
+}
+
+.payment-attachment-icon svg {
+  width: 16px;
+  height: 16px;
+}
+
+.payment-upload-area > div {
+  display: grid;
+  gap: 3px;
+  min-width: 0;
+}
+
+.payment-upload-area strong {
+  overflow: hidden;
+  color: var(--ink);
+  font-size: 0.72rem;
+  font-weight: 900;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.payment-confirm-panel label {
+  display: grid;
+  gap: 4px;
+}
+
+.payment-confirm-panel span {
+  color: var(--muted);
+  font-size: 0.64rem;
+  font-weight: 900;
+  text-transform: uppercase;
+}
+
+.payment-confirm-panel .confirm-payment-button {
+  background: #116b3d;
+  color: white;
+}
+
+.payment-confirm-panel .confirm-payment-button:hover {
+  background: #0d5631;
+}
+
+.proof-preview-modal {
+  max-width: 720px;
+}
+
+.proof-preview-body {
+  display: grid;
+  gap: 10px;
+}
+
+.proof-preview-card,
+.proof-preview-file {
+  display: grid;
+  grid-template-columns: 32px minmax(0, 1fr);
+  align-items: center;
+  gap: 10px;
+  padding: 12px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #fbfbfe;
+}
+
+.proof-preview-card svg,
+.proof-preview-file svg {
+  width: 20px;
+  height: 20px;
+  color: var(--indigo);
+}
+
+.proof-preview-card div {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+}
+
+.proof-preview-card strong,
+.proof-preview-file span {
+  overflow: hidden;
+  color: var(--ink);
+  font-size: 0.84rem;
+  font-weight: 900;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.proof-preview-card span {
+  color: var(--muted);
+  font-size: 0.72rem;
+  font-weight: 800;
+}
+
+.proof-preview-file {
+  min-height: 160px;
+  align-content: center;
+  justify-content: center;
+  border-style: dashed;
+  background: white;
+}
+
+.proof-preview-frame {
+  width: 100%;
+  min-height: 460px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: white;
+}
+
+.statement-modal {
+  max-width: 560px;
+}
+
+.statement-modal-body {
+  display: grid;
+  gap: 12px;
+}
+
+.statement-summary {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 8px;
+  padding: 10px;
+  border-radius: 8px;
+  background: #fbfbfe;
+}
+
+.statement-summary div {
+  display: grid;
+  gap: 2px;
+}
+
+.statement-summary span,
+.statement-summary small {
+  color: var(--muted);
+  font-size: 0.68rem;
+  font-weight: 800;
+}
+
+.statement-summary strong {
+  color: var(--ink);
+  font-size: 0.9rem;
+}
+
+.statement-summary small {
+  grid-column: 1 / -1;
+}
+
+.statement-invoice-list {
+  display: grid;
+  gap: 7px;
+}
+
+.statement-invoice-list label {
+  display: grid;
+  grid-template-columns: 18px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 8px;
+  padding: 9px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: white;
+}
+
+.statement-invoice-list label div {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+}
+
+.statement-invoice-list strong,
+.statement-invoice-list b {
+  color: var(--ink);
+  font-size: 0.82rem;
+}
+
+.statement-invoice-list span {
+  overflow: hidden;
+  color: var(--muted);
+  font-size: 0.68rem;
+  font-weight: 800;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.statement-create-button {
+  justify-self: end;
+  min-height: 34px;
+  padding: 0 12px;
+  border-radius: 8px;
+  background: var(--indigo);
+  color: white;
+  font-size: 0.74rem;
+  font-weight: 900;
+}
+
+.statement-create-button:disabled {
+  cursor: not-allowed;
+  opacity: 0.45;
 }
 
 .patients-layout {
@@ -3621,6 +4032,18 @@ input {
     margin-left: auto;
   }
 
+  .invoice-filter-controls {
+    width: 100%;
+    justify-content: flex-start;
+    overflow-x: auto;
+    padding-bottom: 2px;
+    scrollbar-width: none;
+  }
+
+  .invoice-filter-controls::-webkit-scrollbar {
+    display: none;
+  }
+
   .topbar {
     align-items: flex-start;
     flex-direction: row;
@@ -3700,6 +4123,10 @@ input {
   .session-cancel-buttons {
     align-items: center;
     flex-direction: row;
+  }
+
+  .payment-confirm-panel {
+    grid-template-columns: 1fr;
   }
 
   .patient-link-quick-nav {

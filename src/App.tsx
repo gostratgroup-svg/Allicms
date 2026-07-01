@@ -23,6 +23,29 @@ type PatientNote = {
   date: string
   detail: string
 }
+type InvoiceStatus = 'confirm_invoice' | 'awaiting_payment' | 'payment_due' | 'payment_received'
+type Invoice = {
+  id: string
+  kind?: 'invoice' | 'statement'
+  patientId: string
+  sessionId?: string
+  linkedInvoiceIds?: string[]
+  patientName: string
+  serviceType: string
+  practitionerName: string
+  amount: number
+  invoiceDate: string
+  status: InvoiceStatus
+  confirmedAt?: string
+  paymentDueDate?: string
+  paymentReceivedAt?: string
+  paymentAmount?: number
+  pdfInvoiceUrl?: string
+  proofOfPaymentUrl?: string
+  proofOfPaymentName?: string
+  createdAt: string
+  updatedAt: string
+}
 
 const tenant = {
   tenantId: 'tenant-kids-therapy-centre',
@@ -273,12 +296,7 @@ const activity = [
   'Parent portal link opened by Priya Naidoo',
 ]
 
-const invoices = [
-  { tenantId: tenant.tenantId, id: 'INV-2046', patient: 'Ethan Naidoo', age: '34 days', status: 'Overdue', total: 2340, paid: 0 },
-  { tenantId: tenant.tenantId, id: 'INV-2047', patient: 'Liam Jacobs', age: '7 days', status: 'Partial', total: 1560, paid: 780 },
-  { tenantId: tenant.tenantId, id: 'INV-2049', patient: 'Amahle Dlamini', age: 'Today', status: 'Draft', total: 690, paid: 0 },
-  { tenantId: tenant.tenantId, id: 'INV-2050', patient: 'Mila van Wyk', age: 'Today', status: 'Ready', total: 720, paid: 0 },
-]
+const appTodayIso = '2026-07-01'
 
 const billingItems = [
   {
@@ -336,6 +354,7 @@ const patientWorkspaceTabs = ['Personal Details', 'Notes', 'Sessions', 'Finance'
 type PatientWorkspaceTab = (typeof patientWorkspaceTabs)[number]
 type Patient = (typeof patients)[number]
 type SessionInvoiceDetail = CalendarSession & {
+  invoice?: Invoice
   invoiceId?: string
   price: number
   isConfirmed: boolean
@@ -346,24 +365,56 @@ const noteTypeOptions = [
   { label: 'Case Management', visibility: 'Internal only' },
 ] as const
 
-function buildSessionInvoiceDetails(calendarSessions: CalendarSession[], confirmedSessionInvoices: string[]): SessionInvoiceDetail[] {
+const invoiceStatusLabels: Record<InvoiceStatus, string> = {
+  confirm_invoice: 'Confirm invoice',
+  awaiting_payment: 'Awaiting payment',
+  payment_due: 'Payment due',
+  payment_received: 'Payment received',
+}
+
+function getInvoiceStatus(invoice: Invoice): InvoiceStatus {
+  if (invoice.status === 'awaiting_payment' && invoice.paymentDueDate && parseIsoDate(appTodayIso) > parseIsoDate(invoice.paymentDueDate)) {
+    return 'payment_due'
+  }
+  return invoice.status
+}
+
+function getOverdueDays(invoice: Invoice) {
+  const status = getInvoiceStatus(invoice)
+  if (status !== 'payment_due' || !invoice.confirmedAt) return 0
+  return Math.max(0, Math.floor((parseIsoDate(appTodayIso).getTime() - parseIsoDate(invoice.confirmedAt).getTime()) / 86400000))
+}
+
+function generateInvoicePdf(invoice: Invoice) {
+  return `/invoices/${invoice.id}.pdf`
+}
+
+function generateStatementPdf(invoice: Invoice) {
+  return `/statements/${invoice.id}.pdf`
+}
+
+function buildSessionInvoiceDetails(calendarSessions: CalendarSession[], invoiceRecords: Invoice[]): SessionInvoiceDetail[] {
   return calendarSessions.map((session) => {
     const matchingDailySession = sessions.find((item) => item.patient === session.patient && item.time === session.startTime)
-    const matchingPatientInvoice = invoices.find((invoice) => invoice.patient === session.patient)
+    const matchingInvoice = invoiceRecords.find((invoice) => invoice.sessionId === session.id)
     const billingItem = billingItems.find((item) =>
       session.type.toLowerCase().includes(item.sessionType.split(' ')[0].toLowerCase()) ||
       item.sessionType.toLowerCase().includes(session.type.toLowerCase()),
     )
-    const confirmedInvoiceId = matchingDailySession?.invoice.startsWith('INV-')
-      ? matchingDailySession.invoice
-      : matchingPatientInvoice?.id
     return {
       ...session,
-      invoiceId: confirmedInvoiceId,
+      invoice: matchingInvoice,
+      invoiceId: matchingInvoice?.id,
       price: matchingDailySession?.amount ?? billingItem?.price ?? 780,
-      isConfirmed: Boolean(confirmedInvoiceId) || confirmedSessionInvoices.includes(session.id),
+      isConfirmed: Boolean(matchingInvoice && getInvoiceStatus(matchingInvoice) !== 'confirm_invoice'),
     }
   })
+}
+
+function getPatientLinkRoute() {
+  const hashMatch = window.location.hash.match(/^#\/patient-link\/([^/]+)\/([^/]+)$/)
+  const pathMatch = window.location.pathname.match(/^\/patient-link\/([^/]+)\/([^/]+)\/?$/)
+  return hashMatch ?? pathMatch
 }
 
 function App() {
@@ -376,8 +427,8 @@ function App() {
   const [calendarSessionRecords, setCalendarSessionRecords] = useState<CalendarSession[]>(weekSessions)
   const [selectedCalendarSessionId, setSelectedCalendarSessionId] = useState(weekSessions[0]?.id ?? '')
   const [selectedPatientName, setSelectedPatientName] = useState(patients[0].name)
-  const [confirmedSessionInvoices, setConfirmedSessionInvoices] = useState<string[]>([])
-  const patientLinkMatch = window.location.hash.match(/^#\/patient-link\/([^/]+)\/([^/]+)$/)
+  const [invoiceRecords, setInvoiceRecords] = useState<Invoice[]>(() => buildInitialInvoices())
+  const patientLinkMatch = getPatientLinkRoute()
 
   const openNewSession = (slot?: SessionSlot) => {
     setNewSessionSlot(slot ?? null)
@@ -449,11 +500,96 @@ function App() {
     return !patient?.notes.some((note) => note.date === session.date)
   })
   const feedbackDue = todaySessionsNeedingNotes.length
-  const outstandingInvoiceTotal = invoices.reduce((total, invoice) => total + invoice.total - invoice.paid, 0)
-  const sessionInvoiceDetails = buildSessionInvoiceDetails(calendarSessionRecords, confirmedSessionInvoices)
+  const outstandingInvoiceTotal = invoiceRecords
+    .filter((invoice) => getInvoiceStatus(invoice) !== 'payment_received')
+    .reduce((total, invoice) => total + invoice.amount, 0)
+  const sessionInvoiceDetails = buildSessionInvoiceDetails(calendarSessionRecords, invoiceRecords)
   const sessionsNeedingInvoiceConfirmation = sessionInvoiceDetails.filter((session) => !session.isConfirmed)
-  const confirmSessionInvoice = (sessionId: string) => {
-    setConfirmedSessionInvoices((current) => current.includes(sessionId) ? current : [...current, sessionId])
+  const confirmInvoice = (invoiceId: string) => {
+    const invoiceToConfirm = invoiceRecords.find((invoice) => invoice.id === invoiceId)
+    setInvoiceRecords((records) =>
+      records.map((invoice) => {
+        if (invoice.id !== invoiceId) return invoice
+        const confirmedInvoice = {
+          ...invoice,
+          status: 'awaiting_payment' as InvoiceStatus,
+          confirmedAt: appTodayIso,
+          paymentDueDate: toIsoDate(addDays(parseIsoDate(appTodayIso), 7)),
+          updatedAt: appTodayIso,
+        }
+        return { ...confirmedInvoice, pdfInvoiceUrl: generateInvoicePdf(confirmedInvoice) }
+      }),
+    )
+    if (invoiceToConfirm) {
+      addPatientHistoryEvent(invoiceToConfirm.patientName, {
+        title: `Invoice confirmed · ${appTodayIso}`,
+        visibility: 'Available on patient link',
+        detail: `${invoiceToConfirm.id} for ${invoiceToConfirm.serviceType} was confirmed and moved to awaiting payment.`,
+      })
+    }
+  }
+  const markPaymentReceived = (invoiceId: string, proofFile?: string, paymentAmount?: number, proofFileName?: string) => {
+    const paidInvoice = invoiceRecords.find((invoice) => invoice.id === invoiceId)
+    setInvoiceRecords((records) =>
+      records.map((invoice) =>
+        invoice.id === invoiceId || paidInvoice?.linkedInvoiceIds?.includes(invoice.id)
+          ? {
+              ...invoice,
+              status: 'payment_received',
+              paymentReceivedAt: appTodayIso,
+              paymentAmount: invoice.id === invoiceId ? paymentAmount ?? invoice.amount : invoice.amount,
+              proofOfPaymentUrl: proofFile || invoice.proofOfPaymentUrl,
+              proofOfPaymentName: proofFileName || invoice.proofOfPaymentName,
+              updatedAt: appTodayIso,
+            }
+          : invoice,
+      ),
+    )
+    if (paidInvoice) {
+      const receivedAmount = paymentAmount ?? paidInvoice.amount
+      setPatientRecords((records) =>
+        records.map((patient) =>
+          patient.name === paidInvoice.patientName || patient.patientNumber === paidInvoice.patientId
+            ? { ...patient, balance: Math.max(0, patient.balance - receivedAmount) }
+            : patient,
+        ),
+      )
+      addPatientHistoryEvent(paidInvoice.patientName, {
+        title: `Payment received · ${appTodayIso}`,
+        visibility: 'Available on patient link',
+        detail: `${formatMoney(receivedAmount)} received for ${paidInvoice.id}${paidInvoice.kind === 'statement' ? ' and linked invoices' : ''}${proofFileName ? ` with proof ${proofFileName}.` : '.'}`,
+      })
+    }
+  }
+  const createPatientStatement = (patientName: string, invoiceIds: string[]) => {
+    const statementInvoices = invoiceRecords.filter((invoice) => invoiceIds.includes(invoice.id))
+    if (!statementInvoices.length) return
+    const patient = patientRecords.find((record) => record.name === patientName || record.patientNumber === statementInvoices[0].patientId)
+    const statementNumber = `ST-${String(invoiceRecords.filter((invoice) => invoice.kind === 'statement').length + 3001).padStart(4, '0')}`
+    const amount = statementInvoices.reduce((total, invoice) => total + invoice.amount, 0)
+    const statement: Invoice = {
+      id: statementNumber,
+      kind: 'statement',
+      patientId: patient?.patientNumber ?? statementInvoices[0].patientId,
+      linkedInvoiceIds: invoiceIds,
+      patientName,
+      serviceType: `Customer statement · ${invoiceIds.length} invoices`,
+      practitionerName: tenant.name,
+      amount,
+      invoiceDate: appTodayIso,
+      status: 'awaiting_payment',
+      confirmedAt: appTodayIso,
+      paymentDueDate: toIsoDate(addDays(parseIsoDate(appTodayIso), 7)),
+      pdfInvoiceUrl: generateStatementPdf({ id: statementNumber } as Invoice),
+      createdAt: appTodayIso,
+      updatedAt: appTodayIso,
+    }
+    setInvoiceRecords((records) => [...records, statement])
+    addPatientHistoryEvent(patientName, {
+      title: `Statement generated · ${appTodayIso}`,
+      visibility: 'Available on patient link',
+      detail: `${statementNumber} created for ${formatMoney(amount)} and linked to ${invoiceIds.length} invoices.`,
+    })
   }
   const patientAlertCount = patientRecords.reduce((total, patient) => {
     const hasPatientAlert = !['consent signed', ''].includes(patient.alert.toLowerCase())
@@ -476,6 +612,7 @@ function App() {
         <PatientLinkPage
           patient={linkedPatient}
           sessions={sessions.filter((session) => session.patient === linkedPatient.name)}
+          invoiceRecords={invoiceRecords}
           onUpdatePatientField={(field, value) => {
             setPatientRecords((records) =>
               records.map((patient) =>
@@ -555,6 +692,9 @@ function App() {
                 onMarkNoShow={markSessionNoShow}
                 onCancelSession={cancelSession}
                 onSavePatientNote={addPatientNote}
+                invoiceRecords={invoiceRecords}
+                onConfirmInvoice={confirmInvoice}
+                onMarkPaymentReceived={markPaymentReceived}
               />
             )}
             {view === 'sessions' && (
@@ -576,6 +716,9 @@ function App() {
                 onMarkNoShow={markSessionNoShow}
                 onCancelSession={cancelSession}
                 onSavePatientNote={addPatientNote}
+                invoiceRecords={invoiceRecords}
+                onConfirmInvoice={confirmInvoice}
+                onMarkPaymentReceived={markPaymentReceived}
               />
             )}
             {view === 'patients' && (
@@ -586,12 +729,31 @@ function App() {
                 selectedPatientName={selectedPatientName}
                 setSelectedPatientName={setSelectedPatientName}
                 setPatientRecords={setPatientRecords}
+                invoiceRecords={invoiceRecords}
+                onConfirmInvoice={confirmInvoice}
+                onMarkPaymentReceived={markPaymentReceived}
+                onCreateStatement={createPatientStatement}
               />
             )}
             {view === 'finances' && (
               <Finances
                 sessionInvoiceDetails={sessionInvoiceDetails}
-                onConfirmSessionInvoice={confirmSessionInvoice}
+                invoiceRecords={invoiceRecords}
+                onUpdateSession={(updatedSession) => {
+                  setCalendarSessionRecords((records) =>
+                    records.map((session) => (session.id === updatedSession.id ? updatedSession : session)),
+                  )
+                }}
+                onOpenPatientProfile={(patientName) => {
+                  setSelectedPatientName(patientName)
+                  setQuery('')
+                  setView('patients')
+                }}
+                onMarkNoShow={markSessionNoShow}
+                onCancelSession={cancelSession}
+                onSavePatientNote={addPatientNote}
+                onConfirmInvoice={confirmInvoice}
+                onMarkPaymentReceived={markPaymentReceived}
               />
             )}
           </>
@@ -612,6 +774,7 @@ function App() {
               setSelectedPatientName(newPatient.name)
             }
             setCalendarSessionRecords((records) => [...records, session])
+            setInvoiceRecords((records) => [...records, createInvoiceFromSession(session, records.length + 80)])
             setSelectedCalendarSessionId(session.id)
             setView('sessions')
             setIsNewSessionOpen(false)
@@ -1088,22 +1251,28 @@ function Overview({
   role,
   calendarSessions,
   pendingInvoiceSessions,
+  invoiceRecords,
   onOpenFinances,
   onUpdateSession,
   onOpenPatientProfile,
   onMarkNoShow,
   onCancelSession,
   onSavePatientNote,
+  onConfirmInvoice,
+  onMarkPaymentReceived,
 }: {
   role: string
   calendarSessions: CalendarSession[]
   pendingInvoiceSessions: SessionInvoiceDetail[]
+  invoiceRecords: Invoice[]
   onOpenFinances: () => void
   onUpdateSession: (session: CalendarSession) => void
   onOpenPatientProfile: (patientName: string) => void
   onMarkNoShow: (session: CalendarSession) => void
   onCancelSession: (session: CalendarSession, shouldReschedule: boolean) => void
   onSavePatientNote: (patientName: string, note: PatientNote) => void
+  onConfirmInvoice: (invoiceId: string) => void
+  onMarkPaymentReceived: (invoiceId: string, proofFile?: string, paymentAmount?: number, proofFileName?: string) => void
 }) {
   const [selectedDayIso, setSelectedDayIso] = useState('2026-06-30')
   const [selectedOverviewSessionId, setSelectedOverviewSessionId] = useState('')
@@ -1242,6 +1411,9 @@ function Overview({
             setIsOverviewSessionOpen(false)
           }}
           onSavePatientNote={onSavePatientNote}
+          invoiceRecords={invoiceRecords}
+          onConfirmInvoice={onConfirmInvoice}
+          onMarkPaymentReceived={onMarkPaymentReceived}
           onClose={() => setIsOverviewSessionOpen(false)}
         />
       )}
@@ -1373,6 +1545,51 @@ const weekSessions = [
   { id: 'cal-9', date: '2026-07-04', startTime: '09:00', endTime: '10:00', patient: 'New intake', type: 'Assessment', therapist: 'Johan Kruger', room: 'Room 1' },
 ]
 
+function getSessionAmount(session: CalendarSession) {
+  const matchingDailySession = sessions.find((item) => item.patient === session.patient && item.time === session.startTime)
+  const billingItem = billingItems.find((item) =>
+    session.type.toLowerCase().includes(item.sessionType.split(' ')[0].toLowerCase()) ||
+    item.sessionType.toLowerCase().includes(session.type.toLowerCase()),
+  )
+  return matchingDailySession?.amount ?? billingItem?.price ?? 780
+}
+
+function getPatientIdByName(patientName: string) {
+  return patients.find((patient) => patient.name === patientName)?.patientNumber ?? `PT-${patientName.toLowerCase().replaceAll(' ', '-')}`
+}
+
+function createInvoiceFromSession(session: CalendarSession, index: number, status: InvoiceStatus = 'confirm_invoice'): Invoice {
+  const confirmedAt = status === 'confirm_invoice' ? undefined : session.date
+  const paymentDueDate = confirmedAt ? toIsoDate(addDays(parseIsoDate(confirmedAt), 7)) : undefined
+  const invoice: Invoice = {
+    id: `INV-${2100 + index}`,
+    patientId: getPatientIdByName(session.patient),
+    sessionId: session.id,
+    patientName: session.patient,
+    serviceType: session.type,
+    practitionerName: session.therapist,
+    amount: getSessionAmount(session),
+    invoiceDate: session.date,
+    status,
+    confirmedAt,
+    paymentDueDate,
+    paymentReceivedAt: status === 'payment_received' ? appTodayIso : undefined,
+    createdAt: session.date,
+    updatedAt: session.date,
+  }
+  return status === 'confirm_invoice' ? invoice : { ...invoice, pdfInvoiceUrl: generateInvoicePdf(invoice) }
+}
+
+function buildInitialInvoices() {
+  return weekSessions.map((session, index) => {
+    if (session.id === 'cal-1') return { ...createInvoiceFromSession(session, 48, 'payment_received'), paymentReceivedAt: '2026-06-30', proofOfPaymentUrl: '/payments/pop-inv-2148.pdf', proofOfPaymentName: 'pop-inv-2148.pdf' }
+    if (session.id === 'cal-2') return { ...createInvoiceFromSession(session, 49, 'awaiting_payment'), confirmedAt: '2026-06-30', paymentDueDate: '2026-07-07' }
+    if (session.id === 'cal-3') return { ...createInvoiceFromSession(session, 46, 'payment_due'), confirmedAt: '2026-06-23', paymentDueDate: '2026-06-30' }
+    if (session.id === 'cal-4') return { ...createInvoiceFromSession(session, 50, 'awaiting_payment'), confirmedAt: '2026-06-30', paymentDueDate: '2026-07-07' }
+    return createInvoiceFromSession(session, 60 + index)
+  })
+}
+
 function Sessions({
   calendarSessions,
   selectedSessionId,
@@ -1383,6 +1600,9 @@ function Sessions({
   onMarkNoShow,
   onCancelSession,
   onSavePatientNote,
+  invoiceRecords,
+  onConfirmInvoice,
+  onMarkPaymentReceived,
 }: {
   calendarSessions: CalendarSession[]
   selectedSessionId: string
@@ -1393,6 +1613,9 @@ function Sessions({
   onMarkNoShow: (session: CalendarSession) => void
   onCancelSession: (session: CalendarSession, shouldReschedule: boolean) => void
   onSavePatientNote: (patientName: string, note: PatientNote) => void
+  invoiceRecords: Invoice[]
+  onConfirmInvoice: (invoiceId: string) => void
+  onMarkPaymentReceived: (invoiceId: string, proofFile?: string, paymentAmount?: number, proofFileName?: string) => void
 }) {
   const [calendarMode, setCalendarMode] = useState<'week' | 'month'>('week')
   const [selectedWeekIso, setSelectedWeekIso] = useState('2026-06-30')
@@ -1537,6 +1760,9 @@ function Sessions({
             setIsSessionOpen(false)
           }}
           onSavePatientNote={onSavePatientNote}
+          invoiceRecords={invoiceRecords}
+          onConfirmInvoice={onConfirmInvoice}
+          onMarkPaymentReceived={onMarkPaymentReceived}
           onClose={() => setIsSessionOpen(false)}
         />
       )}
@@ -1553,6 +1779,9 @@ function SessionDetailModal({
   onMarkNoShow,
   onCancelSession,
   onSavePatientNote,
+  invoiceRecords,
+  onConfirmInvoice,
+  onMarkPaymentReceived,
   onClose,
 }: {
   session: CalendarSession
@@ -1563,6 +1792,9 @@ function SessionDetailModal({
   onMarkNoShow: (session: CalendarSession) => void
   onCancelSession: (session: CalendarSession, shouldReschedule: boolean) => void
   onSavePatientNote: (patientName: string, note: PatientNote) => void
+  invoiceRecords: Invoice[]
+  onConfirmInvoice: (invoiceId: string) => void
+  onMarkPaymentReceived: (invoiceId: string, proofFile?: string, paymentAmount?: number, proofFileName?: string) => void
   onClose: () => void
 }) {
   const [draftSessionDate, setDraftSessionDate] = useState(session.date)
@@ -1615,6 +1847,9 @@ function SessionDetailModal({
             onMarkNoShow={onMarkNoShow}
             onCancelSession={onCancelSession}
             onSavePatientNote={onSavePatientNote}
+            invoiceRecords={invoiceRecords}
+            onConfirmInvoice={onConfirmInvoice}
+            onMarkPaymentReceived={onMarkPaymentReceived}
             draftSessionDate={draftSessionDate}
             setDraftSessionDate={setDraftSessionDate}
             draftSessionStartTime={draftSessionStartTime}
@@ -1635,6 +1870,9 @@ function SessionDetailView({
   onMarkNoShow,
   onCancelSession,
   onSavePatientNote,
+  invoiceRecords,
+  onConfirmInvoice,
+  onMarkPaymentReceived,
   draftSessionDate,
   setDraftSessionDate,
   draftSessionStartTime,
@@ -1648,6 +1886,9 @@ function SessionDetailView({
   onMarkNoShow: (session: CalendarSession) => void
   onCancelSession: (session: CalendarSession, shouldReschedule: boolean) => void
   onSavePatientNote: (patientName: string, note: PatientNote) => void
+  invoiceRecords: Invoice[]
+  onConfirmInvoice: (invoiceId: string) => void
+  onMarkPaymentReceived: (invoiceId: string, proofFile?: string, paymentAmount?: number, proofFileName?: string) => void
   draftSessionDate: string
   setDraftSessionDate: Dispatch<SetStateAction<string>>
   draftSessionStartTime: string
@@ -1673,14 +1914,15 @@ function SessionDetailView({
     ? billingItems.filter((item) => draftIcdCodes.includes(item.code))
     : displayedBillingItems
   const sessionBillingTotal = selectedBillingItems.reduce((total, item) => total + item.price, 0)
-  const patientInvoices = invoices.filter((invoice) => invoice.patient === session.patient)
+  const sessionInvoices = invoiceRecords.filter((invoice) => invoice.sessionId === session.id)
+  const patientInvoices = invoiceRecords.filter((invoice) => invoice.patientName === session.patient)
   const patientOutstanding = patientInvoices
-    .reduce((total, invoice) => total + invoice.total - invoice.paid, 0)
+    .filter((invoice) => getInvoiceStatus(invoice) !== 'payment_received')
+    .reduce((total, invoice) => total + invoice.amount, 0)
   const oldestOverdueDays = Math.max(
     0,
     ...patientInvoices
-      .filter((invoice) => invoice.total > invoice.paid)
-      .map((invoice) => Number.parseInt(invoice.age, 10))
+      .map(getOverdueDays)
       .filter((age) => Number.isFinite(age)),
   )
   const toggleSessionNoteEditor = () => {
@@ -1925,10 +2167,12 @@ function SessionDetailView({
             </article>
             <article className="finance-row-three">
               <span>Status</span>
-              <div className="session-status-action">
-                <strong>Draft invoice</strong>
-                <button>Confirm invoice</button>
-              </div>
+              <InvoiceWorkflowList
+                invoices={sessionInvoices}
+                compact
+                onConfirmInvoice={onConfirmInvoice}
+                onMarkPaymentReceived={onMarkPaymentReceived}
+              />
             </article>
           </div>
         </section>
@@ -1952,6 +2196,10 @@ function Patients({
   selectedPatientName,
   setSelectedPatientName,
   setPatientRecords,
+  invoiceRecords,
+  onConfirmInvoice,
+  onMarkPaymentReceived,
+  onCreateStatement,
 }: {
   query: string
   setQuery: (query: string) => void
@@ -1959,13 +2207,19 @@ function Patients({
   selectedPatientName: string
   setSelectedPatientName: Dispatch<SetStateAction<string>>
   setPatientRecords: Dispatch<SetStateAction<Patient[]>>
+  invoiceRecords: Invoice[]
+  onConfirmInvoice: (invoiceId: string) => void
+  onMarkPaymentReceived: (invoiceId: string, proofFile?: string, paymentAmount?: number, proofFileName?: string) => void
+  onCreateStatement: (patientName: string, invoiceIds: string[]) => void
 }) {
   const [activePatientTab, setActivePatientTab] = useState<PatientWorkspaceTab>('Personal Details')
   const [isPatientEditMode, setIsPatientEditMode] = useState(false)
   const [patientLinkCopied, setPatientLinkCopied] = useState(false)
+  const [isStatementModalOpen, setIsStatementModalOpen] = useState(false)
   const selectedPatient = filteredPatients.find((patient) => patient.name === selectedPatientName) ?? filteredPatients[0] ?? patients[0]
   const selectedPatientSessions = sessions.filter((session) => session.patient === selectedPatient.name)
-  const patientProfileUrl = `${window.location.origin}${window.location.pathname}#/patient-link/${tenant.tenantId}/${selectedPatient.patientNumber.toLowerCase()}`
+  const selectedPatientInvoices = invoiceRecords.filter((invoice) => invoice.patientId === selectedPatient.patientNumber || invoice.patientName === selectedPatient.name)
+  const patientProfileUrl = `${window.location.origin}/patient-link/${tenant.tenantId}/${selectedPatient.patientNumber.toLowerCase()}`
   const updatePatientField = (field: keyof Patient, value: string) => {
     setPatientRecords((records) =>
       records.map((patient) =>
@@ -2174,15 +2428,25 @@ function Patients({
               <h3>Finance</h3>
               <div className="workspace-panel-actions">
                 <PatientEditActions isEditMode={isPatientEditMode} setIsEditMode={setIsPatientEditMode} />
-                <button>Create invoice</button>
+                <button type="button" onClick={() => setIsStatementModalOpen(true)}>Create statement</button>
               </div>
             </div>
-            <dl className="profile-detail-list finance-detail-list">
-              <div><dt>Outstanding balance</dt><dd>{formatMoney(selectedPatient.balance)}</dd></div>
-              <div><dt>Medical aid</dt><dd>{selectedPatient.medicalAid}</dd></div>
-              <div><dt>Payment status</dt><dd>{selectedPatient.balance > 0 ? 'Outstanding' : 'Paid up'}</dd></div>
-              <div><dt>Statements</dt><dd>Monthly statements available</dd></div>
-            </dl>
+            <InvoiceWorkflowList
+              invoices={selectedPatientInvoices}
+              onConfirmInvoice={onConfirmInvoice}
+              onMarkPaymentReceived={onMarkPaymentReceived}
+            />
+            {isStatementModalOpen && (
+              <StatementModal
+                patient={selectedPatient}
+                invoices={selectedPatientInvoices}
+                onCreateStatement={(invoiceIds) => {
+                  onCreateStatement(selectedPatient.name, invoiceIds)
+                  setIsStatementModalOpen(false)
+                }}
+                onClose={() => setIsStatementModalOpen(false)}
+              />
+            )}
           </div>
         )}
 
@@ -2272,10 +2536,12 @@ function Patients({
 function PatientLinkPage({
   patient,
   sessions: patientSessions,
+  invoiceRecords,
   onUpdatePatientField,
 }: {
   patient: Patient
   sessions: typeof sessions
+  invoiceRecords: Invoice[]
   onUpdatePatientField: (field: keyof Patient, value: string) => void
 }) {
   type PatientLinkSection = 'personal' | 'sessions' | 'feedback' | 'finance' | 'history'
@@ -2287,7 +2553,8 @@ function PatientLinkPage({
   const patientLinkSessions = patientSessions.length ? patientSessions : sessions.slice(0, 1)
   const noticeSession = patientLinkSessions[0]
   const completedSessionNote = patientFeedbackNotes[0] ?? { noteType: 'Session Feedback', date: patient.lastSession, detail: 'Goals and progress reviewed.' }
-  const completedSessionInvoice = invoices.find((invoice) => invoice.patient === patient.name)
+  const patientInvoices = invoiceRecords.filter((invoice) => invoice.patientId === patient.patientNumber || invoice.patientName === patient.name)
+  const completedSessionInvoice = patientInvoices.find((invoice) => invoice.sessionId) ?? patientInvoices[0]
   const sessionFeedbackDetail = noticeSession ? `${patient.lastSession} · ${noticeSession.time}` : `${patient.lastSession} · session time`
   const patientLinkSections: Array<{ id: PatientLinkSection; label: string }> = [
     { id: 'personal', label: 'Personal Details' },
@@ -2314,7 +2581,7 @@ function PatientLinkPage({
       detail: 'Report or assessment document made available for customer viewing.',
     },
   ]
-  const patientInvoice = invoices.find((invoice) => invoice.patient === patient.name && invoice.total > invoice.paid)
+  const patientInvoice = patientInvoices.find((invoice) => getInvoiceStatus(invoice) !== 'payment_received')
   const patientFinanceItems = [
     {
       title: 'March statement',
@@ -2326,9 +2593,9 @@ function PatientLinkPage({
       ? [
           {
             title: `${patientInvoice.id} session invoice`,
-            detail: patientInvoice.age,
-            amount: patientInvoice.total - patientInvoice.paid,
-            status: 'Unpaid',
+            detail: invoiceStatusLabels[getInvoiceStatus(patientInvoice)],
+            amount: patientInvoice.amount,
+            status: getInvoiceStatus(patientInvoice) === 'payment_received' ? 'Paid' : 'Unpaid',
           },
         ]
       : [
@@ -2340,7 +2607,7 @@ function PatientLinkPage({
           },
         ]),
   ]
-  const patientInvoiceAge = patientInvoice ? Number.parseInt(patientInvoice.age, 10) : 0
+  const patientInvoiceAge = patientInvoice ? getOverdueDays(patientInvoice) : 0
   const isPatientProfileIncomplete =
     patient.alert === 'Patient link incomplete' ||
     [
@@ -2360,11 +2627,11 @@ function PatientLinkPage({
     patientFeedbackNotes.length
       ? { title: 'Session feedback', detail: patientFeedbackNotes[0].detail, action: 'View feedback', urgent: false }
       : null,
-    patientInvoice && patientInvoiceAge >= 30
-      ? { title: 'Unpaid invoice', detail: `${patientInvoice.id} · ${patientInvoiceAge} days overdue`, action: 'View finance', urgent: true }
+    patientInvoice && patientInvoiceAge >= 8
+      ? { title: 'Unpaid invoice', detail: `${patientInvoice.id} · ${patientInvoiceAge} days delayed`, action: 'View finance', urgent: true }
       : null,
-    patientInvoice && patientInvoiceAge < 30
-      ? { title: 'New invoice', detail: `${patientInvoice.id} · ${formatMoney(patientInvoice.total - patientInvoice.paid)} due`, action: 'View finance', urgent: true }
+    patientInvoice && patientInvoiceAge < 8
+      ? { title: 'New invoice', detail: `${patientInvoice.id} · ${formatMoney(patientInvoice.amount)} due`, action: 'View finance', urgent: true }
       : null,
     patient.balance > 0 && !patientInvoice
       ? { title: 'New statement', detail: `${formatMoney(patient.balance)} outstanding`, action: 'View finance', urgent: true }
@@ -2629,11 +2896,11 @@ function PatientLinkCompletedSessionModal({
   patient: Patient
   session?: (typeof sessions)[number]
   note: PatientNote
-  invoice?: (typeof invoices)[number]
+  invoice?: Invoice
   onClose: () => void
 }) {
-  const invoiceOutstanding = invoice ? invoice.total - invoice.paid : 0
-  const paymentStatus = invoice ? (invoiceOutstanding > 0 ? 'Awaiting payment' : 'Paid') : 'Not issued'
+  const invoiceOutstanding = invoice && getInvoiceStatus(invoice) !== 'payment_received' ? invoice.amount : 0
+  const paymentStatus = invoice ? invoiceStatusLabels[getInvoiceStatus(invoice)] : 'Not issued'
 
   return (
     <div className="modal-backdrop" role="presentation">
@@ -2679,7 +2946,7 @@ function PatientLinkCompletedSessionModal({
             {invoice ? (
               <dl className="session-modal-detail-grid">
                 <div><dt>Invoice number</dt><dd>{invoice.id}</dd></div>
-                <div><dt>Price</dt><dd>{formatMoney(invoice.total)}</dd></div>
+                <div><dt>Price</dt><dd>{formatMoney(invoice.amount)}</dd></div>
                 <div><dt>Status</dt><dd>{paymentStatus}</dd></div>
                 <div><dt>Outstanding</dt><dd>{formatMoney(invoiceOutstanding)}</dd></div>
               </dl>
@@ -2693,21 +2960,292 @@ function PatientLinkCompletedSessionModal({
   )
 }
 
+function StatementModal({
+  patient,
+  invoices,
+  onCreateStatement,
+  onClose,
+}: {
+  patient: Patient
+  invoices: Invoice[]
+  onCreateStatement: (invoiceIds: string[]) => void
+  onClose: () => void
+}) {
+  const availableInvoices = invoices.filter((invoice) => invoice.kind !== 'statement' && getInvoiceStatus(invoice) !== 'payment_received')
+  const [selectedInvoiceIds, setSelectedInvoiceIds] = useState<string[]>(() => availableInvoices.map((invoice) => invoice.id))
+  const selectedTotal = availableInvoices
+    .filter((invoice) => selectedInvoiceIds.includes(invoice.id))
+    .reduce((total, invoice) => total + invoice.amount, 0)
+  const toggleInvoice = (invoiceId: string) => {
+    setSelectedInvoiceIds((current) =>
+      current.includes(invoiceId) ? current.filter((id) => id !== invoiceId) : [...current, invoiceId],
+    )
+  }
+
+  return (
+    <div className="modal-backdrop" role="presentation">
+      <section className="modal-window statement-modal" aria-label="Create patient statement">
+        <div className="modal-header">
+          <div>
+            <p>Patient finance</p>
+            <h2>Create statement</h2>
+          </div>
+          <button type="button" className="modal-close" onClick={onClose} aria-label="Close statement modal">
+            x
+          </button>
+        </div>
+        <div className="modal-body statement-modal-body">
+          <section className="statement-summary">
+            <div>
+              <span>Patient</span>
+              <strong>{patient.name}</strong>
+            </div>
+            <div>
+              <span>Selected total</span>
+              <strong>{formatMoney(selectedTotal)}</strong>
+            </div>
+            <small>Once paid, this statement will settle the linked invoices.</small>
+          </section>
+          <div className="statement-invoice-list">
+            {availableInvoices.length ? availableInvoices.map((invoice) => (
+              <label key={invoice.id}>
+                <input
+                  type="checkbox"
+                  checked={selectedInvoiceIds.includes(invoice.id)}
+                  onChange={() => toggleInvoice(invoice.id)}
+                />
+                <div>
+                  <strong>{invoice.id}</strong>
+                  <span>{invoice.serviceType} · {invoiceStatusLabels[getInvoiceStatus(invoice)]}</span>
+                </div>
+                <b>{formatMoney(invoice.amount)}</b>
+              </label>
+            )) : (
+              <p className="quiet">No unpaid invoices available for a statement.</p>
+            )}
+          </div>
+          <button
+            type="button"
+            className="statement-create-button"
+            disabled={!selectedInvoiceIds.length}
+            onClick={() => onCreateStatement(selectedInvoiceIds)}
+          >
+            Create statement
+          </button>
+        </div>
+      </section>
+    </div>
+  )
+}
+
+function InvoiceWorkflowList({
+  invoices,
+  compact = false,
+  onConfirmInvoice,
+  onMarkPaymentReceived,
+}: {
+  invoices: Invoice[]
+  compact?: boolean
+  onConfirmInvoice: (invoiceId: string) => void
+  onMarkPaymentReceived: (invoiceId: string, proofFile?: string, paymentAmount?: number, proofFileName?: string) => void
+}) {
+  const [paymentInvoiceId, setPaymentInvoiceId] = useState('')
+  const [proofFile, setProofFile] = useState('')
+  const [proofFileName, setProofFileName] = useState('')
+  const [paymentAmount, setPaymentAmount] = useState('')
+  const [proofPreviewInvoice, setProofPreviewInvoice] = useState<Invoice | null>(null)
+  const attachProofFile = (file: File) => {
+    setProofFile(URL.createObjectURL(file))
+    setProofFileName(file.name)
+  }
+  const renderInvoiceRow = (invoice: Invoice) => {
+    const status = getInvoiceStatus(invoice)
+    const overdueDays = getOverdueDays(invoice)
+    const isPaymentCaptureOpen = paymentInvoiceId === invoice.id
+    const paymentProofInputId = `payment-proof-${invoice.id}`
+    const linkedStatement = invoice.kind !== 'statement'
+      ? invoices.find((record) => record.kind === 'statement' && getInvoiceStatus(record) !== 'payment_received' && record.linkedInvoiceIds?.includes(invoice.id))
+      : undefined
+
+    return (
+      <article className="invoice-workflow-row" key={invoice.id}>
+        <div>
+          <strong>{invoice.patientName}</strong>
+          <span>{invoice.id} · {invoice.serviceType} · {invoice.practitionerName}</span>
+          <small>{invoice.invoiceDate} · {formatMoney(invoice.amount)}</small>
+        </div>
+        <div className="invoice-row-status">
+          <em>{invoiceStatusLabels[status]}</em>
+          {linkedStatement && <span className="invoice-statement-pill">In {linkedStatement.id}</span>}
+          {overdueDays >= 8 && <span className="invoice-overdue-pill">{overdueDays} days delayed</span>}
+        </div>
+        <div className="invoice-row-actions">
+          {status === 'confirm_invoice' && (
+            <button type="button" onClick={() => onConfirmInvoice(invoice.id)}>Confirm invoice</button>
+          )}
+          {invoice.pdfInvoiceUrl && (
+            <a className="invoice-document-link" href={invoice.pdfInvoiceUrl} target="_blank" rel="noreferrer" aria-label="View PDF invoice" title="View PDF invoice">
+              <DocumentIcon />
+            </a>
+          )}
+          {(status === 'awaiting_payment' || status === 'payment_due') && !linkedStatement && (
+            <button
+              type="button"
+              className={isPaymentCaptureOpen ? 'payment-received-active' : ''}
+              onClick={() => {
+                if (isPaymentCaptureOpen) {
+                  onMarkPaymentReceived(invoice.id, proofFile || undefined, Number(paymentAmount) || invoice.amount, proofFileName || undefined)
+                  setProofFile('')
+                  setProofFileName('')
+                  setPaymentAmount('')
+                  setPaymentInvoiceId('')
+                  return
+                }
+                setPaymentInvoiceId(invoice.id)
+                setPaymentAmount(String(invoice.amount))
+                setProofFile('')
+                setProofFileName('')
+              }}
+            >
+              {isPaymentCaptureOpen ? 'Confirm payment' : 'Payment received'}
+            </button>
+          )}
+          {invoice.proofOfPaymentUrl && (
+            <button type="button" onClick={() => setProofPreviewInvoice(invoice)}>
+              Proof
+            </button>
+          )}
+        </div>
+        {isPaymentCaptureOpen && (
+          <div className="payment-confirm-panel">
+            <div
+              className="payment-upload-area"
+              onDragOver={(event) => event.preventDefault()}
+              onDrop={(event) => {
+                event.preventDefault()
+                const file = event.dataTransfer.files[0]
+                if (file) attachProofFile(file)
+              }}
+            >
+              <label className="payment-attachment-icon" htmlFor={paymentProofInputId} aria-label="Attach proof of payment" title="Attach proof of payment">
+                <AttachmentIcon />
+                <input
+                  id={paymentProofInputId}
+                  type="file"
+                  accept="image/*,application/pdf,.doc,.docx"
+                  capture="environment"
+                  onChange={(event) => {
+                    const file = event.target.files?.[0]
+                    if (file) attachProofFile(file)
+                  }}
+                />
+              </label>
+              <div>
+                <span>Proof of payment</span>
+                <strong>{proofFileName || 'Take photo, upload or drag file here'}</strong>
+              </div>
+            </div>
+            <label>
+              <span>Amount received</span>
+              <input
+                type="number"
+                min="0"
+                step="0.01"
+                value={paymentAmount}
+                onChange={(event) => setPaymentAmount(event.target.value)}
+                placeholder={String(invoice.amount)}
+              />
+            </label>
+          </div>
+        )}
+      </article>
+    )
+  }
+
+  return (
+    <div className={`invoice-workflow-list ${compact ? 'compact' : ''}`}>
+      {invoices.length ? invoices.map(renderInvoiceRow) : <p className="quiet">No invoices yet.</p>}
+      {proofPreviewInvoice && (
+        <ProofPreviewModal invoice={proofPreviewInvoice} onClose={() => setProofPreviewInvoice(null)} />
+      )}
+    </div>
+  )
+}
+
+function ProofPreviewModal({ invoice, onClose }: { invoice: Invoice; onClose: () => void }) {
+  return (
+    <div className="modal-backdrop" role="presentation">
+      <section className="modal-window proof-preview-modal" aria-label="Proof of payment preview">
+        <div className="modal-header">
+          <div>
+            <p>Proof of payment</p>
+            <h2>{invoice.patientName}</h2>
+          </div>
+          <button type="button" className="modal-close" onClick={onClose} aria-label="Close proof preview">
+            x
+          </button>
+        </div>
+        <div className="modal-body proof-preview-body">
+          <div className="proof-preview-card">
+            <AttachmentIcon />
+            <div>
+              <strong>{invoice.proofOfPaymentName ?? invoice.proofOfPaymentUrl}</strong>
+              <span>{invoice.id} · {formatMoney(invoice.paymentAmount ?? invoice.amount)}</span>
+            </div>
+          </div>
+          {invoice.proofOfPaymentUrl ? (
+            <iframe
+              className="proof-preview-frame"
+              src={invoice.proofOfPaymentUrl}
+              title={`Proof of payment for ${invoice.id}`}
+            />
+          ) : (
+            <div className="proof-preview-file">
+              <DocumentIcon />
+              <span>No proof file available.</span>
+            </div>
+          )}
+        </div>
+      </section>
+    </div>
+  )
+}
+
 function Finances({
   sessionInvoiceDetails,
-  onConfirmSessionInvoice,
+  invoiceRecords,
+  onUpdateSession,
+  onOpenPatientProfile,
+  onMarkNoShow,
+  onCancelSession,
+  onSavePatientNote,
+  onConfirmInvoice,
+  onMarkPaymentReceived,
 }: {
   sessionInvoiceDetails: SessionInvoiceDetail[]
-  onConfirmSessionInvoice: (sessionId: string) => void
+  invoiceRecords: Invoice[]
+  onUpdateSession: (session: CalendarSession) => void
+  onOpenPatientProfile: (patientName: string) => void
+  onMarkNoShow: (session: CalendarSession) => void
+  onCancelSession: (session: CalendarSession, shouldReschedule: boolean) => void
+  onSavePatientNote: (patientName: string, note: PatientNote) => void
+  onConfirmInvoice: (invoiceId: string) => void
+  onMarkPaymentReceived: (invoiceId: string, proofFile?: string, paymentAmount?: number, proofFileName?: string) => void
 }) {
-  const outstanding = invoices.reduce((sum, invoice) => sum + invoice.total - invoice.paid, 0)
-  const sessionsNeedingInvoiceConfirmation = sessionInvoiceDetails.filter((session) => !session.isConfirmed)
+  const [activeInvoiceStage, setActiveInvoiceStage] = useState<InvoiceStatus>('awaiting_payment')
+  const [invoiceDateRange, setInvoiceDateRange] = useState('past_month')
+  const [selectedFinanceSession, setSelectedFinanceSession] = useState<SessionInvoiceDetail | null>(null)
+  const [isFinanceSessionEditMode, setIsFinanceSessionEditMode] = useState(false)
+  const sessionsNeedingInvoiceConfirmation = sessionInvoiceDetails.filter((session) => !session.isConfirmed && session.invoice)
+  const invoiceStages: Array<{ status: InvoiceStatus; label: string }> = [
+    { status: 'awaiting_payment', label: 'Awaiting payment' },
+    { status: 'payment_due', label: 'Payment due' },
+    { status: 'payment_received', label: 'Payment received' },
+  ]
+  const filteredInvoiceRecords = invoiceRecords.filter((invoice) => getInvoiceStatus(invoice) === activeInvoiceStage)
 
   return (
     <div className="page-grid">
-      <Metric label="Outstanding balances" value={formatMoney(outstanding)} detail="across session-linked invoices" />
-      <Metric label="Overdue invoices" value="2" detail="oldest invoice 18 days" />
-      <Metric label="Payments today" value={formatMoney(780)} detail="1 patient payment allocated" />
       <section className="panel span-3">
         <div className="panel-heading">
           <div>
@@ -2718,7 +3256,23 @@ function Finances({
         <div className="confirm-invoice-list">
           {sessionsNeedingInvoiceConfirmation.length ? (
             sessionsNeedingInvoiceConfirmation.map((session) => (
-              <article key={session.id}>
+              <article
+                className="confirm-invoice-session-card"
+                key={session.id}
+                role="button"
+                tabIndex={0}
+                onClick={() => {
+                  setSelectedFinanceSession(session)
+                  setIsFinanceSessionEditMode(false)
+                }}
+                onKeyDown={(event) => {
+                  if (event.key === 'Enter' || event.key === ' ') {
+                    event.preventDefault()
+                    setSelectedFinanceSession(session)
+                    setIsFinanceSessionEditMode(false)
+                  }
+                }}
+              >
                 <div>
                   <strong>{session.patient}</strong>
                   <span>{session.date} · {session.startTime}-{session.endTime} · {session.type} · {session.therapist}</span>
@@ -2729,7 +3283,10 @@ function Finances({
                 </div>
                 <button
                   type="button"
-                  onClick={() => onConfirmSessionInvoice(session.id)}
+                  onClick={(event) => {
+                    event.stopPropagation()
+                    if (session.invoice) onConfirmInvoice(session.invoice.id)
+                  }}
                 >
                   Confirm invoice
                 </button>
@@ -2746,49 +3303,62 @@ function Finances({
             <p>Finance</p>
             <h2>Invoices and payments</h2>
           </div>
-        </div>
-        <div className="table finance-table">
-          {invoices.map((invoice) => (
-            <div className="table-row" key={invoice.id}>
-              <span>{invoice.id}</span>
-              <span>{invoice.patient}</span>
-              <span>{invoice.age}</span>
-              <span>{formatMoney(invoice.total - invoice.paid)}</span>
-              <Status label={invoice.status} />
-            </div>
-          ))}
-        </div>
-      </section>
-      <section className="panel span-2">
-        <div className="panel-heading">
-          <div>
-            <p>Payment allocation</p>
-            <h2>Session-linked billing</h2>
+          <div className="invoice-filter-controls">
+            <select
+              className="invoice-date-range"
+              value={invoiceDateRange}
+              onChange={(event) => setInvoiceDateRange(event.target.value)}
+              aria-label="Invoice date range"
+            >
+              <option value="past_week">Past week</option>
+              <option value="past_month">Past month</option>
+              <option value="past_3_months">Past 3 months</option>
+              <option value="past_6_months">Past 6 months</option>
+              <option value="past_year">Past year</option>
+            </select>
+            {invoiceStages.map((stage) => (
+              <button
+                type="button"
+                className={activeInvoiceStage === stage.status ? 'active' : ''}
+                onClick={() => setActiveInvoiceStage(stage.status)}
+                key={stage.status}
+              >
+                {stage.label}
+              </button>
+            ))}
           </div>
         </div>
-        <div className="allocation-list">
-          {sessionInvoiceDetails.map((session) => (
-            <div key={session.id}>
-              <span>{session.patient}</span>
-              <strong>{session.isConfirmed ? session.invoiceId ?? 'Invoice confirmed' : 'No invoice yet'}</strong>
-              <small>{formatMoney(session.price)}</small>
-            </div>
-          ))}
-        </div>
+        <InvoiceWorkflowList
+          invoices={filteredInvoiceRecords}
+          onConfirmInvoice={onConfirmInvoice}
+          onMarkPaymentReceived={onMarkPaymentReceived}
+        />
       </section>
-      <section className="panel">
-        <div className="panel-heading">
-          <div>
-            <p>Reminders</p>
-            <h2>Communication</h2>
-          </div>
-        </div>
-        <div className="tool-list">
-          <button>Send overdue WhatsApp</button>
-          <button>Email statement</button>
-          <button>Upload payment proof</button>
-        </div>
-      </section>
+      {selectedFinanceSession && (
+        <SessionDetailModal
+          session={selectedFinanceSession}
+          isEditing={isFinanceSessionEditMode}
+          setIsEditing={setIsFinanceSessionEditMode}
+          onChange={(updatedSession) => {
+            onUpdateSession(updatedSession)
+            setSelectedFinanceSession((current) => (current?.id === updatedSession.id ? { ...current, ...updatedSession } : current))
+          }}
+          onOpenPatientProfile={onOpenPatientProfile}
+          onMarkNoShow={(session) => {
+            onMarkNoShow(session)
+            setSelectedFinanceSession(null)
+          }}
+          onCancelSession={(session, shouldReschedule) => {
+            onCancelSession(session, shouldReschedule)
+            setSelectedFinanceSession(null)
+          }}
+          onSavePatientNote={onSavePatientNote}
+          invoiceRecords={invoiceRecords}
+          onConfirmInvoice={onConfirmInvoice}
+          onMarkPaymentReceived={onMarkPaymentReceived}
+          onClose={() => setSelectedFinanceSession(null)}
+        />
+      )}
     </div>
   )
 }
@@ -3214,6 +3784,23 @@ function PencilIcon() {
     <svg aria-hidden="true" viewBox="0 0 24 24" fill="none">
       <path d="M4 20h4.2L19.4 8.8a2 2 0 0 0 0-2.8L18 4.6a2 2 0 0 0-2.8 0L4 15.8V20Z" stroke="currentColor" strokeWidth="2" strokeLinejoin="round" />
       <path d="m13.8 6 4.2 4.2" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
+    </svg>
+  )
+}
+
+function DocumentIcon() {
+  return (
+    <svg aria-hidden="true" viewBox="0 0 24 24" fill="none">
+      <path d="M7 3h7l4 4v14H7V3Z" stroke="currentColor" strokeWidth="2" strokeLinejoin="round" />
+      <path d="M14 3v5h4M9 13h6M9 17h6" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+    </svg>
+  )
+}
+
+function AttachmentIcon() {
+  return (
+    <svg aria-hidden="true" viewBox="0 0 24 24" fill="none">
+      <path d="m20 11.5-8.7 8.7a5 5 0 0 1-7.1-7.1l9.2-9.2a3.4 3.4 0 0 1 4.8 4.8L9 18a1.8 1.8 0 0 1-2.6-2.6l8.2-8.2" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
     </svg>
   )
 }
