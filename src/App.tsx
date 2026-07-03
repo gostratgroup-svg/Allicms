@@ -12,6 +12,13 @@ type CalendarSession = {
   type: string
   therapist: string
   room: string
+  practiceEntityId?: string
+  practiceLocationId?: string
+  billingCodeId?: string
+  quotedAmount?: number
+  invoiceAmount?: number
+  selectedPracticeNumberSource?: 'practice' | 'therapist'
+  selectedBankingDetailsSource?: 'practice' | 'therapist'
 }
 type PatientHistoryEvent = {
   title: string
@@ -43,6 +50,40 @@ type Invoice = {
   pdfInvoiceUrl?: string
   proofOfPaymentUrl?: string
   proofOfPaymentName?: string
+  practiceEntityId?: string
+  practiceLocationId?: string
+  therapistId?: string
+  selectedPracticeNumber?: string
+  selectedBankingDetails?: string
+  billingCodeId?: string
+  icd10Code?: string
+  serviceDescription?: string
+  createdAt: string
+  updatedAt: string
+}
+type BankingDetails = {
+  accountName: string
+  bank: string
+  accountNumber: string
+  branchCode: string
+}
+type TenantUserRole = 'admin' | 'receptionist' | 'therapist' | 'finance'
+type TenantUser = {
+  id: string
+  tenantId: string
+  firstName: string
+  lastName: string
+  email: string
+  phone: string
+  role: TenantUserRole
+  isActive: boolean
+  practiceNumber: string
+  usesOwnPracticeNumber: boolean
+  hpcsaNumber: string
+  qualification: string
+  discipline: string
+  bankingDetails: BankingDetails
+  signatureUrl: string
   createdAt: string
   updatedAt: string
 }
@@ -366,6 +407,63 @@ const billingItems = [
   },
 ]
 
+const practiceEntities = [
+  {
+    id: 'practice-a',
+    tenantId: tenant.tenantId,
+    name: 'Kids Therapy Centre',
+    practiceNumber: 'KTC-2026-019',
+    bankingDetails: { accountName: 'Kids Therapy Centre', bank: 'FNB', accountNumber: '62000000000', branchCode: '250655' },
+    invoicePrefix: 'INV',
+    quotePrefix: 'QUO',
+    paymentTerms: 'Payment due within 7 days',
+    allowTherapistBankingOverride: true,
+    isActive: true,
+    createdAt: '2026-06-20',
+    updatedAt: appTodayIso,
+  },
+  {
+    id: 'practice-b',
+    tenantId: tenant.tenantId,
+    name: 'School Outreach Practice',
+    practiceNumber: 'SOP-77410',
+    bankingDetails: { accountName: 'School Outreach Practice', bank: 'FNB', accountNumber: '62000111111', branchCode: '250655' },
+    invoicePrefix: 'SOI',
+    quotePrefix: 'SOQ',
+    paymentTerms: 'Payment due within 14 days',
+    allowTherapistBankingOverride: false,
+    isActive: true,
+    createdAt: '2026-06-24',
+    updatedAt: appTodayIso,
+  },
+]
+
+const practiceLocations = [
+  { id: 'loc-1', tenantId: tenant.tenantId, practiceEntityId: 'practice-a', name: 'Main rooms', address: '12 Oak Street, Cape Town', contactNumber: '021 555 0100', isActive: true, createdAt: '2026-06-20', updatedAt: appTodayIso },
+  { id: 'loc-2', tenantId: tenant.tenantId, practiceEntityId: 'practice-a', name: 'Paediatric gym', address: '12 Oak Street, Cape Town', contactNumber: '021 555 0100', isActive: true, createdAt: '2026-06-20', updatedAt: appTodayIso },
+  { id: 'loc-3', tenantId: tenant.tenantId, practiceEntityId: 'practice-b', name: 'Oak Primary outreach', address: 'Oak Primary School, Cape Town', contactNumber: '021 555 0130', isActive: true, createdAt: '2026-06-24', updatedAt: appTodayIso },
+]
+
+const billingCodeDefaults = billingItems.map((item, index) => ({
+  id: `billing-${index + 1}`,
+  tenantId: tenant.tenantId,
+  practiceEntityId: index < 2 ? 'practice-a' : '',
+  code: item.code,
+  description: item.description,
+  serviceType: item.sessionType,
+  defaultPrice: item.price,
+  discipline: item.sessionType.includes('Occupational') ? 'Occupational Therapist' : item.sessionType.includes('Speech') ? 'Speech Therapist' : '',
+  isActive: true,
+  createdAt: '2026-06-20',
+  updatedAt: appTodayIso,
+}))
+
+const therapistFinanceProfiles = [
+  { id: 'tfp-1', tenantId: tenant.tenantId, userId: 'therapist-nadia-botha', therapistName: 'Nadia Botha', practiceNumber: 'OT-88421', usesOwnPracticeNumber: true, bankingDetails: { accountName: 'Nadia Botha', bank: 'FNB', accountNumber: '62000999111', branchCode: '250655' }, signatureUrl: '', createdAt: '2026-06-20', updatedAt: appTodayIso },
+  { id: 'tfp-2', tenantId: tenant.tenantId, userId: 'therapist-megan-pillay', therapistName: 'Megan Pillay', practiceNumber: 'ST-33104', usesOwnPracticeNumber: true, bankingDetails: { accountName: 'Megan Pillay', bank: 'FNB', accountNumber: '62000888111', branchCode: '250655' }, signatureUrl: '', createdAt: '2026-06-21', updatedAt: appTodayIso },
+  { id: 'tfp-3', tenantId: tenant.tenantId, userId: 'therapist-johan-kruger', therapistName: 'Johan Kruger', practiceNumber: 'PT-55201', usesOwnPracticeNumber: false, bankingDetails: { accountName: '', bank: '', accountNumber: '', branchCode: '' }, signatureUrl: '', createdAt: '2026-06-22', updatedAt: appTodayIso },
+]
+
 const therapists = [
   { name: 'Nadia Botha', color: '#2f6fed', background: '#e2ecff' },
   { name: 'Megan Pillay', color: '#12805c', background: '#ddf7e8' },
@@ -375,6 +473,11 @@ const therapists = [
 
 const formatMoney = (amount: number) =>
   new Intl.NumberFormat('en-ZA', { style: 'currency', currency: 'ZAR', maximumFractionDigits: 0 }).format(amount)
+
+const formatBankingDetails = (details?: BankingDetails) =>
+  details
+    ? [details.accountName, details.bank, details.accountNumber, details.branchCode].filter(Boolean).join(' | ')
+    : ''
 
 function therapistCalendarStyle(therapist: string) {
   const therapistConfig = therapists.find((item) => item.name === therapist) ?? therapists[0]
@@ -908,7 +1011,12 @@ function NewSessionModal({
   const [newAdultSecondaryName, setNewAdultSecondaryName] = useState('')
   const [newAdultSecondaryPhone, setNewAdultSecondaryPhone] = useState('')
   const [newAdultSecondaryRelation, setNewAdultSecondaryRelation] = useState('Spouse / Partner')
-  const [selectedBillingCodes, setSelectedBillingCodes] = useState<string[]>([billingItems[0].code])
+  const [selectedPracticeEntityId, setSelectedPracticeEntityId] = useState(practiceEntities[0].id)
+  const [selectedPracticeLocationId, setSelectedPracticeLocationId] = useState(practiceLocations[0].id)
+  const [selectedBillingCodeId, setSelectedBillingCodeId] = useState(billingCodeDefaults[0].id)
+  const [quotedAmount, setQuotedAmount] = useState(String(billingCodeDefaults[0].defaultPrice))
+  const [practiceNumberSource, setPracticeNumberSource] = useState<'practice' | 'therapist'>('practice')
+  const [bankingDetailsSource, setBankingDetailsSource] = useState<'practice' | 'therapist'>('practice')
   const [sessionDate, setSessionDate] = useState(initialDate)
   const [sessionTime, setSessionTime] = useState(initialTime)
   const [sessionTherapist, setSessionTherapist] = useState('Nadia Botha')
@@ -924,17 +1032,39 @@ function NewSessionModal({
       item.toLowerCase().includes(patientSearchNeedle),
     ),
   )
-  const selectedBillingItems = billingItems.filter((item) => selectedBillingCodes.includes(item.code))
-  const billingTotal = selectedBillingItems.reduce((total, item) => total + item.price, 0)
+  const selectedPracticeEntity = practiceEntities.find((practice) => practice.id === selectedPracticeEntityId) ?? practiceEntities[0]
+  const availablePracticeLocations = practiceLocations.filter((location) => location.practiceEntityId === selectedPracticeEntityId && location.isActive)
+  const selectedPracticeLocation = availablePracticeLocations.find((location) => location.id === selectedPracticeLocationId) ?? availablePracticeLocations[0]
+  const availableBillingCodes = billingCodeDefaults.filter((item) =>
+    item.isActive && (!item.practiceEntityId || item.practiceEntityId === selectedPracticeEntityId),
+  )
+  const selectedBillingCode = availableBillingCodes.find((item) => item.id === selectedBillingCodeId) ?? availableBillingCodes[0]
+  const billingTotal = Number(quotedAmount) || selectedBillingCode?.defaultPrice || 0
+  const selectedTherapistFinance = therapistFinanceProfiles.find((profile) => profile.therapistName === sessionTherapist)
+  const canUseTherapistBanking = selectedPracticeEntity.allowTherapistBankingOverride && Boolean(selectedTherapistFinance?.bankingDetails.accountNumber)
+  const canUseTherapistPracticeNumber = selectedTherapistFinance?.usesOwnPracticeNumber && Boolean(selectedTherapistFinance.practiceNumber)
   const requiresGuardian = ['Child', 'Teen'].includes(newPatientType)
   const scheduleTimes = calendarQuarterSlots
-  const createdSessionType = selectedBillingItems[0]?.sessionType ?? 'Therapy session'
+  const createdSessionType = selectedBillingCode?.serviceType ?? 'Therapy session'
 
-  const toggleBillingCode = (code: string) => {
-    setSelectedBillingCodes((current) =>
-      current.includes(code) ? current.filter((item) => item !== code) : [...current, code],
-    )
-  }
+  useEffect(() => {
+    const firstLocation = practiceLocations.find((location) => location.practiceEntityId === selectedPracticeEntityId && location.isActive)
+    if (firstLocation && !availablePracticeLocations.some((location) => location.id === selectedPracticeLocationId)) {
+      setSelectedPracticeLocationId(firstLocation.id)
+    }
+  }, [availablePracticeLocations, selectedPracticeEntityId, selectedPracticeLocationId])
+
+  useEffect(() => {
+    if (!availableBillingCodes.some((item) => item.id === selectedBillingCodeId) && availableBillingCodes[0]) {
+      setSelectedBillingCodeId(availableBillingCodes[0].id)
+      setQuotedAmount(String(availableBillingCodes[0].defaultPrice))
+    }
+  }, [availableBillingCodes, selectedBillingCodeId])
+
+  useEffect(() => {
+    if (!canUseTherapistBanking) setBankingDetailsSource('practice')
+    setPracticeNumberSource(canUseTherapistPracticeNumber ? 'therapist' : 'practice')
+  }, [canUseTherapistBanking, canUseTherapistPracticeNumber])
 
   const isBookedSlot = (date: string, time: string) =>
     calendarSessions.some((session) => session.date === date && session.startTime === time)
@@ -1002,7 +1132,14 @@ function NewSessionModal({
     patient: patientMode === 'existing' ? selectedPatient?.name ?? 'Selected patient' : createdPatientName,
     type: createdSessionType,
     therapist: sessionTherapist,
-    room: sessionRoom,
+    room: selectedPracticeLocation?.name ?? sessionRoom,
+    practiceEntityId: selectedPracticeEntity.id,
+    practiceLocationId: selectedPracticeLocation?.id,
+    billingCodeId: selectedBillingCode?.id,
+    quotedAmount: billingTotal,
+    invoiceAmount: billingTotal,
+    selectedPracticeNumberSource: canUseTherapistPracticeNumber ? practiceNumberSource : 'practice',
+    selectedBankingDetailsSource: canUseTherapistBanking ? bankingDetailsSource : 'practice',
   })
   const patientProfileUrl = `${window.location.origin}/patient-link/${tenant.tenantId}/${nextPatientNumber.toLowerCase()}`
   const intakeShareMessage = pendingNewPatientSession
@@ -1235,6 +1372,22 @@ ${patientProfileUrl}`
                 </select>
               </label>
               <label className="field">
+                <span>Practice</span>
+                <select value={selectedPracticeEntityId} onChange={(event) => setSelectedPracticeEntityId(event.target.value)}>
+                  {practiceEntities.filter((practice) => practice.isActive).map((practice) => (
+                    <option value={practice.id} key={practice.id}>{practice.name}</option>
+                  ))}
+                </select>
+              </label>
+              <label className="field">
+                <span>Location</span>
+                <select value={selectedPracticeLocation?.id ?? ''} onChange={(event) => setSelectedPracticeLocationId(event.target.value)}>
+                  {availablePracticeLocations.map((location) => (
+                    <option value={location.id} key={location.id}>{location.name}</option>
+                  ))}
+                </select>
+              </label>
+              <label className="field">
                 <span>Room / mode</span>
                 <select value={sessionRoom} onChange={(event) => setSessionRoom(event.target.value)}>
                   <option>Room 1</option>
@@ -1303,7 +1456,7 @@ ${patientProfileUrl}`
               <span>3</span>
               <div>
                 <strong>Billing and ICD-10</strong>
-                <small>Select one or more configured billing items.</small>
+                <small>Pricing is filtered by the selected practice and can be overridden before invoicing.</small>
               </div>
             </div>
             <div className="billing-choice-table">
@@ -1313,25 +1466,47 @@ ${patientProfileUrl}`
                 <span>Session type</span>
                 <span>Price</span>
               </div>
-              {billingItems.map((item) => (
-                <label className="billing-choice" key={item.code}>
+              {availableBillingCodes.map((item) => (
+                <label className="billing-choice" key={item.id}>
                   <input
-                    type="checkbox"
-                    checked={selectedBillingCodes.includes(item.code)}
-                    onChange={() => toggleBillingCode(item.code)}
+                    type="radio"
+                    name="session-billing-code"
+                    checked={selectedBillingCode?.id === item.id}
+                    onChange={() => {
+                      setSelectedBillingCodeId(item.id)
+                      setQuotedAmount(String(item.defaultPrice))
+                    }}
                   />
                   <code>{item.code}</code>
                   <span className="billing-session-type">
-                    <strong>{item.sessionType}</strong>
+                    <strong>{item.serviceType}</strong>
                     <small>{item.description}</small>
                   </span>
-                  <b>{formatMoney(item.price)}</b>
+                  <b>{formatMoney(item.defaultPrice)}</b>
                 </label>
               ))}
             </div>
-            <div className="billing-total">
-              <span>Estimated session total</span>
-              <strong>{formatMoney(billingTotal)}</strong>
+            <div className="form-grid two-col billing-source-grid">
+              <label className="field">
+                <span>Price</span>
+                <input type="number" value={quotedAmount} onChange={(event) => setQuotedAmount(event.target.value)} />
+              </label>
+              <div className="field readonly-field">
+                <span>Practice number</span>
+                <strong>{canUseTherapistPracticeNumber ? selectedTherapistFinance?.practiceNumber : selectedPracticeEntity.practiceNumber}</strong>
+                <small>{canUseTherapistPracticeNumber ? 'Therapist own practice number' : 'Main practice number'}</small>
+              </div>
+              <label className="field">
+                <span>Banking details source</span>
+                <select value={bankingDetailsSource} onChange={(event) => setBankingDetailsSource(event.target.value as 'practice' | 'therapist')}>
+                  <option value="practice">Practice banking</option>
+                  {canUseTherapistBanking && <option value="therapist">Therapist banking</option>}
+                </select>
+              </label>
+              <div className="billing-total">
+                <span>Estimated session total</span>
+                <strong>{formatMoney(billingTotal)}</strong>
+              </div>
             </div>
           </section>
         </div>
@@ -1761,11 +1936,12 @@ const weekSessions = [
 
 function getSessionAmount(session: CalendarSession) {
   const matchingDailySession = sessions.find((item) => item.patient === session.patient && item.time === session.startTime)
-  const billingItem = billingItems.find((item) =>
-    session.type.toLowerCase().includes(item.sessionType.split(' ')[0].toLowerCase()) ||
-    item.sessionType.toLowerCase().includes(session.type.toLowerCase()),
+  const billingItem = billingCodeDefaults.find((item) =>
+    item.id === session.billingCodeId ||
+    session.type.toLowerCase().includes(item.serviceType.split(' ')[0].toLowerCase()) ||
+    item.serviceType.toLowerCase().includes(session.type.toLowerCase()),
   )
-  return matchingDailySession?.amount ?? billingItem?.price ?? 780
+  return session.invoiceAmount ?? session.quotedAmount ?? matchingDailySession?.amount ?? billingItem?.defaultPrice ?? 780
 }
 
 function getPatientIdByName(patientName: string) {
@@ -1775,6 +1951,16 @@ function getPatientIdByName(patientName: string) {
 function createInvoiceFromSession(session: CalendarSession, index: number, status: InvoiceStatus = 'confirm_invoice'): Invoice {
   const confirmedAt = status === 'confirm_invoice' ? undefined : session.date
   const paymentDueDate = confirmedAt ? toIsoDate(addDays(parseIsoDate(confirmedAt), 7)) : undefined
+  const practiceEntity = practiceEntities.find((practice) => practice.id === session.practiceEntityId) ?? practiceEntities[0]
+  const practiceLocation = practiceLocations.find((location) => location.id === session.practiceLocationId)
+  const therapistProfile = therapistFinanceProfiles.find((profile) => profile.therapistName === session.therapist)
+  const billingCode = billingCodeDefaults.find((code) => code.id === session.billingCodeId) ?? billingCodeDefaults.find((code) => code.serviceType === session.type)
+  const selectedPracticeNumber = session.selectedPracticeNumberSource === 'therapist' && therapistProfile?.practiceNumber
+    ? therapistProfile.practiceNumber
+    : practiceEntity.practiceNumber
+  const selectedBankingDetails = session.selectedBankingDetailsSource === 'therapist' && therapistProfile?.bankingDetails.accountNumber
+    ? formatBankingDetails(therapistProfile.bankingDetails)
+    : formatBankingDetails(practiceEntity.bankingDetails)
   const invoice: Invoice = {
     id: `INV-${2100 + index}`,
     patientId: getPatientIdByName(session.patient),
@@ -1788,6 +1974,14 @@ function createInvoiceFromSession(session: CalendarSession, index: number, statu
     confirmedAt,
     paymentDueDate,
     paymentReceivedAt: status === 'payment_received' ? appTodayIso : undefined,
+    practiceEntityId: practiceEntity.id,
+    practiceLocationId: practiceLocation?.id,
+    therapistId: therapistProfile?.userId,
+    selectedPracticeNumber,
+    selectedBankingDetails,
+    billingCodeId: billingCode?.id,
+    icd10Code: billingCode?.code,
+    serviceDescription: billingCode?.description ?? session.type,
     createdAt: session.date,
     updatedAt: session.date,
   }
@@ -2128,7 +2322,10 @@ function SessionDetailView({
   const selectedBillingItems = draftIcdCodes.length
     ? billingItems.filter((item) => draftIcdCodes.includes(item.code))
     : displayedBillingItems
-  const sessionBillingTotal = selectedBillingItems.reduce((total, item) => total + item.price, 0)
+  const sessionBillingTotal = session.invoiceAmount ?? session.quotedAmount ?? selectedBillingItems.reduce((total, item) => total + item.price, 0)
+  const sessionPracticeEntity = practiceEntities.find((practice) => practice.id === session.practiceEntityId) ?? practiceEntities[0]
+  const sessionPracticeLocation = practiceLocations.find((location) => location.id === session.practiceLocationId)
+  const sessionBillingCode = billingCodeDefaults.find((code) => code.id === session.billingCodeId)
   const sessionInvoices = invoiceRecords.filter((invoice) => invoice.sessionId === session.id)
   const isSessionInvoiceConfirmed = sessionInvoices.some((invoice) => getInvoiceStatus(invoice) !== 'confirm_invoice')
   const patientInvoices = invoiceRecords.filter((invoice) => invoice.patientName === session.patient)
@@ -2321,6 +2518,10 @@ function SessionDetailView({
             </button>
           </div>
           <div className="session-finance-summary">
+            <article className="finance-row-two">
+              <span>Practice / venue</span>
+              <strong>{sessionPracticeEntity.name}{sessionPracticeLocation ? ` · ${sessionPracticeLocation.name}` : ''}</strong>
+            </article>
             <article className="finance-row-one">
               <span>Billing item</span>
               {isBillingEditMode ? (
@@ -2330,7 +2531,7 @@ function SessionDetailView({
                   ))}
                 </select>
               ) : (
-                <strong>{draftBillingItem}</strong>
+                <strong>{sessionBillingCode?.serviceType ?? draftBillingItem}</strong>
               )}
             </article>
             <article className="finance-row-one">
@@ -3822,6 +4023,341 @@ function Settings({ role, setRole }: { role: Role; setRole: (role: Role) => void
   ] as const
   const [activeSetting, setActiveSetting] = useState<(typeof settingOptions)[number]['id']>('users')
   const activeOption = settingOptions.find((option) => option.id === activeSetting) ?? settingOptions[0]
+  const createBlankTenantUser = (): TenantUser => ({
+    id: `user-${Date.now()}`,
+    tenantId: tenant.tenantId,
+    firstName: '',
+    lastName: '',
+    email: '',
+    phone: '',
+    role: 'therapist',
+    isActive: true,
+    practiceNumber: '',
+    usesOwnPracticeNumber: false,
+    hpcsaNumber: '',
+    qualification: '',
+    discipline: '',
+    bankingDetails: { accountName: '', bank: '', accountNumber: '', branchCode: '' },
+    signatureUrl: '',
+    createdAt: appTodayIso,
+    updatedAt: appTodayIso,
+  })
+  const [tenantUsers, setTenantUsers] = useState<TenantUser[]>([
+    {
+      id: 'user-1',
+      tenantId: tenant.tenantId,
+      firstName: 'Nadia',
+      lastName: 'Botha',
+      email: 'nadia@kidstherapy.example',
+      phone: '082 551 0174',
+      role: 'admin',
+      isActive: true,
+      practiceNumber: 'OT-88421',
+      usesOwnPracticeNumber: true,
+      hpcsaNumber: 'OT009921',
+      qualification: 'BSc Occupational Therapy',
+      discipline: 'Occupational Therapist',
+      bankingDetails: { accountName: 'Nadia Botha', bank: 'FNB', accountNumber: '62000999111', branchCode: '250655' },
+      signatureUrl: '',
+      createdAt: '2026-06-20',
+      updatedAt: '2026-07-03',
+    },
+    {
+      id: 'user-2',
+      tenantId: tenant.tenantId,
+      firstName: 'Megan',
+      lastName: 'Pillay',
+      email: 'megan@kidstherapy.example',
+      phone: '076 882 3149',
+      role: 'therapist',
+      isActive: true,
+      practiceNumber: 'SP-33104',
+      usesOwnPracticeNumber: true,
+      hpcsaNumber: 'ST008331',
+      qualification: 'B Speech-Language Pathology',
+      discipline: 'Speech Therapist',
+      bankingDetails: { accountName: 'Megan Pillay', bank: 'FNB', accountNumber: '62000888111', branchCode: '250655' },
+      signatureUrl: '',
+      createdAt: '2026-06-21',
+      updatedAt: '2026-07-03',
+    },
+    {
+      id: 'user-3',
+      tenantId: tenant.tenantId,
+      firstName: 'Lara',
+      lastName: 'Meyer',
+      email: 'frontdesk@kidstherapy.example',
+      phone: '021 555 0100',
+      role: 'receptionist',
+      isActive: true,
+      practiceNumber: '',
+      usesOwnPracticeNumber: false,
+      hpcsaNumber: '',
+      qualification: '',
+      discipline: '',
+      bankingDetails: { accountName: '', bank: '', accountNumber: '', branchCode: '' },
+      signatureUrl: '',
+      createdAt: '2026-06-22',
+      updatedAt: '2026-07-03',
+    },
+  ])
+  const [selectedUserId, setSelectedUserId] = useState('user-1')
+  const [isUserEditMode, setIsUserEditMode] = useState(false)
+  const [draftUser, setDraftUser] = useState<TenantUser | null>(null)
+  const isCreatingUser = Boolean(draftUser)
+  const selectedUser = draftUser ?? tenantUsers.find((user) => user.id === selectedUserId) ?? tenantUsers[0]
+  const updateSelectedUser = (field: keyof typeof selectedUser, value: string | boolean) => {
+    if (draftUser) {
+      setDraftUser({ ...draftUser, [field]: value, updatedAt: appTodayIso })
+      return
+    }
+    setTenantUsers((users) =>
+      users.map((user) =>
+        user.id === selectedUser.id ? { ...user, [field]: value, updatedAt: appTodayIso } : user,
+      ),
+    )
+  }
+  const updateSelectedUserBanking = (field: keyof BankingDetails, value: string) => {
+    if (draftUser) {
+      setDraftUser({
+        ...draftUser,
+        bankingDetails: { ...draftUser.bankingDetails, [field]: value },
+        updatedAt: appTodayIso,
+      })
+      return
+    }
+    setTenantUsers((users) =>
+      users.map((user) =>
+        user.id === selectedUser.id
+          ? { ...user, bankingDetails: { ...user.bankingDetails, [field]: value }, updatedAt: appTodayIso }
+          : user,
+      ),
+    )
+  }
+  const updateSelectedUserPracticeNumberPreference = (usesOwnPracticeNumber: boolean) => {
+    if (draftUser) {
+      setDraftUser({
+        ...draftUser,
+        usesOwnPracticeNumber,
+        practiceNumber: usesOwnPracticeNumber ? draftUser.practiceNumber : '',
+        updatedAt: appTodayIso,
+      })
+      return
+    }
+    setTenantUsers((users) =>
+      users.map((user) =>
+        user.id === selectedUser.id
+          ? {
+              ...user,
+              usesOwnPracticeNumber,
+              practiceNumber: usesOwnPracticeNumber ? user.practiceNumber : '',
+              updatedAt: appTodayIso,
+            }
+          : user,
+      ),
+    )
+  }
+  const addTenantUser = () => {
+    setDraftUser(createBlankTenantUser())
+    setIsUserEditMode(false)
+  }
+  const saveDraftUser = () => {
+    if (!draftUser) return
+    const newUser = { ...draftUser, updatedAt: appTodayIso }
+    setTenantUsers((users) => [...users, newUser])
+    setSelectedUserId(newUser.id)
+    setDraftUser(null)
+    setIsUserEditMode(false)
+    setRole(newUser.role === 'admin' ? 'Admin' : newUser.role === 'receptionist' ? 'Reception' : 'Therapist')
+  }
+  const deleteSelectedUser = () => {
+    if (tenantUsers.length <= 1) return
+    setTenantUsers((users) => {
+      const remainingUsers = users.filter((user) => user.id !== selectedUser.id)
+      setSelectedUserId(remainingUsers[0]?.id ?? '')
+      setIsUserEditMode(false)
+      return remainingUsers
+    })
+  }
+  const [practiceConfig, setPracticeConfig] = useState({
+    tenantId: tenant.tenantId,
+    practiceName: tenant.name,
+    registrationNumber: 'KTC-2026-019',
+    address: '12 Oak Street, Cape Town',
+    phone: '021 555 0100',
+    email: 'admin@kidstherapy.example',
+    website: 'https://kidstherapy.example',
+    logoUrl: '/assets/AlliCMS_Logo.png',
+    reportTemplateUrl: 'Parent progress report template',
+    invoiceTemplateUrl: 'Standard invoice template',
+    invoicePrefix: 'INV',
+    bankingDetails: { accountName: 'Kids Therapy Centre', bank: 'FNB', accountNumber: '62000000000', branchCode: '250655' },
+    paymentTerms: 'Payment due within 7 days',
+    taxNumber: '',
+    vatNumber: '',
+    updatedAt: appTodayIso,
+  })
+  const [practiceLogoFileName, setPracticeLogoFileName] = useState('')
+  const updatePracticeConfig = (field: keyof typeof practiceConfig, value: string) => {
+    setPracticeConfig((config) => ({ ...config, [field]: value, updatedAt: appTodayIso }))
+  }
+  const attachPracticeLogo = (file: File) => {
+    setPracticeLogoFileName(file.name)
+    updatePracticeConfig('logoUrl', URL.createObjectURL(file))
+  }
+  const updatePracticeConfigBanking = (field: keyof BankingDetails, value: string) => {
+    setPracticeConfig((config) => ({
+      ...config,
+      bankingDetails: { ...config.bankingDetails, [field]: value },
+      updatedAt: appTodayIso,
+    }))
+  }
+  const [patientConfig, setPatientConfig] = useState({
+    tenantId: tenant.tenantId,
+    intakeFields: [
+      { id: 'field-name', label: 'Patient name', required: true, isActive: true },
+      { id: 'field-dob', label: 'Date of birth', required: true, isActive: true },
+      { id: 'field-address', label: 'Residential address', required: true, isActive: true },
+      { id: 'field-medical-aid', label: 'Medical aid details', required: false, isActive: true },
+      { id: 'field-consent', label: 'POPIA consent and signature', required: true, isActive: true },
+    ],
+    patientCategories: ['Child', 'Teen', 'Adult'],
+    referralSources: ['Parent referral', 'School referral', 'Paediatrician', 'Doctor', 'Other therapist'],
+    consentTemplates: ['POPIA consent', 'Therapy consent', 'Account responsibility'],
+    defaultProfileSections: ['Personal Details', 'Notes', 'Sessions', 'Finance', 'History'],
+    updatedAt: appTodayIso,
+  })
+  const togglePatientField = (fieldId: string, key: 'required' | 'isActive') => {
+    setPatientConfig((config) => ({
+      ...config,
+      intakeFields: config.intakeFields.map((field) =>
+        field.id === fieldId ? { ...field, [key]: !field[key] } : field,
+      ),
+      updatedAt: appTodayIso,
+    }))
+  }
+  const addPatientField = () => {
+    setPatientConfig((config) => ({
+      ...config,
+      intakeFields: [
+        ...config.intakeFields,
+        { id: `field-${Date.now()}`, label: 'New custom field', required: false, isActive: true },
+      ],
+      updatedAt: appTodayIso,
+    }))
+  }
+  const updatePatientListValue = (key: 'patientCategories' | 'referralSources' | 'consentTemplates' | 'defaultProfileSections', value: string) => {
+    setPatientConfig((config) => ({
+      ...config,
+      [key]: value.split(',').map((item) => item.trim()).filter(Boolean),
+      updatedAt: appTodayIso,
+    }))
+  }
+  const [billingRules, setBillingRules] = useState({
+    tenantId: tenant.tenantId,
+    allowTherapistBankingDetails: true,
+    practiceNumberMode: 'mixed' as 'main_practice' | 'individual_therapist' | 'mixed',
+    updatedAt: appTodayIso,
+  })
+  const [billingPracticeEntities, setBillingPracticeEntities] = useState(practiceEntities)
+  const [billingPracticeLocations, setBillingPracticeLocations] = useState(practiceLocations)
+  const [selectedBillingPracticeId, setSelectedBillingPracticeId] = useState(practiceEntities[0].id)
+  const selectedBillingPractice = billingPracticeEntities.find((practice) => practice.id === selectedBillingPracticeId) ?? billingPracticeEntities[0]
+  const updateBillingRule = (field: keyof typeof billingRules, value: string | boolean) => {
+    setBillingRules((rules) => ({ ...rules, [field]: value, updatedAt: appTodayIso }))
+  }
+  const addPracticeEntity = () => {
+    const newPractice = {
+      id: `practice-${Date.now()}`,
+      tenantId: tenant.tenantId,
+      name: 'New practice entity',
+      practiceNumber: '',
+      bankingDetails: { accountName: '', bank: '', accountNumber: '', branchCode: '' },
+      invoicePrefix: 'INV',
+      quotePrefix: 'QUO',
+      paymentTerms: 'Payment due within 7 days',
+      allowTherapistBankingOverride: billingRules.allowTherapistBankingDetails,
+      isActive: true,
+      createdAt: appTodayIso,
+      updatedAt: appTodayIso,
+    }
+    setBillingPracticeEntities((items) => [...items, newPractice])
+    setSelectedBillingPracticeId(newPractice.id)
+  }
+  const updatePracticeEntity = (id: string, field: keyof (typeof billingPracticeEntities)[number], value: string | boolean) => {
+    setBillingPracticeEntities((items) => items.map((item) => (item.id === id ? { ...item, [field]: value, updatedAt: appTodayIso } : item)))
+  }
+  const updatePracticeEntityBanking = (id: string, field: keyof BankingDetails, value: string) => {
+    setBillingPracticeEntities((items) =>
+      items.map((item) =>
+        item.id === id
+          ? { ...item, bankingDetails: { ...item.bankingDetails, [field]: value }, updatedAt: appTodayIso }
+          : item,
+      ),
+    )
+  }
+  const addPracticeLocation = () => {
+    setBillingPracticeLocations((items) => [
+      ...items,
+      { id: `loc-${Date.now()}`, tenantId: tenant.tenantId, practiceEntityId: selectedBillingPractice.id, name: 'New location', address: '', contactNumber: '', isActive: true, createdAt: appTodayIso, updatedAt: appTodayIso },
+    ])
+  }
+  const updatePracticeLocation = (id: string, field: keyof (typeof billingPracticeLocations)[number], value: string | boolean) => {
+    setBillingPracticeLocations((items) => items.map((item) => (item.id === id ? { ...item, [field]: value, updatedAt: appTodayIso } : item)))
+  }
+  const [billingCodes, setBillingCodes] = useState(
+    billingCodeDefaults,
+  )
+  const addBillingCode = () => {
+    setBillingCodes((codes) => [
+      ...codes,
+      {
+        id: `billing-${Date.now()}`,
+        tenantId: tenant.tenantId,
+        practiceEntityId: selectedBillingPractice.id,
+        code: '',
+        description: '',
+        serviceType: 'Therapy session',
+        defaultPrice: 0,
+        discipline: '',
+        isActive: true,
+        createdAt: appTodayIso,
+        updatedAt: appTodayIso,
+      },
+    ])
+  }
+  const updateBillingCode = (id: string, field: keyof (typeof billingCodes)[number], value: string | number | boolean) => {
+    setBillingCodes((codes) =>
+      codes.map((code) => (code.id === id ? { ...code, [field]: value, updatedAt: appTodayIso } : code)),
+    )
+  }
+  const [guides, setGuides] = useState([
+    { id: 'guide-1', tenantId: tenant.tenantId, title: 'Patient setup', category: 'Patients', body: 'Create patient, send intake link, confirm POPIA consent.', isActive: true, updatedAt: appTodayIso },
+    { id: 'guide-2', tenantId: tenant.tenantId, title: 'Session notes', category: 'Clinical', body: 'Open saved session, add planning, add session feedback or internal process notes.', isActive: true, updatedAt: appTodayIso },
+  ])
+  const addGuide = () => {
+    setGuides((items) => [
+      ...items,
+      { id: `guide-${Date.now()}`, tenantId: tenant.tenantId, title: 'New guide', category: 'Operations', body: '', isActive: true, updatedAt: appTodayIso },
+    ])
+  }
+  const updateGuide = (id: string, field: keyof (typeof guides)[number], value: string | boolean) => {
+    setGuides((items) => items.map((item) => (item.id === id ? { ...item, [field]: value, updatedAt: appTodayIso } : item)))
+  }
+  const [whatsNewItems, setWhatsNewItems] = useState([
+    { id: 'update-1', title: 'Patient intake link', version: '0.7.0', summary: 'Added first-access intake form with POPIA consent and digital signature.', releaseDate: '2026-07-03', visibleToRoles: 'Admin, Therapist, Receptionist' },
+    { id: 'update-2', title: 'Finance workflow', version: '0.6.0', summary: 'Added invoice status stages, payment proof capture and patient statements.', releaseDate: '2026-07-02', visibleToRoles: 'Admin, Finance' },
+    { id: 'update-3', title: 'Settings areas', version: '0.5.0', summary: 'Grouped tenant configuration into clear admin settings sections.', releaseDate: '2026-06-30', visibleToRoles: 'Admin' },
+  ])
+  const addWhatsNew = () => {
+    setWhatsNewItems((items) => [
+      { id: `update-${Date.now()}`, title: 'New deployment note', version: '', summary: '', releaseDate: appTodayIso, visibleToRoles: 'Admin' },
+      ...items,
+    ])
+  }
+  const updateWhatsNew = (id: string, field: keyof (typeof whatsNewItems)[number], value: string) => {
+    setWhatsNewItems((items) => items.map((item) => (item.id === id ? { ...item, [field]: value } : item)))
+  }
 
   return (
     <div className="settings-layout">
@@ -3854,182 +4390,466 @@ function Settings({ role, setRole }: { role: Role; setRole: (role: Role) => void
             <h2>{activeOption.label}</h2>
           </div>
         </div>
-        <p className="tenant-note">
-          Settings are tenant-specific. Some practices will have these details configured; others will only show the
-          sections that apply to their setup.
-        </p>
-
         {activeSetting === 'users' && (
           <div className="settings-detail-stack">
-            <div className="role-card-grid">
-              {roles.map((item) => (
-                <button
-                  className={`role-card ${role === item.role ? 'active' : ''}`}
-                  key={item.role}
-                  onClick={() => setRole(item.role)}
-                >
-                  <span>{item.scope}</span>
-                  <strong>{item.role}</strong>
-                  <small>{item.description}</small>
-                </button>
-              ))}
-            </div>
-            <div className="settings-split">
-              <section>
+            <div className="settings-split users-settings-split">
+              <section className="settings-config-card">
                 <div className="panel-heading compact-heading">
                   <div>
-                    <p>Selected permissions</p>
-                    <h2>{role}</h2>
+                    <p>Tenant users</p>
+                    <h2>Create and activate users</h2>
                   </div>
+                  <button type="button" onClick={addTenantUser}>Add user</button>
                 </div>
-                <ul className="permission-list">
-                  {(roles.find((item) => item.role === role)?.permissions ?? []).map((permission) => (
-                    <li key={permission}>{permission}</li>
-                  ))}
-                </ul>
+                <div className="settings-record-list">
+                  {tenantUsers.length ? tenantUsers.map((user) => (
+                    <button
+                      type="button"
+                      className={selectedUser.id === user.id ? 'active' : ''}
+                      key={user.id}
+                      onClick={() => {
+                        setDraftUser(null)
+                        setSelectedUserId(user.id)
+                        setIsUserEditMode(false)
+                        setRole(user.role === 'admin' ? 'Admin' : user.role === 'receptionist' ? 'Reception' : 'Therapist')
+                      }}
+                    >
+                      <strong>{user.firstName || 'New'} {user.lastName || 'user'}</strong>
+                      <span>{user.role} · {user.isActive ? 'Active' : 'Inactive'}</span>
+                    </button>
+                  )) : (
+                    <p className="quiet">No tenant users have been created yet.</p>
+                  )}
+                </div>
               </section>
-              <section>
+              <section className="settings-config-card">
                 <div className="panel-heading compact-heading">
                   <div>
-                    <p>User lifecycle</p>
-                    <h2>Admin activation</h2>
+                    <p>User profile</p>
+                    <div className="settings-user-title-row">
+                      <h2>{isCreatingUser ? 'New user profile' : `${selectedUser.firstName || 'New'} ${selectedUser.lastName || 'user'}`}</h2>
+                      <label className="settings-active-tick" title={selectedUser.isActive ? 'Active user' : 'Inactive user'}>
+                        <input
+                          type="checkbox"
+                          checked={selectedUser.isActive}
+                          disabled={!isCreatingUser && !isUserEditMode}
+                          onChange={(event) => updateSelectedUser('isActive', event.target.checked)}
+                        />
+                        <span>Active</span>
+                      </label>
+                    </div>
                   </div>
+                  {isCreatingUser ? (
+                    <button type="button" className="settings-save-pill" onClick={saveDraftUser}>Save profile</button>
+                  ) : (
+                    <div className="settings-icon-actions">
+                      {isUserEditMode && tenantUsers.length > 1 && (
+                        <button type="button" className="danger" aria-label="Delete user" title="Delete user" onClick={deleteSelectedUser}>
+                          <TrashIcon />
+                        </button>
+                      )}
+                      <button
+                        type="button"
+                        className={isUserEditMode ? 'save-mode' : ''}
+                        aria-label={isUserEditMode ? 'Save user' : 'Edit user'}
+                        title={isUserEditMode ? 'Save user' : 'Edit user'}
+                        onClick={() => setIsUserEditMode((current) => !current)}
+                      >
+                        <PencilIcon />
+                      </button>
+                    </div>
+                  )}
                 </div>
-                <p className="quiet">
-                  Every practice has at least one Admin. Admin users activate therapists and receptionists inside the tenant.
-                </p>
+                {(isUserEditMode || isCreatingUser) ? (
+                  <>
+                    <div className="settings-form-grid">
+                      <label><span>First name</span><input value={selectedUser.firstName} onChange={(event) => updateSelectedUser('firstName', event.target.value)} /></label>
+                      <label><span>Last name</span><input value={selectedUser.lastName} onChange={(event) => updateSelectedUser('lastName', event.target.value)} /></label>
+                      <label><span>Email</span><input value={selectedUser.email} onChange={(event) => updateSelectedUser('email', event.target.value)} /></label>
+                      <label><span>Phone</span><input value={selectedUser.phone} onChange={(event) => updateSelectedUser('phone', event.target.value)} /></label>
+                      <label>
+                        <span>Role</span>
+                        <select value={selectedUser.role} onChange={(event) => updateSelectedUser('role', event.target.value)}>
+                          <option value="admin">admin</option>
+                          <option value="receptionist">receptionist</option>
+                          <option value="therapist">therapist</option>
+                          <option value="finance">finance</option>
+                        </select>
+                      </label>
+                    </div>
+                    {selectedUser.role === 'therapist' && (
+                      <div className="settings-form-grid therapist-detail-grid">
+                        <label className="practice-number-toggle wide-field">
+                          <input type="checkbox" checked={selectedUser.usesOwnPracticeNumber} onChange={(event) => updateSelectedUserPracticeNumberPreference(event.target.checked)} />
+                          <span>Use own practice number</span>
+                        </label>
+                        {selectedUser.usesOwnPracticeNumber && (
+                          <label><span>Therapist practice number</span><input value={selectedUser.practiceNumber} onChange={(event) => updateSelectedUser('practiceNumber', event.target.value)} /></label>
+                        )}
+                        <label><span>HPCSA number</span><input value={selectedUser.hpcsaNumber} onChange={(event) => updateSelectedUser('hpcsaNumber', event.target.value)} /></label>
+                        <label><span>Discipline</span><input value={selectedUser.discipline} onChange={(event) => updateSelectedUser('discipline', event.target.value)} /></label>
+                        <label><span>Qualification</span><input value={selectedUser.qualification} onChange={(event) => updateSelectedUser('qualification', event.target.value)} /></label>
+                        {billingRules.allowTherapistBankingDetails && (
+                          <div className="settings-banking-grid wide-field">
+                            <span>Therapist banking details</span>
+                            <label><small>Acc Name</small><input value={selectedUser.bankingDetails.accountName} onChange={(event) => updateSelectedUserBanking('accountName', event.target.value)} /></label>
+                            <label><small>Bank</small><input value={selectedUser.bankingDetails.bank} onChange={(event) => updateSelectedUserBanking('bank', event.target.value)} /></label>
+                            <label><small>Acc nr</small><input value={selectedUser.bankingDetails.accountNumber} onChange={(event) => updateSelectedUserBanking('accountNumber', event.target.value)} /></label>
+                            <label><small>Code</small><input value={selectedUser.bankingDetails.branchCode} onChange={(event) => updateSelectedUserBanking('branchCode', event.target.value)} /></label>
+                          </div>
+                        )}
+                        <div className="intake-signature-field professional-signature-field wide-field">
+                          <span>Professional signature</span>
+                          <SignaturePad
+                            value={selectedUser.signatureUrl}
+                            onChange={(value) => updateSelectedUser('signatureUrl', value)}
+                          />
+                        </div>
+                      </div>
+                    )}
+                  </>
+                ) : (
+                  <>
+                    <div className="settings-readonly-grid">
+                      <div><span>First name</span><strong>{selectedUser.firstName || '-'}</strong></div>
+                      <div><span>Last name</span><strong>{selectedUser.lastName || '-'}</strong></div>
+                      <div><span>Email</span><strong>{selectedUser.email || '-'}</strong></div>
+                      <div><span>Phone</span><strong>{selectedUser.phone || '-'}</strong></div>
+                      <div><span>Role</span><strong>{selectedUser.role}</strong></div>
+                      <div><span>Updated</span><strong>{selectedUser.updatedAt}</strong></div>
+                    </div>
+                    {selectedUser.role === 'therapist' && (
+                      <div className="settings-readonly-grid therapist-detail-grid">
+                        <div className="wide-field"><span>Billing practice number</span><strong>{selectedUser.usesOwnPracticeNumber ? 'Uses therapist own practice number' : 'Uses main practice number'}</strong></div>
+                        {selectedUser.usesOwnPracticeNumber && (
+                          <div><span>Therapist practice number</span><strong>{selectedUser.practiceNumber || '-'}</strong></div>
+                        )}
+                        <div><span>HPCSA number</span><strong>{selectedUser.hpcsaNumber || '-'}</strong></div>
+                        <div><span>Discipline</span><strong>{selectedUser.discipline || '-'}</strong></div>
+                        <div><span>Qualification</span><strong>{selectedUser.qualification || '-'}</strong></div>
+                        {billingRules.allowTherapistBankingDetails && (
+                          <div className="settings-readonly-banking wide-field">
+                            <span>Therapist banking details</span>
+                            <div><small>Acc Name</small><strong>{selectedUser.bankingDetails.accountName || '-'}</strong></div>
+                            <div><small>Bank</small><strong>{selectedUser.bankingDetails.bank || '-'}</strong></div>
+                            <div><small>Acc nr</small><strong>{selectedUser.bankingDetails.accountNumber || '-'}</strong></div>
+                            <div><small>Code</small><strong>{selectedUser.bankingDetails.branchCode || '-'}</strong></div>
+                          </div>
+                        )}
+                        <div className="professional-signature-preview wide-field">
+                          <span>Professional signature</span>
+                          {selectedUser.signatureUrl ? (
+                            <img src={selectedUser.signatureUrl} alt="Professional signature" />
+                          ) : (
+                            <strong>No signature captured</strong>
+                          )}
+                        </div>
+                      </div>
+                    )}
+                  </>
+                )}
               </section>
-            </div>
-            <div>
-              <div className="panel-heading compact-heading">
-                <div>
-                  <p>Therapist calendar colours</p>
-                  <h2>Colour selected when creating a therapist</h2>
-                </div>
-                <button>Add therapist</button>
-              </div>
-              <div className="therapist-colour-list">
-                {therapists.filter((therapist) => therapist.name !== 'Team').map((therapist) => (
-                  <article className="therapist-colour-row" key={therapist.name}>
-                    <span style={{ background: therapist.background, color: therapist.color }} />
-                    <strong>{therapist.name}</strong>
-                    <small>{therapist.color}</small>
-                  </article>
-                ))}
-              </div>
             </div>
           </div>
         )}
 
         {activeSetting === 'practice' && (
           <div className="settings-detail-stack">
-            <div className="module-grid settings-modules">
-              {[
-                'Practice profile',
-                'Rooms',
-                'Working hours',
-                'Report templates',
-                'Reminder templates',
-                'Patient portal access',
-                'Tenant branding',
-                'Default appointment length',
-              ].map((setting) => (
-                <span key={setting}>{setting}</span>
-              ))}
-            </div>
-            <div className="rules-grid">
-              <div>
-                <strong>1. Super Admin</strong>
-                <span>Creates the practice tenant and first tenant Admin user.</span>
+            <div className="settings-config-card">
+              <div className="panel-heading compact-heading">
+                <div>
+                  <p>Practice profile</p>
+                  <h2>{practiceConfig.practiceName}</h2>
+                </div>
+                <span className="config-updated-pill">Updated {practiceConfig.updatedAt}</span>
               </div>
-              <div>
-                <strong>2. Practice Admin</strong>
-                <span>Controls practice settings and activates therapist or receptionist users.</span>
+              <div className="settings-form-grid">
+                <label><span>Practice name</span><input value={practiceConfig.practiceName} onChange={(event) => updatePracticeConfig('practiceName', event.target.value)} /></label>
+                <label><span>Registration number</span><input value={practiceConfig.registrationNumber} onChange={(event) => updatePracticeConfig('registrationNumber', event.target.value)} /></label>
+                <label className="wide-field">
+                  <span>Practice address</span>
+                  <input value={practiceConfig.address} onChange={(event) => updatePracticeConfig('address', event.target.value)} />
+                  <small className="field-helper">Separate main address lines with commas so invoices and statements can stack them correctly.</small>
+                </label>
+                <label><span>Phone</span><input value={practiceConfig.phone} onChange={(event) => updatePracticeConfig('phone', event.target.value)} /></label>
+                <label><span>Email</span><input value={practiceConfig.email} onChange={(event) => updatePracticeConfig('email', event.target.value)} /></label>
+                <label><span>Website</span><input value={practiceConfig.website} onChange={(event) => updatePracticeConfig('website', event.target.value)} /></label>
+                <label><span>Invoice prefix</span><input value={practiceConfig.invoicePrefix} onChange={(event) => updatePracticeConfig('invoicePrefix', event.target.value)} /></label>
+                <label><span>Tax number</span><input value={practiceConfig.taxNumber} onChange={(event) => updatePracticeConfig('taxNumber', event.target.value)} /></label>
+                <label><span>VAT number</span><input value={practiceConfig.vatNumber} onChange={(event) => updatePracticeConfig('vatNumber', event.target.value)} /></label>
+                <div
+                  className="payment-upload-area practice-logo-upload wide-field"
+                  onDragOver={(event) => event.preventDefault()}
+                  onDrop={(event) => {
+                    event.preventDefault()
+                    const file = event.dataTransfer.files[0]
+                    if (file) attachPracticeLogo(file)
+                  }}
+                >
+                  <label className="payment-attachment-icon" htmlFor="practice-logo-upload" aria-label="Upload practice logo" title="Upload practice logo">
+                    <AttachmentIcon />
+                    <input
+                      id="practice-logo-upload"
+                      type="file"
+                      accept="image/*"
+                      onChange={(event) => {
+                        const file = event.target.files?.[0]
+                        if (file) attachPracticeLogo(file)
+                      }}
+                    />
+                  </label>
+                  <div>
+                    <span>Logo upload</span>
+                    <strong>{practiceLogoFileName || 'Upload or drag logo file here'}</strong>
+                  </div>
+                </div>
+                <label className="wide-field"><span>Default invoicing details</span><textarea value={practiceConfig.invoiceTemplateUrl} onChange={(event) => updatePracticeConfig('invoiceTemplateUrl', event.target.value)} /></label>
+                <div className="settings-banking-grid practice-banking-grid wide-field">
+                  <span>Banking details</span>
+                  <label><small>Account name</small><input value={practiceConfig.bankingDetails.accountName} onChange={(event) => updatePracticeConfigBanking('accountName', event.target.value)} /></label>
+                  <label><small>Bank</small><input value={practiceConfig.bankingDetails.bank} onChange={(event) => updatePracticeConfigBanking('bank', event.target.value)} /></label>
+                  <label><small>Account number</small><input value={practiceConfig.bankingDetails.accountNumber} onChange={(event) => updatePracticeConfigBanking('accountNumber', event.target.value)} /></label>
+                  <label><small>Code</small><input value={practiceConfig.bankingDetails.branchCode} onChange={(event) => updatePracticeConfigBanking('branchCode', event.target.value)} /></label>
+                </div>
+                <label className="wide-field"><span>Payment terms</span><textarea value={practiceConfig.paymentTerms} onChange={(event) => updatePracticeConfig('paymentTerms', event.target.value)} /></label>
               </div>
-              <div>
-                <strong>3. Staff users</strong>
-                <span>Operate inside the tenant according to their assigned permissions.</span>
+              <div className="settings-action-row">
+                <button type="button">Save practice configuration</button>
+                <button type="button" className="secondary-action">Cancel</button>
               </div>
             </div>
           </div>
         )}
 
         {activeSetting === 'patients' && (
-          <div className="module-grid settings-modules">
-            {[
-              'Patient details',
-              'Parent / Guardian info',
-              'Emergency contact',
-              'Referring doctor',
-              'Medical aid details',
-              'Member responsible for account',
-              'Next of kin',
-              'Consent and signatures',
-              'Account responsibility',
-              'Documents',
-              'Reports and assessments',
-              'Financial history',
-            ].map((module) => (
-              <span key={module}>{module}</span>
-            ))}
+          <div className="settings-detail-stack">
+            <div className="settings-config-card">
+              <div className="panel-heading compact-heading">
+                <div>
+                  <p>Patient intake</p>
+                  <h2>Fields and required settings</h2>
+                </div>
+                <button type="button" onClick={addPatientField}>Add field</button>
+              </div>
+              <div className="settings-table-list">
+                {patientConfig.intakeFields.length ? patientConfig.intakeFields.map((field) => (
+                  <article key={field.id}>
+                    <strong>{field.label}</strong>
+                    <button type="button" className={field.required ? 'active' : ''} onClick={() => togglePatientField(field.id, 'required')}>
+                      {field.required ? 'Required' : 'Optional'}
+                    </button>
+                    <button type="button" className={field.isActive ? 'active' : ''} onClick={() => togglePatientField(field.id, 'isActive')}>
+                      {field.isActive ? 'Active' : 'Inactive'}
+                    </button>
+                  </article>
+                )) : (
+                  <p className="quiet">No patient intake fields configured.</p>
+                )}
+              </div>
+            </div>
+            <div className="settings-config-card">
+              <div className="settings-form-grid">
+                <label className="wide-field"><span>Patient categories</span><textarea value={patientConfig.patientCategories.join(', ')} onChange={(event) => updatePatientListValue('patientCategories', event.target.value)} /></label>
+                <label className="wide-field"><span>Referral sources</span><textarea value={patientConfig.referralSources.join(', ')} onChange={(event) => updatePatientListValue('referralSources', event.target.value)} /></label>
+                <label className="wide-field"><span>Consent templates</span><textarea value={patientConfig.consentTemplates.join(', ')} onChange={(event) => updatePatientListValue('consentTemplates', event.target.value)} /></label>
+                <label className="wide-field"><span>Default profile sections</span><textarea value={patientConfig.defaultProfileSections.join(', ')} onChange={(event) => updatePatientListValue('defaultProfileSections', event.target.value)} /></label>
+              </div>
+              <div className="settings-action-row">
+                <button type="button">Save patient configuration</button>
+                <button type="button" className="secondary-action">Cancel</button>
+              </div>
+            </div>
           </div>
         )}
 
         {activeSetting === 'billing' && (
           <div className="settings-detail-stack">
-            <div className="panel-heading compact-heading">
-              <div>
-                <p>Billing setup</p>
-                <h2>ICD-10 codes, session types and prices</h2>
+            <div className="settings-config-card">
+              <div className="panel-heading compact-heading">
+                <div>
+                  <p>General billing rules</p>
+                  <h2>Tenant finance controls</h2>
+                </div>
+                <span className="config-updated-pill">Updated {billingRules.updatedAt}</span>
               </div>
-              <button>Add billing item</button>
+              <div className="settings-form-grid">
+                <label className="settings-toggle-row wide-field">
+                  <input
+                    type="checkbox"
+                    checked={billingRules.allowTherapistBankingDetails}
+                    onChange={(event) => updateBillingRule('allowTherapistBankingDetails', event.target.checked)}
+                  />
+                  <span>Allow therapists to use their own banking details on quotes and invoices</span>
+                </label>
+                <label>
+                  <span>Practice number mode</span>
+                  <select value={billingRules.practiceNumberMode} onChange={(event) => updateBillingRule('practiceNumberMode', event.target.value)}>
+                    <option value="main_practice">main_practice</option>
+                    <option value="individual_therapist">individual_therapist</option>
+                    <option value="mixed">mixed</option>
+                  </select>
+                </label>
+              </div>
             </div>
-            <div className="billing-config-list">
-              {billingItems.map((item) => (
-                <article className="billing-config-row" key={item.code}>
-                  <div>
-                    <strong>{item.sessionType}</strong>
-                    <span>{item.description}</span>
+
+            <div className="settings-config-card">
+              <div className="panel-heading compact-heading">
+                <div>
+                  <p>Practices / venues</p>
+                  <h2>Practice entities and locations</h2>
+                </div>
+                <button type="button" onClick={addPracticeEntity}>Add practice</button>
+              </div>
+              <div className="settings-split">
+                <section>
+                  <div className="settings-record-list">
+                    {billingPracticeEntities.map((practice) => (
+                      <button
+                        type="button"
+                        className={selectedBillingPractice.id === practice.id ? 'active' : ''}
+                        key={practice.id}
+                        onClick={() => setSelectedBillingPracticeId(practice.id)}
+                      >
+                        <strong>{practice.name}</strong>
+                        <span>{practice.practiceNumber || 'No practice number'} · {practice.isActive ? 'Active' : 'Inactive'}</span>
+                      </button>
+                    ))}
                   </div>
-                  <code>{item.code}</code>
-                  <b>{formatMoney(item.price)}</b>
-                </article>
-              ))}
+                </section>
+                <section>
+                  <div className="settings-form-grid">
+                    <label><span>Name</span><input value={selectedBillingPractice.name} onChange={(event) => updatePracticeEntity(selectedBillingPractice.id, 'name', event.target.value)} /></label>
+                    <label><span>Practice number</span><input value={selectedBillingPractice.practiceNumber} onChange={(event) => updatePracticeEntity(selectedBillingPractice.id, 'practiceNumber', event.target.value)} /></label>
+                    <label><span>Invoice prefix</span><input value={selectedBillingPractice.invoicePrefix} onChange={(event) => updatePracticeEntity(selectedBillingPractice.id, 'invoicePrefix', event.target.value)} /></label>
+                    <label><span>Quote prefix</span><input value={selectedBillingPractice.quotePrefix} onChange={(event) => updatePracticeEntity(selectedBillingPractice.id, 'quotePrefix', event.target.value)} /></label>
+                    <div className="settings-banking-grid wide-field">
+                      <span>Banking details</span>
+                      <label><small>Acc Name</small><input value={selectedBillingPractice.bankingDetails.accountName} onChange={(event) => updatePracticeEntityBanking(selectedBillingPractice.id, 'accountName', event.target.value)} /></label>
+                      <label><small>Bank</small><input value={selectedBillingPractice.bankingDetails.bank} onChange={(event) => updatePracticeEntityBanking(selectedBillingPractice.id, 'bank', event.target.value)} /></label>
+                      <label><small>Acc nr</small><input value={selectedBillingPractice.bankingDetails.accountNumber} onChange={(event) => updatePracticeEntityBanking(selectedBillingPractice.id, 'accountNumber', event.target.value)} /></label>
+                      <label><small>Code</small><input value={selectedBillingPractice.bankingDetails.branchCode} onChange={(event) => updatePracticeEntityBanking(selectedBillingPractice.id, 'branchCode', event.target.value)} /></label>
+                    </div>
+                    <label className="wide-field"><span>Payment terms</span><textarea value={selectedBillingPractice.paymentTerms} onChange={(event) => updatePracticeEntity(selectedBillingPractice.id, 'paymentTerms', event.target.value)} /></label>
+                    <label className="settings-toggle-row wide-field">
+                      <input type="checkbox" checked={selectedBillingPractice.allowTherapistBankingOverride} onChange={(event) => updatePracticeEntity(selectedBillingPractice.id, 'allowTherapistBankingOverride', event.target.checked)} />
+                      <span>Allow therapist banking override for this practice</span>
+                    </label>
+                    <label className="settings-toggle-row wide-field">
+                      <input type="checkbox" checked={selectedBillingPractice.isActive} onChange={(event) => updatePracticeEntity(selectedBillingPractice.id, 'isActive', event.target.checked)} />
+                      <span>{selectedBillingPractice.isActive ? 'Practice active' : 'Practice inactive'}</span>
+                    </label>
+                  </div>
+                </section>
+              </div>
+              <div className="panel-heading compact-heading">
+                <div>
+                  <p>Practice locations</p>
+                  <h2>{selectedBillingPractice.name}</h2>
+                </div>
+                <button type="button" onClick={addPracticeLocation}>Add location</button>
+              </div>
+              <div className="practice-location-list">
+                {billingPracticeLocations.filter((location) => location.practiceEntityId === selectedBillingPractice.id).map((location) => (
+                  <article key={location.id}>
+                    <input value={location.name} onChange={(event) => updatePracticeLocation(location.id, 'name', event.target.value)} />
+                    <input value={location.address} onChange={(event) => updatePracticeLocation(location.id, 'address', event.target.value)} />
+                    <input value={location.contactNumber} onChange={(event) => updatePracticeLocation(location.id, 'contactNumber', event.target.value)} />
+                    <button type="button" className={location.isActive ? 'active' : ''} onClick={() => updatePracticeLocation(location.id, 'isActive', !location.isActive)}>
+                      {location.isActive ? 'Active' : 'Inactive'}
+                    </button>
+                  </article>
+                ))}
+              </div>
+            </div>
+
+            <div className="settings-config-card">
+              <div className="panel-heading compact-heading">
+                <div>
+                  <p>ICD-10 codes and pricing</p>
+                  <h2>Practice-specific or tenant-wide defaults</h2>
+                </div>
+                <button type="button" onClick={addBillingCode}>Add ICD-10 code</button>
+              </div>
+              <p className="quiet">Session booking first shows codes for the selected practice, then tenant-wide defaults.</p>
+              <div className="billing-admin-list">
+                {billingCodes.length ? billingCodes.map((item) => (
+                  <article key={item.id}>
+                    <select value={item.practiceEntityId} onChange={(event) => updateBillingCode(item.id, 'practiceEntityId', event.target.value)}>
+                      <option value="">Tenant-wide</option>
+                      {billingPracticeEntities.map((practice) => (
+                        <option value={practice.id} key={practice.id}>{practice.name}</option>
+                      ))}
+                    </select>
+                    <input value={item.code} placeholder="ICD-10" onChange={(event) => updateBillingCode(item.id, 'code', event.target.value)} />
+                    <input value={item.description} placeholder="Description" onChange={(event) => updateBillingCode(item.id, 'description', event.target.value)} />
+                    <input value={item.serviceType} placeholder="Service type" onChange={(event) => updateBillingCode(item.id, 'serviceType', event.target.value)} />
+                    <input value={item.discipline} placeholder="Discipline" onChange={(event) => updateBillingCode(item.id, 'discipline', event.target.value)} />
+                    <input type="number" value={item.defaultPrice} onChange={(event) => updateBillingCode(item.id, 'defaultPrice', Number(event.target.value))} />
+                    <button type="button" className={item.isActive ? 'active' : ''} onClick={() => updateBillingCode(item.id, 'isActive', !item.isActive)}>
+                      {item.isActive ? 'Active' : 'Inactive'}
+                    </button>
+                  </article>
+                )) : (
+                  <p className="quiet">No billing codes configured.</p>
+                )}
+              </div>
             </div>
           </div>
         )}
 
         {activeSetting === 'guides' && (
-          <div className="how-to-grid">
-            {[
-              ['Patient setup', 'Register a patient, add guardians, medical aid and consent forms.'],
-              ['Booking sessions', 'Create, reschedule, cancel and mark no-show appointments.'],
-              ['Session notes', 'Complete SOAP notes, process notes, goals and progress updates.'],
-              ['Reports', 'Create parent, school, referral, progress and discharge reports.'],
-              ['Finance flow', 'Create invoices, allocate payments and send statements.'],
-              ['Staff setup', 'Manage practice team access inside the tenant.'],
-            ].map(([title, detail]) => (
-              <button className="how-to-card" key={title}>
-                <strong>{title}</strong>
-                <span>{detail}</span>
-              </button>
-            ))}
+          <div className="settings-detail-stack">
+            <div className="panel-heading compact-heading">
+              <div>
+                <p>Operating procedures</p>
+                <h2>Admin-editable guides</h2>
+              </div>
+              <button type="button" onClick={addGuide}>Create guide</button>
+            </div>
+            <div className="guide-admin-list">
+              {guides.length ? guides.map((guide) => (
+                <article key={guide.id}>
+                  <div className="settings-form-grid">
+                    <label><span>Title</span><input value={guide.title} onChange={(event) => updateGuide(guide.id, 'title', event.target.value)} /></label>
+                    <label><span>Category</span><input value={guide.category} onChange={(event) => updateGuide(guide.id, 'category', event.target.value)} /></label>
+                    <label className="wide-field"><span>Body</span><textarea value={guide.body} onChange={(event) => updateGuide(guide.id, 'body', event.target.value)} /></label>
+                  </div>
+                  <div className="settings-action-row">
+                    <button type="button" className={guide.isActive ? 'active' : ''} onClick={() => updateGuide(guide.id, 'isActive', !guide.isActive)}>
+                      {guide.isActive ? 'Active guide' : 'Inactive guide'}
+                    </button>
+                    <small>Updated {guide.updatedAt}</small>
+                  </div>
+                </article>
+              )) : (
+                <p className="quiet">No how-to guides have been created.</p>
+              )}
+            </div>
           </div>
         )}
 
         {activeSetting === 'updates' && (
-          <div className="whats-new-list">
-            {[
-              ['30 Jun 2026', 'Sessions', 'Added immediate calendar creation from New session.'],
-              ['30 Jun 2026', 'Settings', 'Grouped tenant configuration into navigable settings sections.'],
-              ['27 Jun 2026', 'Patients', 'Shared base Patients view for Admin, Therapist and Reception users.'],
-            ].map(([date, area, update]) => (
-              <article className="whats-new-card" key={`${date}-${area}`}>
-                <time>{date}</time>
-                <strong>{area}</strong>
-                <span>{update}</span>
-              </article>
-            ))}
+          <div className="settings-detail-stack">
+            <div className="panel-heading compact-heading">
+              <div>
+                <p>Deployment notes</p>
+                <h2>What's New</h2>
+              </div>
+              <button type="button" onClick={addWhatsNew}>Add update</button>
+            </div>
+            <div className="whats-new-list">
+              {whatsNewItems.length ? whatsNewItems.map((item) => (
+                <article className="whats-new-card editable-update-card" key={item.id}>
+                  <input value={item.releaseDate} onChange={(event) => updateWhatsNew(item.id, 'releaseDate', event.target.value)} />
+                  <input value={item.version} placeholder="Version" onChange={(event) => updateWhatsNew(item.id, 'version', event.target.value)} />
+                  <input value={item.title} placeholder="Title" onChange={(event) => updateWhatsNew(item.id, 'title', event.target.value)} />
+                  <textarea value={item.summary} placeholder="Summary" onChange={(event) => updateWhatsNew(item.id, 'summary', event.target.value)} />
+                  <input value={item.visibleToRoles} placeholder="Visible to roles" onChange={(event) => updateWhatsNew(item.id, 'visibleToRoles', event.target.value)} />
+                </article>
+              )) : (
+                <p className="quiet">No deployment notes yet.</p>
+              )}
+            </div>
           </div>
         )}
       </section>
