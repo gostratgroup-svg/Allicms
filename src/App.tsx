@@ -417,6 +417,7 @@ const practiceEntities = [
     invoicePrefix: 'INV',
     quotePrefix: 'QUO',
     paymentTerms: 'Payment due within 7 days',
+    priceListId: 'price-list-a',
     allowTherapistBankingOverride: true,
     isActive: true,
     createdAt: '2026-06-20',
@@ -431,6 +432,7 @@ const practiceEntities = [
     invoicePrefix: 'SOI',
     quotePrefix: 'SOQ',
     paymentTerms: 'Payment due within 14 days',
+    priceListId: 'price-list-b',
     allowTherapistBankingOverride: false,
     isActive: true,
     createdAt: '2026-06-24',
@@ -444,10 +446,24 @@ const practiceLocations = [
   { id: 'loc-3', tenantId: tenant.tenantId, practiceEntityId: 'practice-b', name: 'Oak Primary outreach', address: 'Oak Primary School, Cape Town', contactNumber: '021 555 0130', isActive: true, createdAt: '2026-06-24', updatedAt: appTodayIso },
 ]
 
+const billingPriceListDefaults = [
+  { id: 'price-list-a', tenantId: tenant.tenantId, code: 'A', name: 'Procedure and prices A', isActive: true, createdAt: '2026-06-20', updatedAt: appTodayIso },
+  { id: 'price-list-b', tenantId: tenant.tenantId, code: 'B', name: 'Procedure and prices B', isActive: true, createdAt: '2026-06-20', updatedAt: appTodayIso },
+]
+
+const icdCodeDefaults = billingItems.map((item, index) => ({
+  id: `icd-${index + 1}`,
+  tenantId: tenant.tenantId,
+  code: item.code,
+  createdAt: '2026-06-20',
+  updatedAt: appTodayIso,
+}))
+
 const billingCodeDefaults = billingItems.map((item, index) => ({
   id: `billing-${index + 1}`,
   tenantId: tenant.tenantId,
   practiceEntityId: index < 2 ? 'practice-a' : '',
+  priceListId: billingPriceListDefaults[0].id,
   code: item.code,
   description: item.description,
   serviceType: item.sessionType,
@@ -1760,8 +1776,6 @@ function Overview({
           ))}
         </div>
       </section>
-
-      <PatientPortal />
 
       {isOverviewSessionOpen && selectedOverviewSession && (
         <SessionDetailModal
@@ -4017,7 +4031,7 @@ function Settings({ role, setRole }: { role: Role; setRole: (role: Role) => void
     { id: 'users', label: 'Users', detail: 'Add receptionists or therapists' },
     { id: 'practice', label: 'Practice Configuration', detail: 'Tenant workspace setup' },
     { id: 'patients', label: 'Patient Configuration', detail: 'Patient form fields' },
-    { id: 'billing', label: 'Billing Configuration', detail: 'ICD-10 and prices' },
+    { id: 'billing', label: 'Billing Configuration', detail: 'ICD-10, procedures and prices' },
     { id: 'guides', label: 'How To Guides', detail: 'Operating procedure' },
     { id: 'updates', label: "What's New", detail: 'Latest deployments' },
   ] as const
@@ -4193,23 +4207,41 @@ function Settings({ role, setRole }: { role: Role; setRole: (role: Role) => void
     invoicePrefix: 'INV',
     bankingDetails: { accountName: 'Kids Therapy Centre', bank: 'FNB', accountNumber: '62000000000', branchCode: '250655' },
     paymentTerms: 'Payment due within 7 days',
+    consentMessage: 'I consent to the collection, storage and use of patient information for assessment, therapy, reporting, billing and communication according to practice policy and POPIA requirements.',
     taxNumber: '',
     vatNumber: '',
     updatedAt: appTodayIso,
   })
   const [practiceLogoFileName, setPracticeLogoFileName] = useState('')
+  const [isPracticeEditMode, setIsPracticeEditMode] = useState(false)
+  const [draftPracticeConfig, setDraftPracticeConfig] = useState(practiceConfig)
+  const [draftPracticeLogoFileName, setDraftPracticeLogoFileName] = useState('')
+  const startPracticeEdit = () => {
+    setDraftPracticeConfig(practiceConfig)
+    setDraftPracticeLogoFileName(practiceLogoFileName)
+    setIsPracticeEditMode(true)
+  }
+  const discardPracticeDraft = () => {
+    setDraftPracticeConfig(practiceConfig)
+    setDraftPracticeLogoFileName(practiceLogoFileName)
+    setIsPracticeEditMode(false)
+  }
+  const savePracticeDraft = () => {
+    setPracticeConfig({ ...draftPracticeConfig, updatedAt: appTodayIso })
+    setPracticeLogoFileName(draftPracticeLogoFileName)
+    setIsPracticeEditMode(false)
+  }
   const updatePracticeConfig = (field: keyof typeof practiceConfig, value: string) => {
-    setPracticeConfig((config) => ({ ...config, [field]: value, updatedAt: appTodayIso }))
+    setDraftPracticeConfig((config) => ({ ...config, [field]: value }))
   }
   const attachPracticeLogo = (file: File) => {
-    setPracticeLogoFileName(file.name)
+    setDraftPracticeLogoFileName(file.name)
     updatePracticeConfig('logoUrl', URL.createObjectURL(file))
   }
   const updatePracticeConfigBanking = (field: keyof BankingDetails, value: string) => {
-    setPracticeConfig((config) => ({
+    setDraftPracticeConfig((config) => ({
       ...config,
       bankingDetails: { ...config.bankingDetails, [field]: value },
-      updatedAt: appTodayIso,
     }))
   }
   const [patientConfig, setPatientConfig] = useState({
@@ -4223,8 +4255,6 @@ function Settings({ role, setRole }: { role: Role; setRole: (role: Role) => void
     ],
     patientCategories: ['Child', 'Teen', 'Adult'],
     referralSources: ['Parent referral', 'School referral', 'Paediatrician', 'Doctor', 'Other therapist'],
-    consentTemplates: ['POPIA consent', 'Therapy consent', 'Account responsibility'],
-    defaultProfileSections: ['Personal Details', 'Notes', 'Sessions', 'Finance', 'History'],
     updatedAt: appTodayIso,
   })
   const togglePatientField = (fieldId: string, key: 'required' | 'isActive') => {
@@ -4246,7 +4276,7 @@ function Settings({ role, setRole }: { role: Role; setRole: (role: Role) => void
       updatedAt: appTodayIso,
     }))
   }
-  const updatePatientListValue = (key: 'patientCategories' | 'referralSources' | 'consentTemplates' | 'defaultProfileSections', value: string) => {
+  const updatePatientListValue = (key: 'patientCategories' | 'referralSources', value: string) => {
     setPatientConfig((config) => ({
       ...config,
       [key]: value.split(',').map((item) => item.trim()).filter(Boolean),
@@ -4259,10 +4289,27 @@ function Settings({ role, setRole }: { role: Role; setRole: (role: Role) => void
     practiceNumberMode: 'mixed' as 'main_practice' | 'individual_therapist' | 'mixed',
     updatedAt: appTodayIso,
   })
+  const billingSettingOptions = [
+    { id: 'rules', label: 'User finance controls', detail: 'Billing rules' },
+    { id: 'practices', label: 'Practice partners and locations', detail: 'Practices and venues' },
+    { id: 'icd', label: 'ICD-10 codes', detail: 'Diagnosis codes' },
+    { id: 'procedures', label: 'Procedure and prices', detail: 'Procedure pricing' },
+  ] as const
+  const [activeBillingSetting, setActiveBillingSetting] = useState<(typeof billingSettingOptions)[number]['id']>('rules')
+  const [isBillingPracticesExpanded, setIsBillingPracticesExpanded] = useState(false)
+  const activeBillingOption = billingSettingOptions.find((option) => option.id === activeBillingSetting) ?? billingSettingOptions[0]
   const [billingPracticeEntities, setBillingPracticeEntities] = useState(practiceEntities)
   const [billingPracticeLocations, setBillingPracticeLocations] = useState(practiceLocations)
   const [selectedBillingPracticeId, setSelectedBillingPracticeId] = useState(practiceEntities[0].id)
+  const [editingPracticeLocationId, setEditingPracticeLocationId] = useState('')
   const selectedBillingPractice = billingPracticeEntities.find((practice) => practice.id === selectedBillingPracticeId) ?? billingPracticeEntities[0]
+  const mainBillingPracticeId = practiceEntities[0].id
+  const isSelectedMainPractice = selectedBillingPractice.id === mainBillingPracticeId
+  const orderedBillingPracticeEntities = [...billingPracticeEntities].sort((practiceA, practiceB) => {
+    if (practiceA.id === mainBillingPracticeId) return -1
+    if (practiceB.id === mainBillingPracticeId) return 1
+    return practiceA.name.localeCompare(practiceB.name)
+  })
   const updateBillingRule = (field: keyof typeof billingRules, value: string | boolean) => {
     setBillingRules((rules) => ({ ...rules, [field]: value, updatedAt: appTodayIso }))
   }
@@ -4276,6 +4323,7 @@ function Settings({ role, setRole }: { role: Role; setRole: (role: Role) => void
       invoicePrefix: 'INV',
       quotePrefix: 'QUO',
       paymentTerms: 'Payment due within 7 days',
+      priceListId: selectedBillingPriceList.id,
       allowTherapistBankingOverride: billingRules.allowTherapistBankingDetails,
       isActive: true,
       createdAt: appTodayIso,
@@ -4285,9 +4333,11 @@ function Settings({ role, setRole }: { role: Role; setRole: (role: Role) => void
     setSelectedBillingPracticeId(newPractice.id)
   }
   const updatePracticeEntity = (id: string, field: keyof (typeof billingPracticeEntities)[number], value: string | boolean) => {
+    if (id === mainBillingPracticeId && field !== 'priceListId') return
     setBillingPracticeEntities((items) => items.map((item) => (item.id === id ? { ...item, [field]: value, updatedAt: appTodayIso } : item)))
   }
   const updatePracticeEntityBanking = (id: string, field: keyof BankingDetails, value: string) => {
+    if (id === mainBillingPracticeId) return
     setBillingPracticeEntities((items) =>
       items.map((item) =>
         item.id === id
@@ -4297,27 +4347,93 @@ function Settings({ role, setRole }: { role: Role; setRole: (role: Role) => void
     )
   }
   const addPracticeLocation = () => {
+    const newLocationId = `loc-${Date.now()}`
     setBillingPracticeLocations((items) => [
       ...items,
-      { id: `loc-${Date.now()}`, tenantId: tenant.tenantId, practiceEntityId: selectedBillingPractice.id, name: 'New location', address: '', contactNumber: '', isActive: true, createdAt: appTodayIso, updatedAt: appTodayIso },
+      { id: newLocationId, tenantId: tenant.tenantId, practiceEntityId: selectedBillingPractice.id, name: 'New location', address: '', contactNumber: '', isActive: true, createdAt: appTodayIso, updatedAt: appTodayIso },
     ])
+    setEditingPracticeLocationId(newLocationId)
   }
   const updatePracticeLocation = (id: string, field: keyof (typeof billingPracticeLocations)[number], value: string | boolean) => {
     setBillingPracticeLocations((items) => items.map((item) => (item.id === id ? { ...item, [field]: value, updatedAt: appTodayIso } : item)))
   }
+  const removePracticeLocation = (id: string) => {
+    setBillingPracticeLocations((items) => items.filter((item) => item.id !== id))
+    setEditingPracticeLocationId((current) => (current === id ? '' : current))
+  }
+  const [billingPriceLists, setBillingPriceLists] = useState(billingPriceListDefaults)
+  const [selectedBillingPriceListId, setSelectedBillingPriceListId] = useState(billingPriceListDefaults[0].id)
+  const [editingBillingPriceListId, setEditingBillingPriceListId] = useState('')
+  const selectedBillingPriceList = billingPriceLists.find((priceList) => priceList.id === selectedBillingPriceListId) ?? billingPriceLists[0]
+  const updateBillingPriceList = (id: string, field: keyof (typeof billingPriceLists)[number], value: string | boolean) => {
+    setBillingPriceLists((items) => items.map((item) => (item.id === id ? { ...item, [field]: value, updatedAt: appTodayIso } : item)))
+  }
+  const removeBillingPriceList = (id: string) => {
+    if (billingPriceLists.length <= 1) return
+    const nextPriceList = billingPriceLists.find((priceList) => priceList.id !== id)
+    setBillingPriceLists((items) => items.filter((item) => item.id !== id))
+    setBillingCodes((codes) => codes.filter((code) => code.priceListId !== id))
+    setBillingPracticeEntities((items) =>
+      items.map((practice) => (practice.priceListId === id && nextPriceList ? { ...practice, priceListId: nextPriceList.id, updatedAt: appTodayIso } : practice)),
+    )
+    if (selectedBillingPriceListId === id && nextPriceList) setSelectedBillingPriceListId(nextPriceList.id)
+    setEditingBillingPriceListId((current) => (current === id ? '' : current))
+  }
+  const addBillingPriceList = () => {
+    const nextLetter = String.fromCharCode(65 + billingPriceLists.length)
+    const newPriceList = {
+      id: `price-list-${Date.now()}`,
+      tenantId: tenant.tenantId,
+      code: nextLetter,
+      name: `Procedure and prices ${nextLetter}`,
+      isActive: true,
+      createdAt: appTodayIso,
+      updatedAt: appTodayIso,
+    }
+    setBillingPriceLists((items) => [...items, newPriceList])
+    setSelectedBillingPriceListId(newPriceList.id)
+    setEditingBillingPriceListId(newPriceList.id)
+  }
   const [billingCodes, setBillingCodes] = useState(
     billingCodeDefaults,
   )
+  const [icdCodes, setIcdCodes] = useState(icdCodeDefaults)
+  const [editingIcdCodeId, setEditingIcdCodeId] = useState('')
+  const [editingProcedureId, setEditingProcedureId] = useState('')
+  const visibleBillingCodes = billingCodes.filter((item) => (item.priceListId || billingPriceListDefaults[0].id) === selectedBillingPriceList.id)
+  const addIcdCode = () => {
+    const newIcdCodeId = `icd-${Date.now()}`
+    setIcdCodes((codes) => [
+      ...codes,
+      {
+        id: newIcdCodeId,
+        tenantId: tenant.tenantId,
+        code: '',
+        createdAt: appTodayIso,
+        updatedAt: appTodayIso,
+      },
+    ])
+    setEditingIcdCodeId(newIcdCodeId)
+  }
+  const updateIcdCode = (id: string, value: string) => {
+    setIcdCodes((codes) => codes.map((code) => (code.id === id ? { ...code, code: value, updatedAt: appTodayIso } : code)))
+  }
+  const removeIcdCode = (id: string) => {
+    setIcdCodes((codes) => codes.filter((code) => code.id !== id))
+    setEditingIcdCodeId((current) => (current === id ? '' : current))
+  }
   const addBillingCode = () => {
+    const newProcedureId = `billing-${Date.now()}`
     setBillingCodes((codes) => [
       ...codes,
       {
-        id: `billing-${Date.now()}`,
+        id: newProcedureId,
         tenantId: tenant.tenantId,
         practiceEntityId: selectedBillingPractice.id,
+        priceListId: selectedBillingPriceList.id,
         code: '',
         description: '',
-        serviceType: 'Therapy session',
+        serviceType: '',
         defaultPrice: 0,
         discipline: '',
         isActive: true,
@@ -4325,11 +4441,16 @@ function Settings({ role, setRole }: { role: Role; setRole: (role: Role) => void
         updatedAt: appTodayIso,
       },
     ])
+    setEditingProcedureId(newProcedureId)
   }
   const updateBillingCode = (id: string, field: keyof (typeof billingCodes)[number], value: string | number | boolean) => {
     setBillingCodes((codes) =>
       codes.map((code) => (code.id === id ? { ...code, [field]: value, updatedAt: appTodayIso } : code)),
     )
+  }
+  const removeBillingCode = (id: string) => {
+    setBillingCodes((codes) => codes.filter((code) => code.id !== id))
+    setEditingProcedureId((current) => (current === id ? '' : current))
   }
   const [guides, setGuides] = useState([
     { id: 'guide-1', tenantId: tenant.tenantId, title: 'Patient setup', category: 'Patients', body: 'Create patient, send intake link, confirm POPIA consent.', isActive: true, updatedAt: appTodayIso },
@@ -4561,62 +4682,111 @@ function Settings({ role, setRole }: { role: Role; setRole: (role: Role) => void
                   <p>Practice profile</p>
                   <h2>{practiceConfig.practiceName}</h2>
                 </div>
-                <span className="config-updated-pill">Updated {practiceConfig.updatedAt}</span>
+                <div className="settings-icon-actions">
+                  {isPracticeEditMode && (
+                    <button type="button" className="danger" aria-label="Discard practice changes" title="Discard practice changes" onClick={discardPracticeDraft}>
+                      <TrashIcon />
+                    </button>
+                  )}
+                  <button
+                    type="button"
+                    className={isPracticeEditMode ? 'save-mode' : ''}
+                    aria-label={isPracticeEditMode ? 'Editing practice profile' : 'Edit practice profile'}
+                    title={isPracticeEditMode ? 'Editing practice profile' : 'Edit practice profile'}
+                    onClick={() => {
+                      if (!isPracticeEditMode) startPracticeEdit()
+                    }}
+                  >
+                    <PencilIcon />
+                  </button>
+                </div>
               </div>
-              <div className="settings-form-grid">
-                <label><span>Practice name</span><input value={practiceConfig.practiceName} onChange={(event) => updatePracticeConfig('practiceName', event.target.value)} /></label>
-                <label><span>Registration number</span><input value={practiceConfig.registrationNumber} onChange={(event) => updatePracticeConfig('registrationNumber', event.target.value)} /></label>
-                <label className="wide-field">
-                  <span>Practice address</span>
-                  <input value={practiceConfig.address} onChange={(event) => updatePracticeConfig('address', event.target.value)} />
-                  <small className="field-helper">Separate main address lines with commas so invoices and statements can stack them correctly.</small>
-                </label>
-                <label><span>Phone</span><input value={practiceConfig.phone} onChange={(event) => updatePracticeConfig('phone', event.target.value)} /></label>
-                <label><span>Email</span><input value={practiceConfig.email} onChange={(event) => updatePracticeConfig('email', event.target.value)} /></label>
-                <label><span>Website</span><input value={practiceConfig.website} onChange={(event) => updatePracticeConfig('website', event.target.value)} /></label>
-                <label><span>Invoice prefix</span><input value={practiceConfig.invoicePrefix} onChange={(event) => updatePracticeConfig('invoicePrefix', event.target.value)} /></label>
-                <label><span>Tax number</span><input value={practiceConfig.taxNumber} onChange={(event) => updatePracticeConfig('taxNumber', event.target.value)} /></label>
-                <label><span>VAT number</span><input value={practiceConfig.vatNumber} onChange={(event) => updatePracticeConfig('vatNumber', event.target.value)} /></label>
-                <div
-                  className="payment-upload-area practice-logo-upload wide-field"
-                  onDragOver={(event) => event.preventDefault()}
-                  onDrop={(event) => {
-                    event.preventDefault()
-                    const file = event.dataTransfer.files[0]
-                    if (file) attachPracticeLogo(file)
-                  }}
-                >
-                  <label className="payment-attachment-icon" htmlFor="practice-logo-upload" aria-label="Upload practice logo" title="Upload practice logo">
-                    <AttachmentIcon />
-                    <input
-                      id="practice-logo-upload"
-                      type="file"
-                      accept="image/*"
-                      onChange={(event) => {
-                        const file = event.target.files?.[0]
+              {isPracticeEditMode ? (
+                <>
+                  <div className="settings-form-grid">
+                    <label><span>Practice name</span><input value={draftPracticeConfig.practiceName} onChange={(event) => updatePracticeConfig('practiceName', event.target.value)} /></label>
+                    <label><span>Registration number</span><input value={draftPracticeConfig.registrationNumber} onChange={(event) => updatePracticeConfig('registrationNumber', event.target.value)} /></label>
+                    <label className="wide-field">
+                      <span>Practice address</span>
+                      <input value={draftPracticeConfig.address} onChange={(event) => updatePracticeConfig('address', event.target.value)} />
+                      <small className="field-helper">Separate main address lines with commas so invoices and statements can stack them correctly.</small>
+                    </label>
+                    <label><span>Phone</span><input value={draftPracticeConfig.phone} onChange={(event) => updatePracticeConfig('phone', event.target.value)} /></label>
+                    <label><span>Email</span><input value={draftPracticeConfig.email} onChange={(event) => updatePracticeConfig('email', event.target.value)} /></label>
+                    <label><span>Website</span><input value={draftPracticeConfig.website} onChange={(event) => updatePracticeConfig('website', event.target.value)} /></label>
+                    <label><span>Invoice prefix</span><input value={draftPracticeConfig.invoicePrefix} onChange={(event) => updatePracticeConfig('invoicePrefix', event.target.value)} /></label>
+                    <label><span>Tax number</span><input value={draftPracticeConfig.taxNumber} onChange={(event) => updatePracticeConfig('taxNumber', event.target.value)} /></label>
+                    <label><span>VAT number</span><input value={draftPracticeConfig.vatNumber} onChange={(event) => updatePracticeConfig('vatNumber', event.target.value)} /></label>
+                    <div
+                      className="payment-upload-area practice-logo-upload wide-field"
+                      onDragOver={(event) => event.preventDefault()}
+                      onDrop={(event) => {
+                        event.preventDefault()
+                        const file = event.dataTransfer.files[0]
                         if (file) attachPracticeLogo(file)
                       }}
-                    />
-                  </label>
-                  <div>
-                    <span>Logo upload</span>
-                    <strong>{practiceLogoFileName || 'Upload or drag logo file here'}</strong>
+                    >
+                      <label className="payment-attachment-icon" htmlFor="practice-logo-upload" aria-label="Upload practice logo" title="Upload practice logo">
+                        <AttachmentIcon />
+                        <input
+                          id="practice-logo-upload"
+                          type="file"
+                          accept="image/*"
+                          onChange={(event) => {
+                            const file = event.target.files?.[0]
+                            if (file) attachPracticeLogo(file)
+                          }}
+                        />
+                      </label>
+                      <div>
+                        <span>Logo upload</span>
+                        <strong>{draftPracticeLogoFileName || practiceLogoFileName || 'Upload or drag logo file here'}</strong>
+                      </div>
+                    </div>
+                    <label className="wide-field"><span>Default invoicing details</span><textarea value={draftPracticeConfig.invoiceTemplateUrl} onChange={(event) => updatePracticeConfig('invoiceTemplateUrl', event.target.value)} /></label>
+                    <label className="wide-field">
+                      <span>Consent</span>
+                      <textarea value={draftPracticeConfig.consentMessage} onChange={(event) => updatePracticeConfig('consentMessage', event.target.value)} />
+                      <small className="field-helper">Add the consent message patients or guardians should agree to during intake.</small>
+                    </label>
+                    <div className="settings-banking-grid practice-banking-grid wide-field">
+                      <span>Banking details</span>
+                      <label><small>Account name</small><input value={draftPracticeConfig.bankingDetails.accountName} onChange={(event) => updatePracticeConfigBanking('accountName', event.target.value)} /></label>
+                      <label><small>Bank</small><input value={draftPracticeConfig.bankingDetails.bank} onChange={(event) => updatePracticeConfigBanking('bank', event.target.value)} /></label>
+                      <label><small>Account number</small><input value={draftPracticeConfig.bankingDetails.accountNumber} onChange={(event) => updatePracticeConfigBanking('accountNumber', event.target.value)} /></label>
+                      <label><small>Code</small><input value={draftPracticeConfig.bankingDetails.branchCode} onChange={(event) => updatePracticeConfigBanking('branchCode', event.target.value)} /></label>
+                    </div>
+                    <label className="wide-field"><span>Payment terms</span><textarea value={draftPracticeConfig.paymentTerms} onChange={(event) => updatePracticeConfig('paymentTerms', event.target.value)} /></label>
                   </div>
+                  <div className="settings-action-row">
+                    <button type="button" onClick={savePracticeDraft}>Save practice configuration</button>
+                  </div>
+                </>
+              ) : (
+                <div className="settings-readonly-grid">
+                  <div><span>Practice name</span><strong>{practiceConfig.practiceName || '-'}</strong></div>
+                  <div><span>Registration number</span><strong>{practiceConfig.registrationNumber || '-'}</strong></div>
+                  <div className="wide-field"><span>Practice address</span><strong>{practiceConfig.address || '-'}</strong></div>
+                  <div><span>Phone</span><strong>{practiceConfig.phone || '-'}</strong></div>
+                  <div><span>Email</span><strong>{practiceConfig.email || '-'}</strong></div>
+                  <div><span>Website</span><strong>{practiceConfig.website || '-'}</strong></div>
+                  <div><span>Invoice prefix</span><strong>{practiceConfig.invoicePrefix || '-'}</strong></div>
+                  <div><span>Tax number</span><strong>{practiceConfig.taxNumber || '-'}</strong></div>
+                  <div><span>VAT number</span><strong>{practiceConfig.vatNumber || '-'}</strong></div>
+                  <div><span>Logo</span><strong>{practiceLogoFileName || practiceConfig.logoUrl || '-'}</strong></div>
+                  <div><span>Updated</span><strong>{practiceConfig.updatedAt}</strong></div>
+                  <div className="wide-field"><span>Default invoicing details</span><strong>{practiceConfig.invoiceTemplateUrl || '-'}</strong></div>
+                  <div className="wide-field"><span>Consent</span><strong>{practiceConfig.consentMessage || '-'}</strong></div>
+                  <div className="settings-readonly-banking wide-field">
+                    <span>Banking details</span>
+                    <div><small>Account name</small><strong>{practiceConfig.bankingDetails.accountName || '-'}</strong></div>
+                    <div><small>Bank</small><strong>{practiceConfig.bankingDetails.bank || '-'}</strong></div>
+                    <div><small>Account number</small><strong>{practiceConfig.bankingDetails.accountNumber || '-'}</strong></div>
+                    <div><small>Code</small><strong>{practiceConfig.bankingDetails.branchCode || '-'}</strong></div>
+                  </div>
+                  <div className="wide-field"><span>Payment terms</span><strong>{practiceConfig.paymentTerms || '-'}</strong></div>
                 </div>
-                <label className="wide-field"><span>Default invoicing details</span><textarea value={practiceConfig.invoiceTemplateUrl} onChange={(event) => updatePracticeConfig('invoiceTemplateUrl', event.target.value)} /></label>
-                <div className="settings-banking-grid practice-banking-grid wide-field">
-                  <span>Banking details</span>
-                  <label><small>Account name</small><input value={practiceConfig.bankingDetails.accountName} onChange={(event) => updatePracticeConfigBanking('accountName', event.target.value)} /></label>
-                  <label><small>Bank</small><input value={practiceConfig.bankingDetails.bank} onChange={(event) => updatePracticeConfigBanking('bank', event.target.value)} /></label>
-                  <label><small>Account number</small><input value={practiceConfig.bankingDetails.accountNumber} onChange={(event) => updatePracticeConfigBanking('accountNumber', event.target.value)} /></label>
-                  <label><small>Code</small><input value={practiceConfig.bankingDetails.branchCode} onChange={(event) => updatePracticeConfigBanking('branchCode', event.target.value)} /></label>
-                </div>
-                <label className="wide-field"><span>Payment terms</span><textarea value={practiceConfig.paymentTerms} onChange={(event) => updatePracticeConfig('paymentTerms', event.target.value)} /></label>
-              </div>
-              <div className="settings-action-row">
-                <button type="button">Save practice configuration</button>
-                <button type="button" className="secondary-action">Cancel</button>
-              </div>
+              )}
             </div>
           </div>
         )}
@@ -4651,8 +4821,6 @@ function Settings({ role, setRole }: { role: Role; setRole: (role: Role) => void
               <div className="settings-form-grid">
                 <label className="wide-field"><span>Patient categories</span><textarea value={patientConfig.patientCategories.join(', ')} onChange={(event) => updatePatientListValue('patientCategories', event.target.value)} /></label>
                 <label className="wide-field"><span>Referral sources</span><textarea value={patientConfig.referralSources.join(', ')} onChange={(event) => updatePatientListValue('referralSources', event.target.value)} /></label>
-                <label className="wide-field"><span>Consent templates</span><textarea value={patientConfig.consentTemplates.join(', ')} onChange={(event) => updatePatientListValue('consentTemplates', event.target.value)} /></label>
-                <label className="wide-field"><span>Default profile sections</span><textarea value={patientConfig.defaultProfileSections.join(', ')} onChange={(event) => updatePatientListValue('defaultProfileSections', event.target.value)} /></label>
               </div>
               <div className="settings-action-row">
                 <button type="button">Save patient configuration</button>
@@ -4664,135 +4832,350 @@ function Settings({ role, setRole }: { role: Role; setRole: (role: Role) => void
 
         {activeSetting === 'billing' && (
           <div className="settings-detail-stack">
-            <div className="settings-config-card">
-              <div className="panel-heading compact-heading">
-                <div>
-                  <p>General billing rules</p>
-                  <h2>Tenant finance controls</h2>
-                </div>
-                <span className="config-updated-pill">Updated {billingRules.updatedAt}</span>
-              </div>
-              <div className="settings-form-grid">
-                <label className="settings-toggle-row wide-field">
-                  <input
-                    type="checkbox"
-                    checked={billingRules.allowTherapistBankingDetails}
-                    onChange={(event) => updateBillingRule('allowTherapistBankingDetails', event.target.checked)}
-                  />
-                  <span>Allow therapists to use their own banking details on quotes and invoices</span>
-                </label>
-                <label>
-                  <span>Practice number mode</span>
-                  <select value={billingRules.practiceNumberMode} onChange={(event) => updateBillingRule('practiceNumberMode', event.target.value)}>
-                    <option value="main_practice">main_practice</option>
-                    <option value="individual_therapist">individual_therapist</option>
-                    <option value="mixed">mixed</option>
-                  </select>
-                </label>
-              </div>
-            </div>
-
-            <div className="settings-config-card">
-              <div className="panel-heading compact-heading">
-                <div>
-                  <p>Practices / venues</p>
-                  <h2>Practice entities and locations</h2>
-                </div>
-                <button type="button" onClick={addPracticeEntity}>Add practice</button>
-              </div>
-              <div className="settings-split">
-                <section>
-                  <div className="settings-record-list">
-                    {billingPracticeEntities.map((practice) => (
-                      <button
-                        type="button"
-                        className={selectedBillingPractice.id === practice.id ? 'active' : ''}
-                        key={practice.id}
-                        onClick={() => setSelectedBillingPracticeId(practice.id)}
-                      >
-                        <strong>{practice.name}</strong>
-                        <span>{practice.practiceNumber || 'No practice number'} · {practice.isActive ? 'Active' : 'Inactive'}</span>
-                      </button>
-                    ))}
+            <div className="settings-split users-settings-split billing-settings-split">
+              <section className="settings-config-card">
+                <div className="panel-heading compact-heading">
+                  <div>
+                    <p>Billing configuration</p>
+                    <h2>Options</h2>
                   </div>
-                </section>
-                <section>
-                  <div className="settings-form-grid">
-                    <label><span>Name</span><input value={selectedBillingPractice.name} onChange={(event) => updatePracticeEntity(selectedBillingPractice.id, 'name', event.target.value)} /></label>
-                    <label><span>Practice number</span><input value={selectedBillingPractice.practiceNumber} onChange={(event) => updatePracticeEntity(selectedBillingPractice.id, 'practiceNumber', event.target.value)} /></label>
-                    <label><span>Invoice prefix</span><input value={selectedBillingPractice.invoicePrefix} onChange={(event) => updatePracticeEntity(selectedBillingPractice.id, 'invoicePrefix', event.target.value)} /></label>
-                    <label><span>Quote prefix</span><input value={selectedBillingPractice.quotePrefix} onChange={(event) => updatePracticeEntity(selectedBillingPractice.id, 'quotePrefix', event.target.value)} /></label>
-                    <div className="settings-banking-grid wide-field">
-                      <span>Banking details</span>
-                      <label><small>Acc Name</small><input value={selectedBillingPractice.bankingDetails.accountName} onChange={(event) => updatePracticeEntityBanking(selectedBillingPractice.id, 'accountName', event.target.value)} /></label>
-                      <label><small>Bank</small><input value={selectedBillingPractice.bankingDetails.bank} onChange={(event) => updatePracticeEntityBanking(selectedBillingPractice.id, 'bank', event.target.value)} /></label>
-                      <label><small>Acc nr</small><input value={selectedBillingPractice.bankingDetails.accountNumber} onChange={(event) => updatePracticeEntityBanking(selectedBillingPractice.id, 'accountNumber', event.target.value)} /></label>
-                      <label><small>Code</small><input value={selectedBillingPractice.bankingDetails.branchCode} onChange={(event) => updatePracticeEntityBanking(selectedBillingPractice.id, 'branchCode', event.target.value)} /></label>
+                </div>
+                <div className="settings-record-list">
+                  {billingSettingOptions.map((option) => (
+                    <div
+                      className={`billing-option-item ${activeBillingSetting === option.id ? 'active' : ''} ${option.id === 'practices' && isBillingPracticesExpanded ? 'expanded' : ''}`}
+                      key={option.id}
+                    >
+                      <div className="billing-option-trigger">
+                        <button
+                          type="button"
+                          className="billing-option-main"
+                          onClick={() => setActiveBillingSetting(option.id)}
+                        >
+                          <span>
+                            <strong>{option.label}</strong>
+                            {option.id !== 'practices' && <small>{option.detail}</small>}
+                          </span>
+                        </button>
+                        {option.id === 'practices' && (
+                          <button
+                            type="button"
+                            className="billing-option-arrow"
+                            aria-label={isBillingPracticesExpanded ? 'Hide practice partners and locations' : 'Show practice partners and locations'}
+                            title={isBillingPracticesExpanded ? 'Hide practice partners and locations' : 'Show practice partners and locations'}
+                            onClick={(event) => {
+                              event.stopPropagation()
+                              setActiveBillingSetting('practices')
+                              setIsBillingPracticesExpanded((current) => !current)
+                            }}
+                          >
+                            <span aria-hidden="true" />
+                          </button>
+                        )}
+                      </div>
+                      {option.id === 'practices' && isBillingPracticesExpanded && (
+                        <div className="billing-partner-list">
+                          {orderedBillingPracticeEntities.map((practice) => {
+                            const locations = billingPracticeLocations.filter((location) => location.practiceEntityId === practice.id)
+                            const isMainPractice = practice.id === mainBillingPracticeId
+                            return (
+                              <button
+                                type="button"
+                                className={selectedBillingPractice.id === practice.id ? 'active' : ''}
+                                key={practice.id}
+                                onClick={() => setSelectedBillingPracticeId(practice.id)}
+                              >
+                                <strong>{practice.name}</strong>
+                                <span>{isMainPractice ? 'Main practice' : practice.practiceNumber || 'No practice number'} · {practice.isActive ? 'Active' : 'Inactive'}</span>
+                                <small>{locations.length ? locations.map((location) => location.name).join(', ') : 'No locations yet'}</small>
+                              </button>
+                            )
+                          })}
+                        </div>
+                      )}
                     </div>
-                    <label className="wide-field"><span>Payment terms</span><textarea value={selectedBillingPractice.paymentTerms} onChange={(event) => updatePracticeEntity(selectedBillingPractice.id, 'paymentTerms', event.target.value)} /></label>
-                    <label className="settings-toggle-row wide-field">
-                      <input type="checkbox" checked={selectedBillingPractice.allowTherapistBankingOverride} onChange={(event) => updatePracticeEntity(selectedBillingPractice.id, 'allowTherapistBankingOverride', event.target.checked)} />
-                      <span>Allow therapist banking override for this practice</span>
+                  ))}
+                </div>
+              </section>
+
+              <section className="settings-config-card">
+                <div className="panel-heading compact-heading">
+                  <div>
+                    <p>{activeBillingOption.detail}</p>
+                    <h2>{activeBillingOption.label}</h2>
+                  </div>
+                  {activeBillingSetting === 'rules' && <span className="config-updated-pill">Updated {billingRules.updatedAt}</span>}
+                  {activeBillingSetting === 'practices' && <button type="button" onClick={addPracticeEntity}>Add practice</button>}
+                  {activeBillingSetting === 'icd' && <button type="button" onClick={addIcdCode}>Add ICD-10 code</button>}
+                  {activeBillingSetting === 'procedures' && (
+                    <div className="settings-action-row">
+                      <button type="button" onClick={addBillingPriceList}>Add list</button>
+                      <button type="button" onClick={addBillingCode}>Add procedure</button>
+                    </div>
+                  )}
+                </div>
+
+                {activeBillingSetting === 'rules' && (
+                  <div className="settings-form-grid">
+                    <label className="practice-number-toggle wide-field">
+                      <input
+                        type="checkbox"
+                        checked={billingRules.allowTherapistBankingDetails}
+                        onChange={(event) => updateBillingRule('allowTherapistBankingDetails', event.target.checked)}
+                      />
+                      <span>Allow therapists to use their own banking details on quotes and invoices</span>
                     </label>
-                    <label className="settings-toggle-row wide-field">
-                      <input type="checkbox" checked={selectedBillingPractice.isActive} onChange={(event) => updatePracticeEntity(selectedBillingPractice.id, 'isActive', event.target.checked)} />
-                      <span>{selectedBillingPractice.isActive ? 'Practice active' : 'Practice inactive'}</span>
+                    <label>
+                      <span>Practice number mode</span>
+                      <select value={billingRules.practiceNumberMode} onChange={(event) => updateBillingRule('practiceNumberMode', event.target.value)}>
+                        <option value="main_practice">main_practice</option>
+                        <option value="individual_therapist">individual_therapist</option>
+                        <option value="mixed">mixed</option>
+                      </select>
                     </label>
                   </div>
-                </section>
-              </div>
-              <div className="panel-heading compact-heading">
-                <div>
-                  <p>Practice locations</p>
-                  <h2>{selectedBillingPractice.name}</h2>
-                </div>
-                <button type="button" onClick={addPracticeLocation}>Add location</button>
-              </div>
-              <div className="practice-location-list">
-                {billingPracticeLocations.filter((location) => location.practiceEntityId === selectedBillingPractice.id).map((location) => (
-                  <article key={location.id}>
-                    <input value={location.name} onChange={(event) => updatePracticeLocation(location.id, 'name', event.target.value)} />
-                    <input value={location.address} onChange={(event) => updatePracticeLocation(location.id, 'address', event.target.value)} />
-                    <input value={location.contactNumber} onChange={(event) => updatePracticeLocation(location.id, 'contactNumber', event.target.value)} />
-                    <button type="button" className={location.isActive ? 'active' : ''} onClick={() => updatePracticeLocation(location.id, 'isActive', !location.isActive)}>
-                      {location.isActive ? 'Active' : 'Inactive'}
-                    </button>
-                  </article>
-                ))}
-              </div>
-            </div>
-
-            <div className="settings-config-card">
-              <div className="panel-heading compact-heading">
-                <div>
-                  <p>ICD-10 codes and pricing</p>
-                  <h2>Practice-specific or tenant-wide defaults</h2>
-                </div>
-                <button type="button" onClick={addBillingCode}>Add ICD-10 code</button>
-              </div>
-              <p className="quiet">Session booking first shows codes for the selected practice, then tenant-wide defaults.</p>
-              <div className="billing-admin-list">
-                {billingCodes.length ? billingCodes.map((item) => (
-                  <article key={item.id}>
-                    <select value={item.practiceEntityId} onChange={(event) => updateBillingCode(item.id, 'practiceEntityId', event.target.value)}>
-                      <option value="">Tenant-wide</option>
-                      {billingPracticeEntities.map((practice) => (
-                        <option value={practice.id} key={practice.id}>{practice.name}</option>
-                      ))}
-                    </select>
-                    <input value={item.code} placeholder="ICD-10" onChange={(event) => updateBillingCode(item.id, 'code', event.target.value)} />
-                    <input value={item.description} placeholder="Description" onChange={(event) => updateBillingCode(item.id, 'description', event.target.value)} />
-                    <input value={item.serviceType} placeholder="Service type" onChange={(event) => updateBillingCode(item.id, 'serviceType', event.target.value)} />
-                    <input value={item.discipline} placeholder="Discipline" onChange={(event) => updateBillingCode(item.id, 'discipline', event.target.value)} />
-                    <input type="number" value={item.defaultPrice} onChange={(event) => updateBillingCode(item.id, 'defaultPrice', Number(event.target.value))} />
-                    <button type="button" className={item.isActive ? 'active' : ''} onClick={() => updateBillingCode(item.id, 'isActive', !item.isActive)}>
-                      {item.isActive ? 'Active' : 'Inactive'}
-                    </button>
-                  </article>
-                )) : (
-                  <p className="quiet">No billing codes configured.</p>
                 )}
-              </div>
+
+                {activeBillingSetting === 'practices' && (
+                  <div className="settings-detail-stack">
+                    <div className="billing-practice-editor">
+                      {isSelectedMainPractice ? (
+                        <div className="settings-readonly-grid">
+                          <div className="wide-field">
+                            <span>Main practice</span>
+                            <strong>{selectedBillingPractice.name}</strong>
+                            <small className="settings-footnote">Main practice details are edited in Practice Configuration. Add or update extra locations here only.</small>
+                          </div>
+                          <div>
+                            <span>Practice number</span>
+                            <strong>{selectedBillingPractice.practiceNumber || '-'}</strong>
+                          </div>
+                          <div>
+                            <span>Status</span>
+                            <strong>{selectedBillingPractice.isActive ? 'Active' : 'Inactive'}</strong>
+                          </div>
+                          <label className="settings-readonly-select wide-field">
+                            <span>Affiliated procedure and prices</span>
+                            <select value={selectedBillingPractice.priceListId} onChange={(event) => updatePracticeEntity(selectedBillingPractice.id, 'priceListId', event.target.value)}>
+                              {billingPriceLists.map((priceList) => (
+                                <option value={priceList.id} key={priceList.id}>{priceList.name}</option>
+                              ))}
+                            </select>
+                          </label>
+                        </div>
+                      ) : (
+                        <div className="settings-form-grid">
+                          <label><span>Name</span><input value={selectedBillingPractice.name} onChange={(event) => updatePracticeEntity(selectedBillingPractice.id, 'name', event.target.value)} /></label>
+                          <label><span>Practice number</span><input value={selectedBillingPractice.practiceNumber} onChange={(event) => updatePracticeEntity(selectedBillingPractice.id, 'practiceNumber', event.target.value)} /></label>
+                          <label><span>Invoice prefix</span><input value={selectedBillingPractice.invoicePrefix} onChange={(event) => updatePracticeEntity(selectedBillingPractice.id, 'invoicePrefix', event.target.value)} /></label>
+                          <label><span>Quote prefix</span><input value={selectedBillingPractice.quotePrefix} onChange={(event) => updatePracticeEntity(selectedBillingPractice.id, 'quotePrefix', event.target.value)} /></label>
+                          <label>
+                            <span>Affiliated procedure and prices</span>
+                            <select value={selectedBillingPractice.priceListId} onChange={(event) => updatePracticeEntity(selectedBillingPractice.id, 'priceListId', event.target.value)}>
+                              {billingPriceLists.map((priceList) => (
+                                <option value={priceList.id} key={priceList.id}>{priceList.name}</option>
+                              ))}
+                            </select>
+                          </label>
+                          <div className="settings-banking-grid wide-field">
+                            <span>Banking details</span>
+                            <label><small>Acc Name</small><input value={selectedBillingPractice.bankingDetails.accountName} onChange={(event) => updatePracticeEntityBanking(selectedBillingPractice.id, 'accountName', event.target.value)} /></label>
+                            <label><small>Bank</small><input value={selectedBillingPractice.bankingDetails.bank} onChange={(event) => updatePracticeEntityBanking(selectedBillingPractice.id, 'bank', event.target.value)} /></label>
+                            <label><small>Acc nr</small><input value={selectedBillingPractice.bankingDetails.accountNumber} onChange={(event) => updatePracticeEntityBanking(selectedBillingPractice.id, 'accountNumber', event.target.value)} /></label>
+                            <label><small>Code</small><input value={selectedBillingPractice.bankingDetails.branchCode} onChange={(event) => updatePracticeEntityBanking(selectedBillingPractice.id, 'branchCode', event.target.value)} /></label>
+                          </div>
+                          <label className="wide-field"><span>Payment terms</span><textarea value={selectedBillingPractice.paymentTerms} onChange={(event) => updatePracticeEntity(selectedBillingPractice.id, 'paymentTerms', event.target.value)} /></label>
+                          <label className="practice-number-toggle wide-field">
+                            <input type="checkbox" checked={selectedBillingPractice.allowTherapistBankingOverride} onChange={(event) => updatePracticeEntity(selectedBillingPractice.id, 'allowTherapistBankingOverride', event.target.checked)} />
+                            <span>Allow therapist banking override for this practice</span>
+                          </label>
+                          <label className="practice-number-toggle wide-field">
+                            <input type="checkbox" checked={selectedBillingPractice.isActive} onChange={(event) => updatePracticeEntity(selectedBillingPractice.id, 'isActive', event.target.checked)} />
+                            <span>{selectedBillingPractice.isActive ? 'Practice active' : 'Practice inactive'}</span>
+                          </label>
+                        </div>
+                      )}
+                    </div>
+                    <div className="panel-heading compact-heading">
+                      <div>
+                        <p>Practice locations</p>
+                        <h2>{selectedBillingPractice.name}</h2>
+                      </div>
+                      <button type="button" onClick={addPracticeLocation}>Add location</button>
+                    </div>
+                    <div className="practice-location-list">
+                      {billingPracticeLocations.filter((location) => location.practiceEntityId === selectedBillingPractice.id).map((location) => {
+                        const isLocationEditing = editingPracticeLocationId === location.id
+                        return (
+                          <article className={isLocationEditing ? 'editing' : ''} key={location.id}>
+                            {isLocationEditing ? (
+                              <>
+                                <input value={location.name} onChange={(event) => updatePracticeLocation(location.id, 'name', event.target.value)} />
+                                <input value={location.address} onChange={(event) => updatePracticeLocation(location.id, 'address', event.target.value)} />
+                                <input value={location.contactNumber} onChange={(event) => updatePracticeLocation(location.id, 'contactNumber', event.target.value)} />
+                              </>
+                            ) : (
+                              <div className="practice-location-summary">
+                                <strong>{location.name}</strong>
+                                <span>{location.address || 'No address captured'}</span>
+                                <small>{location.contactNumber || 'No contact number'} · {location.isActive ? 'Active' : 'Inactive'}</small>
+                              </div>
+                            )}
+                            <div className="practice-location-actions">
+                              {isLocationEditing && (
+                                <button type="button" className="danger" aria-label="Delete location" title="Delete location" onClick={() => removePracticeLocation(location.id)}>
+                                  <TrashIcon />
+                                </button>
+                              )}
+                              <button
+                                type="button"
+                                className={isLocationEditing ? 'save-mode' : ''}
+                                aria-label={isLocationEditing ? 'Save location' : 'Edit location'}
+                                title={isLocationEditing ? 'Save location' : 'Edit location'}
+                                onClick={() => setEditingPracticeLocationId((current) => (current === location.id ? '' : location.id))}
+                              >
+                                <PencilIcon />
+                              </button>
+                            </div>
+                          </article>
+                        )
+                      })}
+                    </div>
+                  </div>
+                )}
+
+                {activeBillingSetting === 'icd' && (
+                  <>
+                    <p className="quiet">Manage ICD-10 codes separately from procedure pricing. These codes can be used when creating sessions, invoices and clinical records.</p>
+                    <div className="billing-admin-list icd-code-list">
+                      {icdCodes.length ? icdCodes.map((item) => {
+                        const isIcdEditing = editingIcdCodeId === item.id
+                        return (
+                          <article className={isIcdEditing ? 'editing' : ''} key={item.id}>
+                            {isIcdEditing ? (
+                              <input value={item.code} placeholder="ICD-10 code" onChange={(event) => updateIcdCode(item.id, event.target.value)} />
+                            ) : (
+                              <strong>{item.code || 'No ICD-10 code captured'}</strong>
+                            )}
+                            <div className="practice-location-actions">
+                              {isIcdEditing && (
+                                <button type="button" className="danger" aria-label="Delete ICD-10 code" title="Delete ICD-10 code" onClick={() => removeIcdCode(item.id)}>
+                                  <TrashIcon />
+                                </button>
+                              )}
+                              <button
+                                type="button"
+                                className={isIcdEditing ? 'save-mode' : ''}
+                                aria-label={isIcdEditing ? 'Save ICD-10 code' : 'Edit ICD-10 code'}
+                                title={isIcdEditing ? 'Save ICD-10 code' : 'Edit ICD-10 code'}
+                                onClick={() => setEditingIcdCodeId((current) => (current === item.id ? '' : item.id))}
+                              >
+                                <PencilIcon />
+                              </button>
+                            </div>
+                          </article>
+                        )
+                      }) : (
+                        <p className="quiet">No ICD-10 codes configured.</p>
+                      )}
+                    </div>
+                  </>
+                )}
+
+                {activeBillingSetting === 'procedures' && (
+                  <>
+                    <div className="price-list-controls" aria-label="Procedure and prices lists">
+                      {billingPriceLists.map((priceList) => {
+                        const isPriceListEditing = editingBillingPriceListId === priceList.id
+                        return (
+                          <div className={`price-list-item ${selectedBillingPriceList.id === priceList.id ? 'active' : ''} ${isPriceListEditing ? 'editing' : ''}`} key={priceList.id}>
+                            <button
+                              type="button"
+                              className="price-list-select"
+                              onClick={() => setSelectedBillingPriceListId(priceList.id)}
+                            >
+                              <span>{priceList.code}</span>
+                              {isPriceListEditing ? (
+                                <input
+                                  value={priceList.name}
+                                  onClick={(event) => event.stopPropagation()}
+                                  onChange={(event) => updateBillingPriceList(priceList.id, 'name', event.target.value)}
+                                />
+                              ) : (
+                                <strong>{priceList.name}</strong>
+                              )}
+                            </button>
+                            {isPriceListEditing && (
+                              <button
+                                type="button"
+                                className="price-list-edit danger"
+                                aria-label="Delete procedure and prices list"
+                                title="Delete procedure and prices list"
+                                onClick={() => removeBillingPriceList(priceList.id)}
+                              >
+                                <TrashIcon />
+                              </button>
+                            )}
+                            <button
+                              type="button"
+                              className={`price-list-edit ${isPriceListEditing ? 'save-mode' : ''}`}
+                              aria-label={isPriceListEditing ? 'Save procedure and prices name' : 'Edit procedure and prices name'}
+                              title={isPriceListEditing ? 'Save procedure and prices name' : 'Edit procedure and prices name'}
+                              onClick={() => {
+                                setSelectedBillingPriceListId(priceList.id)
+                                setEditingBillingPriceListId((current) => (current === priceList.id ? '' : priceList.id))
+                              }}
+                            >
+                              <PencilIcon />
+                            </button>
+                          </div>
+                        )
+                      })}
+                    </div>
+                    <p className="quiet">Manage procedures and prices for {selectedBillingPriceList.name}. ICD-10 codes stay in their own section.</p>
+                    <div className="billing-admin-list procedure-price-list">
+                      {visibleBillingCodes.length ? visibleBillingCodes.map((item) => {
+                        const isProcedureEditing = editingProcedureId === item.id
+                        return (
+                          <article className={isProcedureEditing ? 'editing' : ''} key={item.id}>
+                            {isProcedureEditing ? (
+                              <>
+                                <input value={item.code} placeholder="Procedure code" onChange={(event) => updateBillingCode(item.id, 'code', event.target.value)} />
+                                <input value={item.description} placeholder="Description" onChange={(event) => updateBillingCode(item.id, 'description', event.target.value)} />
+                                <input type="number" value={item.defaultPrice} onChange={(event) => updateBillingCode(item.id, 'defaultPrice', Number(event.target.value))} />
+                              </>
+                            ) : (
+                              <div className="procedure-price-summary">
+                                <strong>{item.code || 'No procedure code'}</strong>
+                                <span>{item.description || 'No description captured'}</span>
+                                <small>R {item.defaultPrice.toLocaleString('en-ZA')}</small>
+                              </div>
+                            )}
+                            <div className="practice-location-actions">
+                              {isProcedureEditing && (
+                                <button type="button" className="line-icon-button danger" aria-label="Delete procedure" title="Delete procedure" onClick={() => removeBillingCode(item.id)}>
+                                  <TrashIcon />
+                                </button>
+                              )}
+                              <button
+                                type="button"
+                                className={`line-icon-button ${isProcedureEditing ? 'save-mode' : ''}`}
+                                aria-label={isProcedureEditing ? 'Save procedure' : 'Edit procedure'}
+                                title={isProcedureEditing ? 'Save procedure' : 'Edit procedure'}
+                                onClick={() => setEditingProcedureId((current) => (current === item.id ? '' : item.id))}
+                              >
+                                <PencilIcon />
+                              </button>
+                            </div>
+                          </article>
+                        )
+                      }) : (
+                        <p className="quiet">No procedures configured for {selectedBillingPriceList.name}.</p>
+                      )}
+                    </div>
+                  </>
+                )}
+              </section>
             </div>
           </div>
         )}
@@ -4923,32 +5306,6 @@ function SuperAdminWorkspace({ view }: { view: View }) {
         </section>
       )}
     </div>
-  )
-}
-
-function PatientPortal() {
-  return (
-    <section className="panel portal-panel">
-      <div className="panel-heading">
-        <div>
-          <p>Secure customer link</p>
-          <h2>Patient portal</h2>
-        </div>
-      </div>
-      <div className="phone-frame">
-        <strong>Hi Marissa</strong>
-        <span>Cellphone OTP verified</span>
-        <div>
-          <p>Next session</p>
-          <b>Today · 08:30 · Room 2</b>
-        </div>
-        <div>
-          <p>Payment due</p>
-          <b>{formatMoney(780)}</b>
-        </div>
-        <button>Request booking change</button>
-      </div>
-    </section>
   )
 }
 
