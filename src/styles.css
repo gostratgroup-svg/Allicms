@@ -151,91 +151,22 @@ button:active {
 }
 
 .main-nav button span {
-  width: 22px;
-  height: 22px;
-  border-radius: 6px;
+  width: 28px;
+  height: 28px;
+  border-radius: 9px;
   display: grid;
   place-items: center;
-  background: rgba(255, 255, 255, 0.12);
+  background: rgba(255, 255, 255, 0.1);
+  color: rgba(255, 255, 255, 0.82);
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.06);
 }
 
 .nav-icon {
   position: relative;
 }
 
-.nav-icon::before,
-.nav-icon::after {
-  content: "";
-  position: absolute;
-  box-sizing: border-box;
-}
-
-.nav-icon.home::before {
-  width: 14px;
-  height: 11px;
-  left: 4px;
-  top: 8px;
-  border: 2px solid currentColor;
-  border-top: 0;
-  border-radius: 2px;
-}
-
-.nav-icon.home::after {
-  width: 12px;
-  height: 12px;
-  left: 5px;
-  top: 3px;
-  border-left: 2px solid currentColor;
-  border-top: 2px solid currentColor;
-  transform: rotate(45deg);
-  border-radius: 2px 0 0 0;
-}
-
-.nav-icon.blocks {
-  background:
-    linear-gradient(currentColor 0 0) 4px 4px / 5px 5px no-repeat,
-    linear-gradient(currentColor 0 0) 13px 4px / 5px 5px no-repeat,
-    linear-gradient(currentColor 0 0) 4px 13px / 5px 5px no-repeat,
-    linear-gradient(currentColor 0 0) 13px 13px / 5px 5px no-repeat,
-    rgba(255, 255, 255, 0.12);
-}
-
-.nav-icon.person::before {
-  width: 7px;
-  height: 7px;
-  left: 7px;
-  top: 4px;
-  border: 2px solid currentColor;
-  border-radius: 999px;
-}
-
-.nav-icon.person::after {
-  width: 14px;
-  height: 8px;
-  left: 4px;
-  top: 13px;
-  border: 2px solid currentColor;
-  border-bottom: 0;
-  border-radius: 999px 999px 0 0;
-}
-
-.nav-icon.coins::before {
-  width: 14px;
-  height: 7px;
-  left: 4px;
-  top: 5px;
-  border: 2px solid currentColor;
-  border-radius: 999px;
-  box-shadow: 0 5px 0 -1px currentColor, 0 10px 0 -1px currentColor;
-}
-
-.nav-icon.gear::before {
-  width: 14px;
-  height: 14px;
-  left: 4px;
-  top: 4px;
-  border: 3px dotted currentColor;
-  border-radius: 999px;
+.nav-icon svg {
+  display: block;
 }
 
 .main-nav button.active,
@@ -243,6 +174,13 @@ button:active {
   color: white;
   background: rgba(255, 255, 255, 0.15);
   box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.08);
+}
+
+.main-nav button.active .nav-icon,
+.main-nav button:hover .nav-icon {
+  background: rgba(255, 255, 255, 0.18);
+  color: white;
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.12), 0 8px 18px rgba(18, 13, 74, 0.16);
 }
 
 main {
@@ -3165,6 +3103,11 @@ button:disabled {
   white-space: nowrap;
 }
 
+.schedule-banking-toggle {
+  align-self: end;
+  min-height: 42px;
+}
+
 .settings-form-grid label.practice-number-toggle {
   display: flex;
   align-items: center;
@@ -3608,6 +3551,56 @@ button:disabled {
   gap: 6px;
 }
 
+.billing-document-tests {
+  display: grid;
+  gap: 8px;
+}
+
+.billing-document-tests article {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 10px;
+  padding: 10px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: white;
+}
+
+.billing-document-tests article > div {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+}
+
+.billing-document-tests span {
+  color: var(--muted);
+  font-size: 0.64rem;
+  font-weight: 900;
+  text-transform: uppercase;
+}
+
+.billing-document-tests strong {
+  color: var(--ink);
+  font-size: 0.82rem;
+}
+
+.billing-document-tests small {
+  color: var(--muted);
+  font-size: 0.68rem;
+  font-weight: 800;
+}
+
+.billing-document-tests button {
+  min-height: 32px;
+  padding: 0 12px;
+  border-radius: 999px;
+  background: var(--indigo);
+  color: white;
+  font-size: 0.72rem;
+  font-weight: 900;
+}
+
 .price-list-item {
   display: inline-flex;
   min-height: 32px;
@@ -3752,7 +3745,7 @@ button:disabled {
 }
 
 .billing-admin-list.procedure-price-list article.editing {
-  grid-template-columns: minmax(120px, 0.7fr) minmax(220px, 1.4fr) minmax(90px, 0.4fr) auto;
+  grid-template-columns: minmax(110px, 0.7fr) minmax(200px, 1.4fr) minmax(86px, 0.4fr) minmax(100px, 0.45fr) auto;
 }
 
 .procedure-price-summary {
@@ -4734,11 +4727,11 @@ button:disabled {
 
 .form-section {
   display: grid;
-  gap: 10px;
+  gap: 12px;
   padding: 12px;
   border: 1px solid var(--line);
   border-radius: 8px;
-  background: #fbfbfe;
+  background: white;
 }
 
 .section-title {
@@ -4762,6 +4755,7 @@ button:disabled {
 .section-title-copy > span {
   width: 24px;
   height: 24px;
+  margin-top: 1px;
   border-radius: 999px;
   background: var(--indigo);
   color: white;
@@ -4774,6 +4768,11 @@ button:disabled {
 .section-title div {
   display: grid;
   gap: 2px;
+}
+
+.section-title strong {
+  color: var(--ink);
+  font-size: 0.94rem;
 }
 
 .section-title .section-title-copy {
@@ -4992,6 +4991,39 @@ button:disabled {
   grid-template-columns: repeat(4, minmax(0, 1fr));
 }
 
+.new-session-modal {
+  width: min(840px, 100%);
+}
+
+.new-session-modal .modal-body {
+  gap: 12px;
+}
+
+.patient-identify-grid {
+  grid-template-columns: 1fr;
+  gap: 8px;
+  align-items: start;
+}
+
+.new-patient-grid {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.new-patient-grid .field:first-child {
+  grid-column: 1 / -1;
+}
+
+.schedule-session-grid {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  align-items: end;
+}
+
+.schedule-session-grid > .field,
+.schedule-session-grid > .readonly-field,
+.schedule-session-grid > .practice-number-toggle {
+  grid-column: auto;
+}
+
 .field {
   display: grid;
   gap: 5px;
@@ -5038,12 +5070,76 @@ input[type="checkbox"] {
   font-weight: 800;
 }
 
+.duration-summary-control {
+  min-height: 34px;
+  padding: 4px 10px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #fbfbfe;
+  display: grid;
+  align-content: center;
+  gap: 1px;
+}
+
+.duration-summary-control strong {
+  color: var(--ink);
+  font-size: 0.82rem;
+  line-height: 1;
+}
+
+.duration-summary-control small {
+  color: var(--muted);
+  font-size: 0.58rem;
+  font-weight: 800;
+  line-height: 1.05;
+}
+
 .searchable-patient-field {
   align-content: start;
 }
 
+.searchable-patient-field small {
+  color: var(--muted);
+  font-size: 0.66rem;
+  font-weight: 800;
+}
+
+.patient-search-input-wrap {
+  position: relative;
+  display: grid;
+}
+
+.patient-search-input-wrap input {
+  padding-right: 34px;
+}
+
+.patient-search-input-wrap button {
+  position: absolute;
+  top: 50%;
+  right: 8px;
+  width: 22px;
+  height: 22px;
+  min-height: 0;
+  padding: 0;
+  border: 0;
+  border-radius: 999px;
+  background: var(--lilac);
+  color: var(--indigo);
+  display: grid;
+  place-items: center;
+  font-size: 0.78rem;
+  font-weight: 900;
+  line-height: 1;
+  transform: translateY(-50%);
+}
+
+.patient-search-input-wrap button:hover {
+  background: var(--indigo);
+  color: white;
+}
+
 .patient-search-results {
-  max-height: 148px;
+  max-height: 170px;
   overflow: auto;
   border: 1px solid var(--line);
   border-radius: 8px;
@@ -5052,7 +5148,7 @@ input[type="checkbox"] {
 }
 
 .patient-search-results button {
-  padding: 8px 10px;
+  padding: 7px 9px;
   border-bottom: 1px solid rgba(222, 223, 240, 0.7);
   background: white;
   color: var(--ink);
@@ -5074,6 +5170,8 @@ input[type="checkbox"] {
 .patient-search-results span,
 .patient-search-results small {
   color: var(--muted);
+  font-size: 0.66rem;
+  font-weight: 800;
 }
 
 .patient-search-results > small {
@@ -5082,14 +5180,19 @@ input[type="checkbox"] {
 
 .selected-patient-card,
 .patient-link-box {
-  min-height: 72px;
-  padding: 10px;
+  min-height: 0;
+  padding: 9px 10px;
   border: 1px solid rgba(153, 153, 237, 0.45);
   border-radius: 8px;
   background: white;
   display: grid;
-  align-content: center;
+  align-content: start;
   gap: 3px;
+}
+
+.selected-patient-card strong {
+  color: var(--ink);
+  font-size: 0.92rem;
 }
 
 .selected-patient-card span,
@@ -5281,50 +5384,19 @@ input[type="checkbox"] {
     height: 26px;
     background: transparent;
     color: inherit;
-  }
-
-  .sidebar .main-nav .nav-icon.home::before {
-    left: 6px;
-    top: 11px;
-  }
-
-  .sidebar .main-nav .nav-icon.home::after {
-    left: 7px;
-    top: 5px;
-  }
-
-  .sidebar .main-nav .nav-icon.blocks {
-    background:
-      linear-gradient(currentColor 0 0) 6px 6px / 5px 5px no-repeat,
-      linear-gradient(currentColor 0 0) 15px 6px / 5px 5px no-repeat,
-      linear-gradient(currentColor 0 0) 6px 15px / 5px 5px no-repeat,
-      linear-gradient(currentColor 0 0) 15px 15px / 5px 5px no-repeat;
-  }
-
-  .sidebar .main-nav .nav-icon.person::before {
-    left: 9px;
-    top: 5px;
-  }
-
-  .sidebar .main-nav .nav-icon.person::after {
-    left: 6px;
-    top: 16px;
-  }
-
-  .sidebar .main-nav .nav-icon.coins::before {
-    left: 6px;
-    top: 7px;
-  }
-
-  .sidebar .main-nav .nav-icon.gear::before {
-    left: 6px;
-    top: 6px;
+    box-shadow: none;
   }
 
   .sidebar .main-nav button.active,
   .sidebar .main-nav button:hover {
     color: white;
     background: rgba(255, 255, 255, 0.15);
+  }
+
+  .sidebar .main-nav button.active .nav-icon,
+  .sidebar .main-nav button:hover .nav-icon {
+    background: transparent;
+    box-shadow: none;
   }
 
   .admin-strip,
@@ -5567,8 +5639,21 @@ input[type="checkbox"] {
 
   .form-grid.two-col,
   .form-grid.four-col,
+  .patient-identify-grid,
+  .new-patient-grid,
+  .schedule-session-grid,
   .billing-config-row {
     grid-template-columns: 1fr;
+  }
+
+  .new-patient-grid .field:first-child,
+  .schedule-session-grid > .field,
+  .schedule-session-grid > .readonly-field,
+  .schedule-session-grid > .practice-number-toggle,
+  .schedule-session-grid > .field:nth-of-type(5),
+  .schedule-session-grid > .field:nth-of-type(6),
+  .schedule-session-grid > .field:nth-of-type(7) {
+    grid-column: auto;
   }
 
   .billing-choice,

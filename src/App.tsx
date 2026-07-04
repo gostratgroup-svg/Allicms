@@ -14,7 +14,12 @@ type CalendarSession = {
   room: string
   practiceEntityId?: string
   practiceLocationId?: string
+  procedurePriceListId?: string
   billingCodeId?: string
+  billingProcedureIds?: string[]
+  icd10Code?: string
+  durationMinutes?: number
+  isAssessment?: boolean
   quotedAmount?: number
   invoiceAmount?: number
   selectedPracticeNumberSource?: 'practice' | 'therapist'
@@ -31,6 +36,12 @@ type PatientNote = {
   detail: string
 }
 type InvoiceStatus = 'confirm_invoice' | 'awaiting_payment' | 'payment_due' | 'payment_received'
+type InvoiceLineItem = {
+  procedureCode: string
+  description: string
+  icd10Code: string
+  price: number
+}
 type Invoice = {
   id: string
   kind?: 'invoice' | 'statement'
@@ -58,6 +69,7 @@ type Invoice = {
   billingCodeId?: string
   icd10Code?: string
   serviceDescription?: string
+  lineItems?: InvoiceLineItem[]
   createdAt: string
   updatedAt: string
 }
@@ -103,6 +115,74 @@ const navItems: Array<{ id: View; label: string; icon: string }> = [
   { id: 'finances', label: 'Finances', icon: 'coins' },
   { id: 'settings', label: 'Settings', icon: 'gear' },
 ]
+
+function NavIcon({ icon }: { icon: string }) {
+  const commonProps = {
+    width: 22,
+    height: 22,
+    viewBox: '0 0 24 24',
+    fill: 'none',
+    stroke: 'currentColor',
+    strokeWidth: 1.9,
+    strokeLinecap: 'round' as const,
+    strokeLinejoin: 'round' as const,
+    'aria-hidden': true,
+  }
+
+  if (icon === 'home') {
+    return (
+      <svg {...commonProps}>
+        <path d="M4.5 10.7 12 4.4l7.5 6.3" />
+        <path d="M6.8 9.4v9.4h10.4V9.4" />
+        <path d="M10 18.8v-5h4v5" />
+      </svg>
+    )
+  }
+
+  if (icon === 'blocks') {
+    return (
+      <svg {...commonProps}>
+        <rect x="4.4" y="4.4" width="6.1" height="6.1" rx="1.4" />
+        <rect x="13.5" y="4.4" width="6.1" height="6.1" rx="1.4" />
+        <rect x="4.4" y="13.5" width="6.1" height="6.1" rx="1.4" />
+        <rect x="13.5" y="13.5" width="6.1" height="6.1" rx="1.4" />
+      </svg>
+    )
+  }
+
+  if (icon === 'person') {
+    return (
+      <svg {...commonProps}>
+        <circle cx="12" cy="8" r="3.1" />
+        <path d="M5.6 19.4c.6-3.4 3-5.3 6.4-5.3s5.8 1.9 6.4 5.3" />
+      </svg>
+    )
+  }
+
+  if (icon === 'coins') {
+    return (
+      <svg {...commonProps}>
+        <ellipse cx="12" cy="6.4" rx="6.1" ry="2.5" />
+        <path d="M5.9 6.4v4.3c0 1.4 2.7 2.5 6.1 2.5s6.1-1.1 6.1-2.5V6.4" />
+        <path d="M5.9 10.8v4.3c0 1.4 2.7 2.5 6.1 2.5s6.1-1.1 6.1-2.5v-4.3" />
+      </svg>
+    )
+  }
+
+  return (
+    <svg {...commonProps}>
+      <circle cx="12" cy="12" r="3.1" />
+      <path d="M12 3.7v2.1" />
+      <path d="M12 18.2v2.1" />
+      <path d="M20.3 12h-2.1" />
+      <path d="M5.8 12H3.7" />
+      <path d="m17.9 6.1-1.5 1.5" />
+      <path d="m7.6 16.4-1.5 1.5" />
+      <path d="m17.9 17.9-1.5-1.5" />
+      <path d="m7.6 7.6-1.5-1.5" />
+    </svg>
+  )
+}
 
 const roles: Array<{
   role: Role
@@ -468,6 +548,7 @@ const billingCodeDefaults = billingItems.map((item, index) => ({
   description: item.description,
   serviceType: item.sessionType,
   defaultPrice: item.price,
+  durationMinutes: [30, 45, 60, 30][index] ?? 30,
   discipline: item.sessionType.includes('Occupational') ? 'Occupational Therapist' : item.sessionType.includes('Speech') ? 'Speech Therapist' : '',
   isActive: true,
   createdAt: '2026-06-20',
@@ -545,12 +626,441 @@ function getOverdueDays(invoice: Invoice) {
   return Math.max(0, Math.floor((parseIsoDate(appTodayIso).getTime() - parseIsoDate(invoice.confirmedAt).getTime()) / 86400000))
 }
 
-function generateInvoicePdf(invoice: Invoice) {
-  return `/invoices/${invoice.id}.pdf`
+type InvoiceDocumentOptions = {
+  documentKind?: 'invoice' | 'statement'
+  practiceName?: string
+  practiceAddress?: string
+  practicePhone?: string
+  practiceEmail?: string
+  practiceWebsite?: string
+  practiceNumber?: string
+  logoUrl?: string
+  paymentTerms?: string
+  bankingDetails?: BankingDetails
 }
 
-function generateStatementPdf(invoice: Invoice) {
-  return `/statements/${invoice.id}.pdf`
+function escapeHtml(value?: string | number) {
+  return String(value ?? '')
+    .replaceAll('&', '&amp;')
+    .replaceAll('<', '&lt;')
+    .replaceAll('>', '&gt;')
+    .replaceAll('"', '&quot;')
+    .replaceAll("'", '&#039;')
+}
+
+function formatAddressForInvoice(address?: string) {
+  return (address || '12 Oak Street, Cape Town')
+    .split(',')
+    .map((line) => line.trim())
+    .filter(Boolean)
+}
+
+function getInvoicePatient(invoice: Invoice) {
+  return patients.find((patient) => patient.patientNumber === invoice.patientId || patient.name === invoice.patientName) ?? patients[0]
+}
+
+function getInvoiceLineItems(invoice: Invoice) {
+  if (invoice.lineItems?.length) return invoice.lineItems
+  const matchingProcedure = billingCodeDefaults.find((item) => item.id === invoice.billingCodeId || item.code === invoice.icd10Code)
+  return [
+    {
+      procedureCode: matchingProcedure?.code ?? invoice.icd10Code ?? 'PROC',
+      description: invoice.serviceDescription ?? matchingProcedure?.description ?? invoice.serviceType,
+      icd10Code: invoice.icd10Code ?? matchingProcedure?.code ?? 'N/A',
+      price: invoice.amount,
+    },
+  ]
+}
+
+function buildInvoiceDocumentHtml(invoice: Invoice, options: InvoiceDocumentOptions = {}) {
+  const patient = getInvoicePatient(invoice)
+  const practiceEntity = practiceEntities.find((practice) => practice.id === invoice.practiceEntityId) ?? practiceEntities[0]
+  const practiceLocation = practiceLocations.find((location) => location.id === invoice.practiceLocationId)
+  const therapistProfile = therapistFinanceProfiles.find((profile) => profile.therapistName === invoice.practitionerName)
+  const lineItems = getInvoiceLineItems(invoice)
+  const documentKind = options.documentKind ?? (invoice.kind === 'statement' ? 'statement' : 'invoice')
+  const title = documentKind === 'statement' ? 'Statement' : 'Invoice'
+  const practiceName = options.practiceName ?? practiceEntity.name
+  const practiceAddress = formatAddressForInvoice(options.practiceAddress ?? practiceLocation?.address)
+  const practicePhone = options.practicePhone ?? practiceLocation?.contactNumber ?? '021 555 0100'
+  const practiceEmail = options.practiceEmail ?? 'accounts@kidstherapycentre.co.za'
+  const practiceWebsite = options.practiceWebsite ?? 'www.kidstherapycentre.co.za'
+  const practiceNumber = options.practiceNumber ?? invoice.selectedPracticeNumber ?? practiceEntity.practiceNumber
+  const bankingDetails = options.bankingDetails ?? practiceEntity.bankingDetails
+  const logoUrl = options.logoUrl
+  const subtotal = lineItems.reduce((total, item) => total + item.price, 0)
+  const total = invoice.amount || subtotal
+  const patientRows = [
+    ['Patient', patient.name],
+    ['Patient no', patient.patientNumber],
+    ['Patient type', patient.type],
+    ['Date of birth', patient.dateOfBirth || ''],
+    ['ID number', patient.idNumber || ''],
+    ['Address', patient.residentialAddress || ''],
+  ]
+  const guardianRows = [
+    ['Parent / guardian', patient.guardian || ''],
+    ['Cell', patient.phone || ''],
+    ['Email', patient.guardianEmail || ''],
+    ['Emergency contact', patient.emergencyContact || ''],
+  ]
+  const medicalRows = [
+    ['Medical aid', patient.medicalAid || ''],
+    ['Medical aid plan', patient.medicalAidPlan || ''],
+    ['Account responsibility', patient.accountResponsibility || ''],
+    ['Consent signed', patient.dateSigned || ''],
+  ]
+  const detailBlock = (heading: string, rows: string[][]) => `
+    <section class="detail-card">
+      <h3>${escapeHtml(heading)}</h3>
+      ${rows.map(([label, value]) => `
+        <div>
+          <span>${escapeHtml(label)}</span>
+          <strong>${escapeHtml(value || '-')}</strong>
+        </div>
+      `).join('')}
+    </section>
+  `
+
+  return `<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>${escapeHtml(title)} ${escapeHtml(invoice.id)}</title>
+  <style>
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      background: #f1eff9;
+      color: #171431;
+      font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      line-height: 1.35;
+    }
+    .toolbar {
+      position: sticky;
+      top: 0;
+      z-index: 2;
+      padding: 12px;
+      background: rgba(255, 255, 255, 0.86);
+      border-bottom: 1px solid #dedff0;
+      backdrop-filter: blur(16px);
+      display: flex;
+      justify-content: center;
+      gap: 8px;
+    }
+    .toolbar button {
+      min-height: 34px;
+      padding: 0 14px;
+      border: 0;
+      border-radius: 999px;
+      background: #221672;
+      color: white;
+      font-weight: 800;
+      cursor: pointer;
+    }
+    .sheet {
+      width: 210mm;
+      min-height: 297mm;
+      margin: 22px auto;
+      padding: 18mm;
+      background: #fffdf7;
+      border-radius: 18px;
+      box-shadow: 0 28px 80px rgba(34, 22, 114, 0.22);
+      position: relative;
+      overflow: hidden;
+    }
+    .sheet:before {
+      content: "";
+      position: absolute;
+      inset: 0 0 auto auto;
+      width: 145mm;
+      height: 70mm;
+      background: linear-gradient(135deg, rgba(252, 132, 76, 0.2), rgba(153, 153, 237, 0.22));
+      border-bottom-left-radius: 80mm;
+      pointer-events: none;
+    }
+    header, main, footer { position: relative; z-index: 1; }
+    header {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 18px;
+      align-items: start;
+      margin-bottom: 18px;
+    }
+    h1 {
+      margin: 0;
+      font-size: 58px;
+      line-height: 0.9;
+      letter-spacing: 0;
+    }
+    .invoice-meta {
+      margin-top: 14px;
+      display: grid;
+      gap: 4px;
+      color: #6c6983;
+      font-size: 13px;
+      font-weight: 800;
+    }
+    .therapist-card {
+      justify-self: end;
+      max-width: 92mm;
+      padding: 14px;
+      border: 1px solid rgba(34, 22, 114, 0.18);
+      border-radius: 16px;
+      background: rgba(255, 255, 255, 0.74);
+      text-align: right;
+    }
+    .therapist-card span,
+    .detail-card span,
+    .totals span {
+      color: #6c6983;
+      font-size: 10px;
+      font-weight: 900;
+      text-transform: uppercase;
+    }
+    .therapist-card h2 {
+      margin: 4px 0 6px;
+      font-size: 26px;
+    }
+    .therapist-card p,
+    .practice-strip p,
+    .notes {
+      margin: 0;
+      color: #6c6983;
+      font-size: 12px;
+      font-weight: 750;
+    }
+    .practice-strip {
+      display: grid;
+      grid-template-columns: 1.2fr 1fr 1fr;
+      gap: 10px;
+      margin: 16px 0;
+      padding: 12px;
+      border: 1px solid rgba(153, 153, 237, 0.3);
+      border-radius: 16px;
+      background: #f2f1ff;
+    }
+    .practice-strip strong {
+      display: block;
+      margin-bottom: 3px;
+      font-size: 13px;
+    }
+    .detail-grid {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 10px;
+      margin: 12px 0 16px;
+    }
+    .detail-card {
+      padding: 12px;
+      border: 1px solid #dedff0;
+      border-radius: 16px;
+      background: white;
+      display: grid;
+      gap: 7px;
+    }
+    .detail-card h3 {
+      margin: 0 0 4px;
+      font-size: 13px;
+    }
+    .detail-card div {
+      display: grid;
+      gap: 1px;
+      break-inside: avoid;
+    }
+    .detail-card strong {
+      color: #171431;
+      font-size: 12px;
+      font-weight: 800;
+    }
+    table {
+      width: 100%;
+      border-collapse: separate;
+      border-spacing: 0;
+      overflow: hidden;
+      border: 1px solid #cfd9b8;
+      border-radius: 16px;
+      background: #ecffd9;
+    }
+    th, td {
+      padding: 10px;
+      border-bottom: 1px solid rgba(18, 128, 92, 0.14);
+      text-align: left;
+      font-size: 12px;
+      vertical-align: top;
+    }
+    th {
+      color: #315018;
+      font-size: 10px;
+      font-weight: 900;
+      text-transform: uppercase;
+      background: #daf7c4;
+    }
+    td strong {
+      display: block;
+      font-size: 12px;
+    }
+    tr:last-child td { border-bottom: 0; }
+    th:last-child,
+    td:last-child {
+      text-align: right;
+      white-space: nowrap;
+    }
+    .summary-row {
+      display: grid;
+      grid-template-columns: 1fr 76mm;
+      gap: 14px;
+      align-items: start;
+      margin-top: 14px;
+    }
+    .notes {
+      padding: 12px;
+      border-left: 4px solid #fc844c;
+      border-radius: 12px;
+      background: #fff3eb;
+    }
+    .totals {
+      padding: 12px;
+      border: 1px solid rgba(34, 22, 114, 0.16);
+      border-radius: 16px;
+      background: #d9f7c9;
+      display: grid;
+      gap: 7px;
+    }
+    .totals div {
+      display: flex;
+      justify-content: space-between;
+      gap: 16px;
+    }
+    .totals strong {
+      font-size: 19px;
+    }
+    footer {
+      display: flex;
+      justify-content: space-between;
+      align-items: end;
+      gap: 18px;
+      margin-top: 26px;
+      padding-top: 12px;
+      border-top: 1px solid #dedff0;
+      color: #6c6983;
+      font-size: 11px;
+      font-weight: 800;
+    }
+    .footer-logo {
+      max-width: 42mm;
+      max-height: 22mm;
+      object-fit: contain;
+      object-position: right bottom;
+    }
+    @page { size: A4; margin: 0; }
+    @media print {
+      body { background: white; }
+      .toolbar { display: none; }
+      .sheet {
+        width: 210mm;
+        min-height: 297mm;
+        margin: 0;
+        border-radius: 0;
+        box-shadow: none;
+      }
+    }
+  </style>
+</head>
+<body>
+  <div class="toolbar">
+    <button type="button" onclick="window.print()">Save as PDF / Print</button>
+  </div>
+  <article class="sheet">
+    <header>
+      <div>
+        <h1>${escapeHtml(title)}</h1>
+        <div class="invoice-meta">
+          <span>No. ${escapeHtml(invoice.id)}</span>
+          <span>Date: ${escapeHtml(invoice.invoiceDate)}</span>
+          ${invoice.paymentDueDate ? `<span>Due: ${escapeHtml(invoice.paymentDueDate)}</span>` : ''}
+        </div>
+      </div>
+      <section class="therapist-card">
+        <span>Practitioner</span>
+        <h2>${escapeHtml(invoice.practitionerName)}</h2>
+        <p>${escapeHtml(therapistDiscipline(invoice.practitionerName))}</p>
+        <p>Practice no: ${escapeHtml(therapistProfile?.usesOwnPracticeNumber ? therapistProfile.practiceNumber : practiceNumber)}</p>
+      </section>
+    </header>
+
+    <main>
+      <section class="practice-strip">
+        <div>
+          <strong>${escapeHtml(practiceName)}</strong>
+          <p>${practiceAddress.map(escapeHtml).join('<br>')}</p>
+        </div>
+        <div>
+          <strong>Contact</strong>
+          <p>${escapeHtml(practicePhone)}<br>${escapeHtml(practiceEmail)}<br>${escapeHtml(practiceWebsite)}</p>
+        </div>
+        <div>
+          <strong>Bank details</strong>
+          <p>${escapeHtml(bankingDetails.accountName)}<br>${escapeHtml(bankingDetails.bank)} · ${escapeHtml(bankingDetails.branchCode)}<br>${escapeHtml(bankingDetails.accountNumber)}</p>
+        </div>
+      </section>
+
+      <div class="detail-grid">
+        ${detailBlock('Patient details', patientRows)}
+        ${detailBlock('Parent / guardian', guardianRows)}
+        ${detailBlock('Medical aid', medicalRows)}
+      </div>
+
+      <table>
+        <thead>
+          <tr>
+            <th>Procedure code</th>
+            <th>Description</th>
+            <th>ICD-10</th>
+            <th>Price</th>
+          </tr>
+        </thead>
+        <tbody>
+          ${lineItems.map((item) => `
+            <tr>
+              <td><strong>${escapeHtml(item.procedureCode)}</strong></td>
+              <td>${escapeHtml(item.description)}</td>
+              <td>${escapeHtml(item.icd10Code)}</td>
+              <td>${escapeHtml(formatMoney(item.price))}</td>
+            </tr>
+          `).join('')}
+        </tbody>
+      </table>
+
+      <div class="summary-row">
+        <p class="notes">${escapeHtml(options.paymentTerms ?? practiceEntity.paymentTerms)}. Please use invoice number ${escapeHtml(invoice.id)} as payment reference.</p>
+        <section class="totals">
+          <div><span>Subtotal</span><b>${escapeHtml(formatMoney(subtotal))}</b></div>
+          <div><span>Total</span><strong>${escapeHtml(formatMoney(total))}</strong></div>
+        </section>
+      </div>
+    </main>
+
+    <footer>
+      <span>${escapeHtml(practiceName)} · ${escapeHtml(practiceEmail)} · ${escapeHtml(practicePhone)}</span>
+      ${logoUrl ? `<img class="footer-logo" src="${escapeHtml(logoUrl)}" alt="${escapeHtml(practiceName)} logo">` : ''}
+    </footer>
+  </article>
+</body>
+</html>`
+}
+
+function createPrintableDocumentUrl(html: string) {
+  return URL.createObjectURL(new Blob([html], { type: 'text/html' }))
+}
+
+function generateInvoicePdf(invoice: Invoice, options?: InvoiceDocumentOptions) {
+  return createPrintableDocumentUrl(buildInvoiceDocumentHtml(invoice, { ...options, documentKind: 'invoice' }))
+}
+
+function generateStatementPdf(invoice: Invoice, options?: InvoiceDocumentOptions) {
+  return createPrintableDocumentUrl(buildInvoiceDocumentHtml(invoice, { ...options, documentKind: 'statement' }))
 }
 
 function getInvoiceSortTime(invoice: Invoice) {
@@ -627,6 +1137,10 @@ function App() {
   const [selectedCalendarSessionId, setSelectedCalendarSessionId] = useState(weekSessions[0]?.id ?? '')
   const [selectedPatientName, setSelectedPatientName] = useState(patients[0].name)
   const [invoiceRecords, setInvoiceRecords] = useState<Invoice[]>(() => buildInitialInvoices())
+  const [practiceEntityRecords, setPracticeEntityRecords] = useState(practiceEntities)
+  const [practiceLocationRecords, setPracticeLocationRecords] = useState(practiceLocations)
+  const [procedurePriceLists, setProcedurePriceLists] = useState(billingPriceListDefaults)
+  const [procedurePriceRecords, setProcedurePriceRecords] = useState(billingCodeDefaults)
   const patientLinkMatch = getPatientLinkRoute()
   const currentDayIso = useLocalTodayIso()
 
@@ -782,11 +1296,11 @@ function App() {
       confirmedAt: appTodayIso,
       paymentDueDate: isPaidStatement ? undefined : toIsoDate(addDays(parseIsoDate(appTodayIso), 7)),
       paymentReceivedAt: isPaidStatement ? appTodayIso : undefined,
-      pdfInvoiceUrl: generateStatementPdf({ id: statementNumber } as Invoice),
+      lineItems: statementInvoices.flatMap((invoice) => getInvoiceLineItems(invoice)),
       createdAt: appTodayIso,
       updatedAt: appTodayIso,
     }
-    setInvoiceRecords((records) => [...records, statement])
+    setInvoiceRecords((records) => [...records, { ...statement, pdfInvoiceUrl: generateStatementPdf(statement) }])
     addPatientHistoryEvent(patientName, {
       title: `Statement generated · ${appTodayIso}`,
       visibility: 'Available on patient link',
@@ -831,7 +1345,9 @@ function App() {
         <nav className="main-nav" aria-label="Main navigation">
           {navItems.map((item) => (
             <button className={view === item.id ? 'active' : ''} key={item.id} onClick={() => setView(item.id)}>
-              <span className={`nav-icon ${item.icon}`} aria-hidden="true" />
+              <span className="nav-icon" aria-hidden="true">
+                <NavIcon icon={item.icon} />
+              </span>
               {item.label}
             </button>
           ))}
@@ -858,7 +1374,20 @@ function App() {
           </div>
         </header>
 
-        {view === 'settings' && <Settings role={role} setRole={setRole} />}
+        {view === 'settings' && (
+          <Settings
+            role={role}
+            setRole={setRole}
+            practiceEntities={practiceEntityRecords}
+            setPracticeEntities={setPracticeEntityRecords}
+            practiceLocations={practiceLocationRecords}
+            setPracticeLocations={setPracticeLocationRecords}
+            procedurePriceLists={procedurePriceLists}
+            setProcedurePriceLists={setProcedurePriceLists}
+            procedurePriceRecords={procedurePriceRecords}
+            setProcedurePriceRecords={setProcedurePriceRecords}
+          />
+        )}
         {view !== 'settings' && role === 'Super Admin' && <SuperAdminWorkspace view={view} />}
         {view !== 'settings' && role !== 'Super Admin' && (
           <>
@@ -973,6 +1502,10 @@ function App() {
         <NewSessionModal
           patients={patientRecords}
           calendarSessions={calendarSessionRecords}
+          practiceEntities={practiceEntityRecords}
+          practiceLocations={practiceLocationRecords}
+          procedurePriceLists={procedurePriceLists}
+          procedurePriceRecords={procedurePriceRecords}
           initialDate={newSessionSlot?.date}
           initialTime={newSessionSlot?.time}
           initialPatientName={newSessionSlot?.patientName}
@@ -999,6 +1532,10 @@ function App() {
 function NewSessionModal({
   patients,
   calendarSessions,
+  practiceEntities: practiceEntityOptions,
+  practiceLocations: practiceLocationOptions,
+  procedurePriceLists,
+  procedurePriceRecords,
   initialDate = getLocalTodayIso(),
   initialTime = '09:00',
   initialPatientName,
@@ -1007,6 +1544,10 @@ function NewSessionModal({
 }: {
   patients: Patient[]
   calendarSessions: CalendarSession[]
+  practiceEntities: typeof practiceEntities
+  practiceLocations: typeof practiceLocations
+  procedurePriceLists: typeof billingPriceListDefaults
+  procedurePriceRecords: typeof billingCodeDefaults
   initialDate?: string
   initialTime?: string
   initialPatientName?: string
@@ -1018,7 +1559,7 @@ function NewSessionModal({
   const initialPatient = patients.find((patient) => patient.name === initialPatientName) ?? patients[0]
   const [patientMode, setPatientMode] = useState<'existing' | 'new'>('existing')
   const [selectedPatientNumber, setSelectedPatientNumber] = useState(initialPatient?.patientNumber ?? '')
-  const [patientSearch, setPatientSearch] = useState(initialPatient?.name ?? '')
+  const [patientSearch, setPatientSearch] = useState('')
   const [newPatientName, setNewPatientName] = useState('')
   const [newPatientType, setNewPatientType] = useState('Child')
   const [newPatientPhone, setNewPatientPhone] = useState('')
@@ -1027,10 +1568,14 @@ function NewSessionModal({
   const [newAdultSecondaryName, setNewAdultSecondaryName] = useState('')
   const [newAdultSecondaryPhone, setNewAdultSecondaryPhone] = useState('')
   const [newAdultSecondaryRelation, setNewAdultSecondaryRelation] = useState('Spouse / Partner')
-  const [selectedPracticeEntityId, setSelectedPracticeEntityId] = useState(practiceEntities[0].id)
-  const [selectedPracticeLocationId, setSelectedPracticeLocationId] = useState(practiceLocations[0].id)
-  const [selectedBillingCodeId, setSelectedBillingCodeId] = useState(billingCodeDefaults[0].id)
-  const [quotedAmount, setQuotedAmount] = useState(String(billingCodeDefaults[0].defaultPrice))
+  const [selectedPracticeEntityId, setSelectedPracticeEntityId] = useState(practiceEntityOptions[0]?.id ?? '')
+  const [selectedPracticeLocationId, setSelectedPracticeLocationId] = useState(practiceLocationOptions[0]?.id ?? '')
+  const [selectedProcedurePriceListId, setSelectedProcedurePriceListId] = useState(practiceEntityOptions[0]?.priceListId ?? procedurePriceLists[0]?.id ?? '')
+  const [selectedBillingCodeId, setSelectedBillingCodeId] = useState(procedurePriceRecords[0]?.id ?? '')
+  const [selectedProcedureIds, setSelectedProcedureIds] = useState<string[]>(procedurePriceRecords[0] ? [procedurePriceRecords[0].id] : [])
+  const [selectedIcdCode, setSelectedIcdCode] = useState(icdCodeDefaults[0]?.code ?? '')
+  const [isAssessmentSession, setIsAssessmentSession] = useState(false)
+  const [assessmentDurationMinutes, setAssessmentDurationMinutes] = useState(60)
   const [practiceNumberSource, setPracticeNumberSource] = useState<'practice' | 'therapist'>('practice')
   const [bankingDetailsSource, setBankingDetailsSource] = useState<'practice' | 'therapist'>('practice')
   const [sessionDate, setSessionDate] = useState(initialDate)
@@ -1048,34 +1593,45 @@ function NewSessionModal({
       item.toLowerCase().includes(patientSearchNeedle),
     ),
   )
-  const selectedPracticeEntity = practiceEntities.find((practice) => practice.id === selectedPracticeEntityId) ?? practiceEntities[0]
-  const availablePracticeLocations = practiceLocations.filter((location) => location.practiceEntityId === selectedPracticeEntityId && location.isActive)
+  const selectedPracticeEntity = practiceEntityOptions.find((practice) => practice.id === selectedPracticeEntityId) ?? practiceEntityOptions[0]
+  const selectedProcedurePriceList = procedurePriceLists.find((priceList) => priceList.id === selectedProcedurePriceListId) ?? procedurePriceLists[0]
+  const availablePracticeLocations = practiceLocationOptions.filter((location) => location.practiceEntityId === selectedPracticeEntityId && location.isActive)
   const selectedPracticeLocation = availablePracticeLocations.find((location) => location.id === selectedPracticeLocationId) ?? availablePracticeLocations[0]
-  const availableBillingCodes = billingCodeDefaults.filter((item) =>
-    item.isActive && (!item.practiceEntityId || item.practiceEntityId === selectedPracticeEntityId),
+  const availableBillingCodes = procedurePriceRecords.filter((item) =>
+    item.isActive && item.priceListId === selectedProcedurePriceList.id && (!item.practiceEntityId || item.practiceEntityId === selectedPracticeEntityId),
   )
-  const selectedBillingCode = availableBillingCodes.find((item) => item.id === selectedBillingCodeId) ?? availableBillingCodes[0]
-  const billingTotal = Number(quotedAmount) || selectedBillingCode?.defaultPrice || 0
+  const selectedProcedureItems = availableBillingCodes.filter((item) => selectedProcedureIds.includes(item.id))
+  const selectedBillingCode = selectedProcedureItems[0] ?? availableBillingCodes.find((item) => item.id === selectedBillingCodeId) ?? availableBillingCodes[0]
+  const billingTotal = selectedProcedureItems.reduce((total, item) => total + item.defaultPrice, 0)
+  const procedureDurationMinutes = selectedProcedureItems.reduce((total, item) => total + (item.durationMinutes ?? 0), 0)
+  const sessionDurationMinutes = isAssessmentSession ? assessmentDurationMinutes : procedureDurationMinutes || selectedBillingCode?.durationMinutes || 60
   const selectedTherapistFinance = therapistFinanceProfiles.find((profile) => profile.therapistName === sessionTherapist)
   const canUseTherapistBanking = selectedPracticeEntity.allowTherapistBankingOverride && Boolean(selectedTherapistFinance?.bankingDetails.accountNumber)
   const canUseTherapistPracticeNumber = selectedTherapistFinance?.usesOwnPracticeNumber && Boolean(selectedTherapistFinance.practiceNumber)
   const requiresGuardian = ['Child', 'Teen'].includes(newPatientType)
   const scheduleTimes = calendarQuarterSlots
-  const createdSessionType = selectedBillingCode?.serviceType ?? 'Therapy session'
+  const createdSessionType = selectedProcedureItems.map((item) => item.description || item.serviceType || item.code).filter(Boolean).join(', ') || selectedBillingCode?.serviceType || 'Therapy session'
 
   useEffect(() => {
-    const firstLocation = practiceLocations.find((location) => location.practiceEntityId === selectedPracticeEntityId && location.isActive)
+    const firstLocation = practiceLocationOptions.find((location) => location.practiceEntityId === selectedPracticeEntityId && location.isActive)
     if (firstLocation && !availablePracticeLocations.some((location) => location.id === selectedPracticeLocationId)) {
       setSelectedPracticeLocationId(firstLocation.id)
+    }
+    if (selectedPracticeEntity?.priceListId && selectedProcedurePriceListId !== selectedPracticeEntity.priceListId) {
+      setSelectedProcedurePriceListId(selectedPracticeEntity.priceListId)
     }
   }, [availablePracticeLocations, selectedPracticeEntityId, selectedPracticeLocationId])
 
   useEffect(() => {
+    const availableIds = availableBillingCodes.map((item) => item.id)
+    const retainedProcedureIds = selectedProcedureIds.filter((id) => availableIds.includes(id))
+    if (retainedProcedureIds.length !== selectedProcedureIds.length) {
+      setSelectedProcedureIds(retainedProcedureIds.length ? retainedProcedureIds : availableBillingCodes[0] ? [availableBillingCodes[0].id] : [])
+    }
     if (!availableBillingCodes.some((item) => item.id === selectedBillingCodeId) && availableBillingCodes[0]) {
       setSelectedBillingCodeId(availableBillingCodes[0].id)
-      setQuotedAmount(String(availableBillingCodes[0].defaultPrice))
     }
-  }, [availableBillingCodes, selectedBillingCodeId])
+  }, [availableBillingCodes, selectedBillingCodeId, selectedProcedureIds])
 
   useEffect(() => {
     if (!canUseTherapistBanking) setBankingDetailsSource('practice')
@@ -1144,14 +1700,19 @@ function NewSessionModal({
     id: `session-${Date.now()}`,
     date: sessionDate,
     startTime: sessionTime,
-    endTime: minutesToTime(timeToMinutes(sessionTime) + 60),
+    endTime: minutesToTime(timeToMinutes(sessionTime) + sessionDurationMinutes),
     patient: patientMode === 'existing' ? selectedPatient?.name ?? 'Selected patient' : createdPatientName,
     type: createdSessionType,
     therapist: sessionTherapist,
     room: selectedPracticeLocation?.name ?? sessionRoom,
     practiceEntityId: selectedPracticeEntity.id,
     practiceLocationId: selectedPracticeLocation?.id,
+    procedurePriceListId: selectedProcedurePriceList.id,
     billingCodeId: selectedBillingCode?.id,
+    billingProcedureIds: selectedProcedureItems.map((item) => item.id),
+    icd10Code: selectedIcdCode,
+    durationMinutes: sessionDurationMinutes,
+    isAssessment: isAssessmentSession,
     quotedAmount: billingTotal,
     invoiceAmount: billingTotal,
     selectedPracticeNumberSource: canUseTherapistPracticeNumber ? practiceNumberSource : 'practice',
@@ -1235,14 +1796,27 @@ ${patientProfileUrl}`
             </div>
 
             {patientMode === 'existing' ? (
-              <div className="form-grid two-col">
+              <div className="form-grid two-col patient-identify-grid">
                 <div className="field searchable-patient-field">
                   <span>Patient</span>
-                  <input
-                    value={patientSearch}
-                    onChange={(event) => setPatientSearch(event.target.value)}
-                    placeholder="Search name, patient number, guardian or cell"
-                  />
+                  <div className="patient-search-input-wrap">
+                    <input
+                      value={patientSearch}
+                      onChange={(event) => setPatientSearch(event.target.value)}
+                      placeholder="Search name, patient number, guardian or cell"
+                    />
+                    {patientSearch && (
+                      <button
+                        type="button"
+                        aria-label="Clear patient search"
+                        title="Clear patient search"
+                        onClick={() => setPatientSearch('')}
+                      >
+                        x
+                      </button>
+                    )}
+                  </div>
+                  <small>Search or select from the patient list.</small>
                   <div className="patient-search-results" role="listbox" aria-label="Existing patients">
                     {patientSearchResults.map((patient) => (
                       <button
@@ -1256,20 +1830,16 @@ ${patientProfileUrl}`
                       >
                         <strong>{patient.name}</strong>
                         <span>{patient.patientNumber} · {patient.guardian}</span>
+                        <small>{patient.phone}</small>
                       </button>
                     ))}
                     {patientSearchResults.length === 0 && <small>No matching patients</small>}
                   </div>
                 </div>
-                <div className="selected-patient-card">
-                  <strong>{selectedPatient?.name ?? 'Select patient'}</strong>
-                  <span>{selectedPatient?.guardian ?? 'Guardian not selected'}</span>
-                  <small>{selectedPatient?.phone ?? 'No cell number'}</small>
-                </div>
               </div>
             ) : (
               <>
-                <div className="form-grid two-col">
+                <div className="form-grid two-col new-patient-grid">
                   <label className="field">
                     <span>Patient name</span>
                     <input
@@ -1370,7 +1940,7 @@ ${patientProfileUrl}`
                 See calendar
               </button>
             </div>
-            <div className="form-grid four-col">
+            <div className="form-grid four-col schedule-session-grid">
               <label className="field">
                 <span>Date</span>
                 <input type="date" value={sessionDate} onChange={(event) => setSessionDate(event.target.value)} />
@@ -1379,6 +1949,13 @@ ${patientProfileUrl}`
                 <span>Time</span>
                 <input type="time" value={sessionTime} onChange={(event) => setSessionTime(event.target.value)} />
               </label>
+              <div className="field duration-field">
+                <span>Duration</span>
+                <div className="duration-summary-control">
+                  <strong>{sessionDurationMinutes} min</strong>
+                  <small>{isAssessmentSession ? 'Assessment duration' : 'From selected procedures'}</small>
+                </div>
+              </div>
               <label className="field">
                 <span>Therapist</span>
                 <select value={sessionTherapist} onChange={(event) => setSessionTherapist(event.target.value)}>
@@ -1390,7 +1967,7 @@ ${patientProfileUrl}`
               <label className="field">
                 <span>Practice</span>
                 <select value={selectedPracticeEntityId} onChange={(event) => setSelectedPracticeEntityId(event.target.value)}>
-                  {practiceEntities.filter((practice) => practice.isActive).map((practice) => (
+                  {practiceEntityOptions.filter((practice) => practice.isActive).map((practice) => (
                     <option value={practice.id} key={practice.id}>{practice.name}</option>
                   ))}
                 </select>
@@ -1412,6 +1989,24 @@ ${patientProfileUrl}`
                   <option>Telehealth</option>
                 </select>
               </label>
+              <label className="practice-number-toggle schedule-banking-toggle">
+                <input
+                  type="checkbox"
+                  checked={isAssessmentSession}
+                  onChange={(event) => setIsAssessmentSession(event.target.checked)}
+                />
+                <span>Assessment</span>
+              </label>
+              {isAssessmentSession && (
+                <label className="field">
+                  <span>Assessment duration</span>
+                  <select value={assessmentDurationMinutes} onChange={(event) => setAssessmentDurationMinutes(Number(event.target.value))}>
+                    {Array.from({ length: 12 }, (_, index) => (index + 1) * 15).map((minutes) => (
+                      <option value={minutes} key={minutes}>{minutes} min</option>
+                    ))}
+                  </select>
+                </label>
+              )}
             </div>
             {isScheduleCalendarOpen && (
               <div className="quick-schedule-calendar" aria-label="Quick week calendar">
@@ -1471,54 +2066,82 @@ ${patientProfileUrl}`
             <div className="section-title">
               <span>3</span>
               <div>
-                <strong>Billing and ICD-10</strong>
-                <small>Pricing is filtered by the selected practice and can be overridden before invoicing.</small>
+                <strong>Billing</strong>
+                <small>Procedure and prices is auto-selected from the chosen practice setup. Choose one ICD-10 code and add invoice line items.</small>
               </div>
+            </div>
+            <div className="form-grid two-col billing-source-grid">
+              {procedurePriceLists.length > 1 ? (
+                <label className="field">
+                  <span>Procedure and prices</span>
+                  <select value={selectedProcedurePriceList.id} onChange={(event) => setSelectedProcedurePriceListId(event.target.value)}>
+                    {procedurePriceLists.filter((priceList) => priceList.isActive).map((priceList) => (
+                      <option value={priceList.id} key={priceList.id}>{priceList.name}</option>
+                    ))}
+                  </select>
+                </label>
+              ) : (
+                <div className="field readonly-field">
+                  <span>Procedure and prices</span>
+                  <strong>{selectedProcedurePriceList.name}</strong>
+                  <small>Auto-selected from practice setup</small>
+                </div>
+              )}
+              <label className="field">
+                <span>ICD-10 code</span>
+                <select value={selectedIcdCode} onChange={(event) => setSelectedIcdCode(event.target.value)}>
+                  {icdCodeDefaults.map((item) => (
+                    <option value={item.code} key={item.id}>{item.code}</option>
+                  ))}
+                </select>
+              </label>
+              <label className="practice-number-toggle schedule-banking-toggle">
+                <input
+                  type="checkbox"
+                  checked={bankingDetailsSource === 'therapist'}
+                  disabled={!canUseTherapistBanking}
+                  onChange={(event) => setBankingDetailsSource(event.target.checked ? 'therapist' : 'practice')}
+                />
+                <span>Use my banking details</span>
+              </label>
             </div>
             <div className="billing-choice-table">
               <div className="billing-choice-head">
                 <span />
-                <span>Code</span>
-                <span>Session type</span>
-                <span>Price</span>
+                <span>Procedure</span>
+                <span>Description</span>
+                <span>Price · duration</span>
               </div>
               {availableBillingCodes.map((item) => (
                 <label className="billing-choice" key={item.id}>
                   <input
-                    type="radio"
-                    name="session-billing-code"
-                    checked={selectedBillingCode?.id === item.id}
+                    type="checkbox"
+                    checked={selectedProcedureIds.includes(item.id)}
                     onChange={() => {
+                      setSelectedProcedureIds((ids) => (ids.includes(item.id) ? ids.filter((id) => id !== item.id) : [...ids, item.id]))
                       setSelectedBillingCodeId(item.id)
-                      setQuotedAmount(String(item.defaultPrice))
                     }}
                   />
                   <code>{item.code}</code>
                   <span className="billing-session-type">
-                    <strong>{item.serviceType}</strong>
-                    <small>{item.description}</small>
+                    <strong>{item.description || item.serviceType || 'Procedure'}</strong>
+                    <small>{selectedProcedurePriceList.name}</small>
                   </span>
-                  <b>{formatMoney(item.defaultPrice)}</b>
+                  <b>{formatMoney(item.defaultPrice)} · {item.durationMinutes ? `${item.durationMinutes} min` : 'N/A'}</b>
                 </label>
               ))}
             </div>
             <div className="form-grid two-col billing-source-grid">
-              <label className="field">
-                <span>Price</span>
-                <input type="number" value={quotedAmount} onChange={(event) => setQuotedAmount(event.target.value)} />
-              </label>
               <div className="field readonly-field">
                 <span>Practice number</span>
                 <strong>{canUseTherapistPracticeNumber ? selectedTherapistFinance?.practiceNumber : selectedPracticeEntity.practiceNumber}</strong>
                 <small>{canUseTherapistPracticeNumber ? 'Therapist own practice number' : 'Main practice number'}</small>
               </div>
-              <label className="field">
-                <span>Banking details source</span>
-                <select value={bankingDetailsSource} onChange={(event) => setBankingDetailsSource(event.target.value as 'practice' | 'therapist')}>
-                  <option value="practice">Practice banking</option>
-                  {canUseTherapistBanking && <option value="therapist">Therapist banking</option>}
-                </select>
-              </label>
+              <div className="field readonly-field">
+                <span>Banking details</span>
+                <strong>{bankingDetailsSource === 'therapist' ? 'My banking details' : 'Practice banking'}</strong>
+                <small>{canUseTherapistBanking ? 'Configured in billing' : 'Therapist banking not available'}</small>
+              </div>
               <div className="billing-total">
                 <span>Estimated session total</span>
                 <strong>{formatMoney(billingTotal)}</strong>
@@ -1969,6 +2592,13 @@ function createInvoiceFromSession(session: CalendarSession, index: number, statu
   const practiceLocation = practiceLocations.find((location) => location.id === session.practiceLocationId)
   const therapistProfile = therapistFinanceProfiles.find((profile) => profile.therapistName === session.therapist)
   const billingCode = billingCodeDefaults.find((code) => code.id === session.billingCodeId) ?? billingCodeDefaults.find((code) => code.serviceType === session.type)
+  const selectedProcedures = billingCodeDefaults.filter((code) => session.billingProcedureIds?.includes(code.id))
+  const invoiceLineItems = (selectedProcedures.length ? selectedProcedures : billingCode ? [billingCode] : []).map((code) => ({
+    procedureCode: code.code,
+    description: code.serviceType || code.description,
+    icd10Code: session.icd10Code ?? billingCode?.code ?? code.code,
+    price: code.defaultPrice,
+  }))
   const selectedPracticeNumber = session.selectedPracticeNumberSource === 'therapist' && therapistProfile?.practiceNumber
     ? therapistProfile.practiceNumber
     : practiceEntity.practiceNumber
@@ -1994,8 +2624,11 @@ function createInvoiceFromSession(session: CalendarSession, index: number, statu
     selectedPracticeNumber,
     selectedBankingDetails,
     billingCodeId: billingCode?.id,
-    icd10Code: billingCode?.code,
+    icd10Code: session.icd10Code ?? billingCode?.code,
     serviceDescription: billingCode?.description ?? session.type,
+    lineItems: invoiceLineItems.length
+      ? invoiceLineItems
+      : [{ procedureCode: billingCode?.code ?? 'PROC', description: session.type, icd10Code: session.icd10Code ?? billingCode?.code ?? 'N/A', price: getSessionAmount(session) }],
     createdAt: session.date,
     updatedAt: session.date,
   }
@@ -2241,10 +2874,10 @@ function SessionDetailModal({
 
   return (
     <div className="modal-backdrop" role="presentation">
-      <section className="modal-window session-modal" aria-label="Saved session">
+      <section className="modal-window session-modal" aria-label="Booked session">
         <div className="modal-header">
           <div>
-            <p>Saved session</p>
+            <p>Booked session</p>
             <h2>{session.patient}</h2>
           </div>
           <div className="session-modal-actions">
@@ -2257,7 +2890,7 @@ function SessionDetailModal({
             >
               <PencilIcon />
             </button>
-            <button type="button" className="modal-close" onClick={onClose} aria-label="Close saved session">
+            <button type="button" className="modal-close" onClick={onClose} aria-label="Close booked session">
               x
             </button>
           </div>
@@ -4026,7 +4659,29 @@ function Finances({
   )
 }
 
-function Settings({ role, setRole }: { role: Role; setRole: (role: Role) => void }) {
+function Settings({
+  role,
+  setRole,
+  practiceEntities: billingPracticeEntities,
+  setPracticeEntities: setBillingPracticeEntities,
+  practiceLocations: billingPracticeLocations,
+  setPracticeLocations: setBillingPracticeLocations,
+  procedurePriceLists: billingPriceLists,
+  setProcedurePriceLists: setBillingPriceLists,
+  procedurePriceRecords: billingCodes,
+  setProcedurePriceRecords: setBillingCodes,
+}: {
+  role: Role
+  setRole: (role: Role) => void
+  practiceEntities: typeof practiceEntities
+  setPracticeEntities: Dispatch<SetStateAction<typeof practiceEntities>>
+  practiceLocations: typeof practiceLocations
+  setPracticeLocations: Dispatch<SetStateAction<typeof practiceLocations>>
+  procedurePriceLists: typeof billingPriceListDefaults
+  setProcedurePriceLists: Dispatch<SetStateAction<typeof billingPriceListDefaults>>
+  procedurePriceRecords: typeof billingCodeDefaults
+  setProcedurePriceRecords: Dispatch<SetStateAction<typeof billingCodeDefaults>>
+}) {
   const settingOptions = [
     { id: 'users', label: 'Users', detail: 'Add receptionists or therapists' },
     { id: 'practice', label: 'Practice Configuration', detail: 'Tenant workspace setup' },
@@ -4292,18 +4947,57 @@ function Settings({ role, setRole }: { role: Role; setRole: (role: Role) => void
   const billingSettingOptions = [
     { id: 'rules', label: 'User finance controls', detail: 'Billing rules' },
     { id: 'practices', label: 'Practice partners and locations', detail: 'Practices and venues' },
+    { id: 'documents', label: 'Invoices and statements', detail: 'PDF tests' },
     { id: 'icd', label: 'ICD-10 codes', detail: 'Diagnosis codes' },
     { id: 'procedures', label: 'Procedure and prices', detail: 'Procedure pricing' },
   ] as const
   const [activeBillingSetting, setActiveBillingSetting] = useState<(typeof billingSettingOptions)[number]['id']>('rules')
   const [isBillingPracticesExpanded, setIsBillingPracticesExpanded] = useState(false)
   const activeBillingOption = billingSettingOptions.find((option) => option.id === activeBillingSetting) ?? billingSettingOptions[0]
-  const [billingPracticeEntities, setBillingPracticeEntities] = useState(practiceEntities)
-  const [billingPracticeLocations, setBillingPracticeLocations] = useState(practiceLocations)
-  const [selectedBillingPracticeId, setSelectedBillingPracticeId] = useState(practiceEntities[0].id)
+  const openBillingDocumentPreview = (documentKind: 'invoice' | 'statement') => {
+    const sampleInvoice = createInvoiceFromSession(weekSessions[0], 901, 'awaiting_payment')
+    const invoiceForPreview: Invoice = {
+      ...sampleInvoice,
+      id: documentKind === 'statement' ? 'ST-TEST-001' : 'INV-TEST-001',
+      kind: documentKind,
+      serviceType: documentKind === 'statement' ? 'Customer statement - 2 invoices' : sampleInvoice.serviceType,
+      amount: documentKind === 'statement' ? sampleInvoice.amount + billingCodeDefaults[1].defaultPrice : sampleInvoice.amount,
+      lineItems: documentKind === 'statement'
+        ? [
+            ...(sampleInvoice.lineItems ?? []),
+            {
+              procedureCode: billingCodeDefaults[1].code,
+              description: billingCodeDefaults[1].serviceType,
+              icd10Code: billingCodeDefaults[1].code,
+              price: billingCodeDefaults[1].defaultPrice,
+            },
+          ]
+        : sampleInvoice.lineItems,
+      invoiceDate: appTodayIso,
+      confirmedAt: appTodayIso,
+      paymentDueDate: toIsoDate(addDays(parseIsoDate(appTodayIso), 7)),
+      updatedAt: appTodayIso,
+    }
+    const documentOptions: InvoiceDocumentOptions = {
+      practiceName: practiceConfig.practiceName,
+      practiceAddress: practiceConfig.address,
+      practicePhone: practiceConfig.phone,
+      practiceEmail: practiceConfig.email,
+      practiceWebsite: practiceConfig.website,
+      practiceNumber: practiceConfig.registrationNumber,
+      logoUrl: practiceConfig.logoUrl,
+      paymentTerms: practiceConfig.paymentTerms,
+      bankingDetails: practiceConfig.bankingDetails,
+    }
+    const documentUrl = documentKind === 'statement'
+      ? generateStatementPdf(invoiceForPreview, documentOptions)
+      : generateInvoicePdf(invoiceForPreview, documentOptions)
+    window.open(documentUrl, '_blank', 'noopener,noreferrer')
+  }
+  const [selectedBillingPracticeId, setSelectedBillingPracticeId] = useState(billingPracticeEntities[0]?.id ?? '')
   const [editingPracticeLocationId, setEditingPracticeLocationId] = useState('')
   const selectedBillingPractice = billingPracticeEntities.find((practice) => practice.id === selectedBillingPracticeId) ?? billingPracticeEntities[0]
-  const mainBillingPracticeId = practiceEntities[0].id
+  const mainBillingPracticeId = billingPracticeEntities[0]?.id ?? ''
   const isSelectedMainPractice = selectedBillingPractice.id === mainBillingPracticeId
   const orderedBillingPracticeEntities = [...billingPracticeEntities].sort((practiceA, practiceB) => {
     if (practiceA.id === mainBillingPracticeId) return -1
@@ -4361,8 +5055,7 @@ function Settings({ role, setRole }: { role: Role; setRole: (role: Role) => void
     setBillingPracticeLocations((items) => items.filter((item) => item.id !== id))
     setEditingPracticeLocationId((current) => (current === id ? '' : current))
   }
-  const [billingPriceLists, setBillingPriceLists] = useState(billingPriceListDefaults)
-  const [selectedBillingPriceListId, setSelectedBillingPriceListId] = useState(billingPriceListDefaults[0].id)
+  const [selectedBillingPriceListId, setSelectedBillingPriceListId] = useState(billingPriceLists[0]?.id ?? '')
   const [editingBillingPriceListId, setEditingBillingPriceListId] = useState('')
   const selectedBillingPriceList = billingPriceLists.find((priceList) => priceList.id === selectedBillingPriceListId) ?? billingPriceLists[0]
   const updateBillingPriceList = (id: string, field: keyof (typeof billingPriceLists)[number], value: string | boolean) => {
@@ -4394,13 +5087,10 @@ function Settings({ role, setRole }: { role: Role; setRole: (role: Role) => void
     setSelectedBillingPriceListId(newPriceList.id)
     setEditingBillingPriceListId(newPriceList.id)
   }
-  const [billingCodes, setBillingCodes] = useState(
-    billingCodeDefaults,
-  )
   const [icdCodes, setIcdCodes] = useState(icdCodeDefaults)
   const [editingIcdCodeId, setEditingIcdCodeId] = useState('')
   const [editingProcedureId, setEditingProcedureId] = useState('')
-  const visibleBillingCodes = billingCodes.filter((item) => (item.priceListId || billingPriceListDefaults[0].id) === selectedBillingPriceList.id)
+  const visibleBillingCodes = billingCodes.filter((item) => (item.priceListId || billingPriceLists[0]?.id) === selectedBillingPriceList.id)
   const addIcdCode = () => {
     const newIcdCodeId = `icd-${Date.now()}`
     setIcdCodes((codes) => [
@@ -4435,6 +5125,7 @@ function Settings({ role, setRole }: { role: Role; setRole: (role: Role) => void
         description: '',
         serviceType: '',
         defaultPrice: 0,
+        durationMinutes: 30,
         discipline: '',
         isActive: true,
         createdAt: appTodayIso,
@@ -4454,7 +5145,7 @@ function Settings({ role, setRole }: { role: Role; setRole: (role: Role) => void
   }
   const [guides, setGuides] = useState([
     { id: 'guide-1', tenantId: tenant.tenantId, title: 'Patient setup', category: 'Patients', body: 'Create patient, send intake link, confirm POPIA consent.', isActive: true, updatedAt: appTodayIso },
-    { id: 'guide-2', tenantId: tenant.tenantId, title: 'Session notes', category: 'Clinical', body: 'Open saved session, add planning, add session feedback or internal process notes.', isActive: true, updatedAt: appTodayIso },
+    { id: 'guide-2', tenantId: tenant.tenantId, title: 'Session notes', category: 'Clinical', body: 'Open booked session, add planning, add session feedback or internal process notes.', isActive: true, updatedAt: appTodayIso },
   ])
   const addGuide = () => {
     setGuides((items) => [
@@ -5044,6 +5735,32 @@ function Settings({ role, setRole }: { role: Role; setRole: (role: Role) => void
                   </div>
                 )}
 
+                {activeBillingSetting === 'documents' && (
+                  <div className="billing-document-tests">
+                    <article>
+                      <div>
+                        <span>Invoice PDF</span>
+                        <strong>Physical invoice preview</strong>
+                        <small>Tests therapist, practice, patient, guardian, medical aid, procedure rows and ICD-10 display.</small>
+                      </div>
+                      <button type="button" onClick={() => openBillingDocumentPreview('invoice')}>
+                        Test invoice
+                      </button>
+                    </article>
+                    <article>
+                      <div>
+                        <span>Statement PDF</span>
+                        <strong>Physical statement preview</strong>
+                        <small>Uses the same design language, practice details and logo position for customer statements.</small>
+                      </div>
+                      <button type="button" onClick={() => openBillingDocumentPreview('statement')}>
+                        Test statement
+                      </button>
+                    </article>
+                    <p className="settings-footnote">Invoice and statement PDF previews use Practice Configuration for address, contact details, logo, payment terms and banking details.</p>
+                  </div>
+                )}
+
                 {activeBillingSetting === 'icd' && (
                   <>
                     <p className="quiet">Manage ICD-10 codes separately from procedure pricing. These codes can be used when creating sessions, invoices and clinical records.</p>
@@ -5143,12 +5860,18 @@ function Settings({ role, setRole }: { role: Role; setRole: (role: Role) => void
                                 <input value={item.code} placeholder="Procedure code" onChange={(event) => updateBillingCode(item.id, 'code', event.target.value)} />
                                 <input value={item.description} placeholder="Description" onChange={(event) => updateBillingCode(item.id, 'description', event.target.value)} />
                                 <input type="number" value={item.defaultPrice} onChange={(event) => updateBillingCode(item.id, 'defaultPrice', Number(event.target.value))} />
+                                <select value={item.durationMinutes ?? 0} onChange={(event) => updateBillingCode(item.id, 'durationMinutes', Number(event.target.value))}>
+                                  <option value={0}>N/A</option>
+                                  {Array.from({ length: 12 }, (_, index) => (index + 1) * 15).map((minutes) => (
+                                    <option value={minutes} key={minutes}>{minutes} min</option>
+                                  ))}
+                                </select>
                               </>
                             ) : (
                               <div className="procedure-price-summary">
                                 <strong>{item.code || 'No procedure code'}</strong>
                                 <span>{item.description || 'No description captured'}</span>
-                                <small>R {item.defaultPrice.toLocaleString('en-ZA')}</small>
+                                <small>R {item.defaultPrice.toLocaleString('en-ZA')} · {item.durationMinutes ? `${item.durationMinutes} min` : 'N/A'}</small>
                               </div>
                             )}
                             <div className="practice-location-actions">
