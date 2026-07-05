@@ -1,4 +1,8 @@
-# AlliCMS Prototype
+# AlliDesk Prototype
+
+Marketing website: https://allidesk.co.za
+
+Web app: https://app.allidesk.co.za
 
 ## Deployment Checklist
 
