@@ -2,6 +2,7 @@ import { type Dispatch, type PointerEvent, type SetStateAction, useEffect, useMe
 
 type View = 'overview' | 'sessions' | 'patients' | 'finances' | 'settings'
 type Role = 'Admin' | 'Reception' | 'Therapist' | 'Super Admin'
+type SuperAdminModule = 'dashboard' | 'tenants' | 'subscriptions' | 'support' | 'health' | 'configuration'
 type SessionSlot = { date: string; time: string; patientName?: string }
 type CalendarSession = {
   id: string
@@ -118,6 +119,15 @@ const navItems: Array<{ id: View; label: string; icon: string }> = [
   { id: 'settings', label: 'Settings', icon: 'gear' },
 ]
 
+const superAdminNavItems: Array<{ id: SuperAdminModule; label: string; detail: string; icon: string }> = [
+  { id: 'dashboard', label: 'Dashboard', detail: 'Platform overview', icon: 'platform-dashboard' },
+  { id: 'tenants', label: 'Tenant Management', detail: 'Create, edit and lifecycle', icon: 'platform-tenants' },
+  { id: 'subscriptions', label: 'Subscription Management', detail: 'Plans, renewals and tenant billing', icon: 'platform-subscriptions' },
+  { id: 'support', label: 'Support Centre', detail: 'Technical tenant support', icon: 'platform-support' },
+  { id: 'health', label: 'System Health', detail: 'Operational status', icon: 'platform-health' },
+  { id: 'configuration', label: 'Platform Configuration', detail: 'Global AlliDesk settings', icon: 'platform-config' },
+]
+
 function NavIcon({ icon }: { icon: string }) {
   const commonProps = {
     width: 22,
@@ -167,6 +177,71 @@ function NavIcon({ icon }: { icon: string }) {
         <ellipse cx="12" cy="6.4" rx="6.1" ry="2.5" />
         <path d="M5.9 6.4v4.3c0 1.4 2.7 2.5 6.1 2.5s6.1-1.1 6.1-2.5V6.4" />
         <path d="M5.9 10.8v4.3c0 1.4 2.7 2.5 6.1 2.5s6.1-1.1 6.1-2.5v-4.3" />
+      </svg>
+    )
+  }
+
+  if (icon === 'platform-dashboard') {
+    return (
+      <svg {...commonProps}>
+        <rect x="4" y="5" width="16" height="14" rx="2.2" />
+        <path d="M8 15v-4" />
+        <path d="M12 15V9" />
+        <path d="M16 15v-2" />
+      </svg>
+    )
+  }
+
+  if (icon === 'platform-tenants') {
+    return (
+      <svg {...commonProps}>
+        <path d="M5 19V8.4L12 4l7 4.4V19" />
+        <path d="M8.2 19v-7.4h7.6V19" />
+        <path d="M9.5 8.8h5" />
+      </svg>
+    )
+  }
+
+  if (icon === 'platform-subscriptions') {
+    return (
+      <svg {...commonProps}>
+        <rect x="4" y="6" width="16" height="12" rx="2.2" />
+        <path d="M4 10h16" />
+        <path d="M7.5 15h4.8" />
+        <path d="M15.7 15h.8" />
+      </svg>
+    )
+  }
+
+  if (icon === 'platform-support') {
+    return (
+      <svg {...commonProps}>
+        <path d="M6.2 14.5a6.2 6.2 0 1 1 11.6 0" />
+        <path d="M5.2 14.2v-2.4h2.5v4.8H5.9a.7.7 0 0 1-.7-.7v-1.7Z" />
+        <path d="M18.8 14.2v-2.4h-2.5v4.8h1.8a.7.7 0 0 0 .7-.7v-1.7Z" />
+        <path d="M16.4 16.6c-.7 1.4-2 2.1-4.4 2.1" />
+      </svg>
+    )
+  }
+
+  if (icon === 'platform-health') {
+    return (
+      <svg {...commonProps}>
+        <path d="M4 12h3.2l1.6-4.5 3 9 2.4-6.1 1.4 1.6H20" />
+        <path d="M5 19h14" />
+      </svg>
+    )
+  }
+
+  if (icon === 'platform-config') {
+    return (
+      <svg {...commonProps}>
+        <path d="M5 7h14" />
+        <path d="M5 12h14" />
+        <path d="M5 17h14" />
+        <circle cx="9" cy="7" r="1.7" />
+        <circle cx="15" cy="12" r="1.7" />
+        <circle cx="11" cy="17" r="1.7" />
       </svg>
     )
   }
@@ -1426,6 +1501,7 @@ function getPatientLinkRoute() {
 function App() {
   const [view, setView] = useState<View>('overview')
   const [role, setRole] = useState<Role>('Admin')
+  const [activeSuperAdminModule, setActiveSuperAdminModule] = useState<SuperAdminModule>('dashboard')
   const [query, setQuery] = useState('')
   const [patientRecords, setPatientRecords] = useState<Patient[]>(() => loadLocalState(localStateKeys.patients, patients, legacyLocalStateKeys.patients))
   const [isNewSessionOpen, setIsNewSessionOpen] = useState(false)
@@ -1725,16 +1801,35 @@ function App() {
           <img src="/assets/AlliDesk_Main_App_logo.png" alt="AlliDesk" className="brand-logo" />
         </div>
 
-        <nav className="main-nav" aria-label="Main navigation">
-          {navItems.map((item) => (
-            <button className={view === item.id ? 'active' : ''} key={item.id} onClick={() => setView(item.id)}>
-              <span className="nav-icon" aria-hidden="true">
-                <NavIcon icon={item.icon} />
-              </span>
-              {item.label}
-            </button>
-          ))}
+        <nav className={`main-nav ${role === 'Super Admin' ? 'platform-nav' : ''}`} aria-label={role === 'Super Admin' ? 'Platform navigation' : 'Main navigation'}>
+          {role === 'Super Admin' ? (
+            superAdminNavItems.map((item) => (
+              <button className={activeSuperAdminModule === item.id ? 'active' : ''} key={item.id} onClick={() => setActiveSuperAdminModule(item.id)}>
+                <span className="nav-icon" aria-hidden="true">
+                  <NavIcon icon={item.icon} />
+                </span>
+                <span className="nav-copy">
+                  <strong>{item.label}</strong>
+                </span>
+              </button>
+            ))
+          ) : (
+            navItems.map((item) => (
+              <button className={view === item.id ? 'active' : ''} key={item.id} onClick={() => setView(item.id)}>
+                <span className="nav-icon" aria-hidden="true">
+                  <NavIcon icon={item.icon} />
+                </span>
+                {item.label}
+              </button>
+            ))
+          )}
         </nav>
+        {role === 'Super Admin' && (
+          <div className="sidebar-platform-note">
+            <strong>POPIA foundation</strong>
+            <span>Super Admin manages the platform, not tenant customer or patient data.</span>
+          </div>
+        )}
 
       </aside>
 
@@ -1742,22 +1837,25 @@ function App() {
         <header className="topbar">
           <div>
             <p>{role} view · {role === 'Super Admin' ? 'Platform workspace' : tenant.name}</p>
-            <h1>{pageTitle(view)}</h1>
+            <h1>{role === 'Super Admin' ? superAdminPageTitle(activeSuperAdminModule) : pageTitle(view)}</h1>
           </div>
           <div className="topbar-actions">
-            <span className="role-pill">{role}</span>
-            <button
-              type="button"
-              onClick={() => {
-                if (role !== 'Super Admin') openNewSession()
-              }}
-            >
-              {role === 'Super Admin' ? 'Manage tenants' : 'New Booking'}
-            </button>
+            <label className="role-switcher" aria-label="Switch role view">
+              <select value={role} onChange={(event) => setRole(event.target.value as Role)}>
+                {roles.map((roleOption) => (
+                  <option value={roleOption.role} key={roleOption.role}>{roleOption.role}</option>
+                ))}
+              </select>
+            </label>
+            {role !== 'Super Admin' && (
+              <button type="button" onClick={() => openNewSession()}>
+                New Booking
+              </button>
+            )}
           </div>
         </header>
 
-        {view === 'settings' && (
+        {role !== 'Super Admin' && view === 'settings' && (
           <Settings
             role={role}
             setRole={setRole}
@@ -1771,7 +1869,7 @@ function App() {
             setProcedurePriceRecords={setProcedurePriceRecords}
           />
         )}
-        {view !== 'settings' && role === 'Super Admin' && <SuperAdminWorkspace view={view} />}
+        {role === 'Super Admin' && <SuperAdminWorkspace activeModule={activeSuperAdminModule} />}
         {view !== 'settings' && role !== 'Super Admin' && (
           <>
             <section className="admin-strip" aria-label="Practice health">
@@ -2579,6 +2677,17 @@ function pageTitle(view: View) {
   }[view]
 }
 
+function superAdminPageTitle(module: SuperAdminModule) {
+  return {
+    dashboard: 'Platform overview',
+    tenants: 'Tenant Management',
+    subscriptions: 'Subscription Management',
+    support: 'Support Centre',
+    health: 'System Health',
+    configuration: 'Platform Configuration',
+  }[module]
+}
+
 function Metric({ label, value, detail }: { label: string; value: string; detail: string }) {
   return (
     <article className="metric">
@@ -2819,6 +2928,12 @@ function addDays(date: Date, amount: number) {
 
 function addMonths(date: Date, amount: number) {
   return new Date(Date.UTC(date.getUTCFullYear(), date.getUTCMonth() + amount, 1))
+}
+
+function getFirstTenantBillingDate(createdAtIso: string) {
+  const createdAt = parseIsoDate(createdAtIso)
+  const monthOffset = createdAt.getUTCDate() <= 15 ? 1 : 2
+  return toIsoDate(new Date(Date.UTC(createdAt.getUTCFullYear(), createdAt.getUTCMonth() + monthOffset, 2)))
 }
 
 function getWeekMonday(date: Date) {
@@ -6610,71 +6725,644 @@ function Settings({
   )
 }
 
-function SuperAdminWorkspace({ view }: { view: View }) {
+function SuperAdminWorkspace({ activeModule }: { activeModule: SuperAdminModule }) {
+  const [selectedTenantName, setSelectedTenantName] = useState('Kids Therapy Centre')
+  const [isCreateTenantOpen, setIsCreateTenantOpen] = useState(false)
+  const [profileTenantName, setProfileTenantName] = useState('')
+  const [tenantSearch, setTenantSearch] = useState('')
+  const platformMetrics = [
+    { label: 'Total Tenants', value: '28', detail: 'platform workspaces' },
+    { label: 'Active Tenants', value: '24', detail: 'currently subscribed' },
+    { label: 'Trial Tenants', value: '3', detail: 'onboarding pilots' },
+    { label: 'Expiring Subscriptions', value: '5', detail: 'next 60 days' },
+    { label: 'Active Users', value: '186', detail: 'count only' },
+    { label: 'System Status', value: 'Operational', detail: 'all core services' },
+  ]
+  const [platformTenants, setPlatformTenants] = useState([
+    { businessName: 'Kids Therapy Centre', tradingName: 'Kids Therapy Centre', companyReg: '2021/018884/07', vat: 'Not registered', contact: 'Practice Admin', email: 'admin@kidstherapy.example', phone: '+27 21 555 0100', country: 'South Africa', timezone: 'Africa/Johannesburg', plan: 'Growth practice', status: 'Active', billingCycle: 'Monthly', renewal: '2026-07-31', trial: 'Completed', users: '42', storage: '18.4 GB', created: '2026-01-12', activity: 'Today' },
+    { businessName: 'Smith Occupational Therapy', tradingName: 'Smith OT', companyReg: '2019/442019/07', vat: 'Not registered', contact: 'Tenant Admin', email: 'admin@smithot.example', phone: '+27 11 555 0134', country: 'South Africa', timezone: 'Africa/Johannesburg', plan: 'Solo practice', status: 'Active', billingCycle: 'Annual', renewal: '2026-09-01', trial: 'Completed', users: '3', storage: '2.1 GB', created: '2026-02-18', activity: 'Yesterday' },
+    { businessName: 'Family Wellness Practice', tradingName: 'Family Wellness', companyReg: '2020/884211/07', vat: '4120000000', contact: 'Practice Manager', email: 'ops@familywellness.example', phone: '+27 31 555 0170', country: 'South Africa', timezone: 'Africa/Johannesburg', plan: 'Team practice', status: 'Suspended', billingCycle: 'Monthly', renewal: '2026-07-15', trial: 'Completed', users: '18', storage: '9.7 GB', created: '2026-03-04', activity: '5 days ago' },
+    { businessName: 'Northside Speech Clinic', tradingName: 'Northside Speech', companyReg: 'Pending', vat: 'Not registered', contact: 'Tenant Admin', email: 'hello@northspeech.example', phone: '+27 12 555 0199', country: 'South Africa', timezone: 'Africa/Johannesburg', plan: 'Growth practice', status: 'Trial', billingCycle: 'Monthly', renewal: '2026-08-20', trial: '21 days left', users: '9', storage: '1.8 GB', created: '2026-07-02', activity: 'Today' },
+  ])
+  const selectedTenant = platformTenants.find((tenantItem) => tenantItem.businessName === selectedTenantName) ?? platformTenants[0]
+  const profileTenant = platformTenants.find((tenantItem) => tenantItem.businessName === profileTenantName)
+  const filteredPlatformTenants = platformTenants.filter((tenantItem) => {
+    const searchValue = tenantSearch.trim().toLowerCase()
+    if (!searchValue) return true
+    return [tenantItem.businessName, tenantItem.contact, tenantItem.email]
+      .join(' ')
+      .toLowerCase()
+      .includes(searchValue)
+  })
+  const supportTickets = [
+    { number: 'SUP-1042', tenant: 'Kids Therapy Centre', priority: 'Medium', category: 'Email', status: 'In Progress', assigned: 'AlliDesk Support', logged: '2026-07-05', updated: '2026-07-06' },
+    { number: 'SUP-1041', tenant: 'Northside Speech Clinic', priority: 'High', category: 'Subscription', status: 'Waiting for Tenant', assigned: 'Billing Ops', logged: '2026-07-04', updated: '2026-07-05' },
+    { number: 'SYS-884', tenant: 'System Monitoring', priority: 'Low', category: 'Queue Processing', status: 'Resolved', assigned: 'Platform Ops', logged: '2026-07-04', updated: '2026-07-04' },
+  ]
+  const serviceStatuses = [
+    ['Database', 'Operational', '99.99%', '118ms'],
+    ['Authentication', 'Operational', '99.98%', '94ms'],
+    ['Email', 'Performance Degraded', '99.40%', '426ms'],
+    ['SMS', 'Operational', '99.92%', '210ms'],
+    ['AI Services', 'Operational', '99.70%', '860ms'],
+    ['Storage', 'Operational', '99.99%', '132ms'],
+    ['Queue Processing', 'Operational', '99.95%', '54 jobs'],
+    ['Notifications', 'Operational', '99.96%', '84ms'],
+    ['Scheduled Jobs', 'Operational', '99.97%', '0 failed'],
+  ]
+  const [subscriptionPlans, setSubscriptionPlans] = useState([
+    { name: 'Free', description: 'Internal testing and assisted setup', users: 'Internal only', price: 'R 0', isActive: true, isPublic: false },
+    { name: 'Starter', description: 'Solo Practitioner', users: '1 User', price: 'R 399', isActive: true, isPublic: true },
+    { name: 'Professional', description: 'Small Practice', users: '2-5 Users', price: 'R 899', isActive: true, isPublic: true },
+    { name: 'Growth', description: 'Growing Practice', users: '6-15 Users', price: 'R 1 899', isActive: true, isPublic: true },
+    { name: 'Business', description: 'Multi-disciplinary Practice', users: '16-50 Users', price: 'R 3 499', isActive: true, isPublic: true },
+    { name: 'Enterprise', description: 'Large Healthcare Group', users: '50+ Users', price: 'Custom', isActive: true, isPublic: true },
+  ])
+  const toggleSubscriptionPlan = (planName: string) => {
+    setSubscriptionPlans((plans) =>
+      plans.map((plan) => (plan.name === planName ? { ...plan, isActive: !plan.isActive } : plan)),
+    )
+  }
   return (
-    <div className="page-grid">
-      {view === 'overview' && (
-        <>
-          <Metric label="Tenants" value="28" detail="2 pending activation" />
-          <Metric label="Tenant admins" value="31" detail="primary practice admin users" />
-          <Metric label="Support access" value="4" detail="active tenant support requests" />
-        </>
-      )}
+    <div className="super-admin-shell">
+      <section className="super-admin-content">
+        {activeModule === 'dashboard' && (
+          <>
+            <section className="panel span-3">
+              <div className="panel-heading">
+                <div>
+                  <p>Dashboard</p>
+                  <h2>Platform Overview</h2>
+                </div>
+              </div>
+              <div className="super-admin-metric-grid">
+                {platformMetrics.map((metric) => (
+                  <Metric key={metric.label} label={metric.label} value={metric.value} detail={metric.detail} />
+                ))}
+              </div>
+            </section>
+            <section className="panel span-2">
+              <div className="panel-heading">
+                <div>
+                  <p>Support Centre</p>
+                  <h2>Open support tickets</h2>
+                </div>
+                <button type="button" className="compact-action-button">Add ticket</button>
+              </div>
+              <div className="dashboard-support-list">
+                {supportTickets.map((ticket) => (
+                  <article key={`dashboard-${ticket.number}`}>
+                    <div>
+                      <strong>{ticket.number}</strong>
+                      <span>{ticket.tenant} · {ticket.category}</span>
+                    </div>
+                    <Status label={ticket.priority} />
+                    <Status label={ticket.status} />
+                    <small>Updated {ticket.updated}</small>
+                  </article>
+                ))}
+              </div>
+            </section>
+            <section className="panel">
+              <div className="panel-heading">
+                <div>
+                  <p>Dashboard rules</p>
+                  <h2>Privacy boundary</h2>
+                </div>
+              </div>
+              <div className="privacy-rule-list">
+                <span>Aggregated platform metrics only.</span>
+                <span>No patient names or identifiers.</span>
+                <span>No appointments or clinical notes.</span>
+                <span>No tenant financial transaction browsing.</span>
+              </div>
+            </section>
+          </>
+        )}
 
-      <section className="panel span-2">
-        <div className="panel-heading">
-          <div>
-            <p>Tenant management</p>
-            <h2>Platform customer workspaces</h2>
-          </div>
-          <button>Create tenant</button>
-        </div>
-        <div className="table super-admin-table">
-          {[
-            ['Kids Therapy Centre', 'Active', 'Growth practice', '42 users'],
-            ['Smith Occupational Therapy', 'Active', 'Solo practice', '3 users'],
-            ['Family Wellness Practice', 'Suspended', 'Team practice', '18 users'],
-            ['Northside Speech Clinic', 'Trial', 'Growth practice', '9 users'],
-          ].map(([name, status, plan, users]) => (
-            <div className="table-row" key={name}>
-              <span>{name}</span>
-              <Status label={status} />
-              <span>{plan}</span>
-              <span>{users}</span>
+        {activeModule === 'tenants' && (
+          <section className="panel span-3">
+            <div className="panel-heading">
+              <div>
+                <p>Tenant Management</p>
+                <h2>Tenants</h2>
+              </div>
+              <div className="tenant-header-actions">
+                <input
+                  type="search"
+                  value={tenantSearch}
+                  onChange={(event) => setTenantSearch(event.target.value)}
+                  placeholder="Search tenants"
+                  aria-label="Search tenants"
+                />
+                <button type="button" onClick={() => setIsCreateTenantOpen(true)}>Create Tenant</button>
+              </div>
             </div>
-          ))}
+            <div className="tenant-list-table" aria-label="Tenant list">
+              <div className="tenant-list-head">
+                <span>Tenant Name</span>
+                <span>Main User</span>
+                <span>Email</span>
+              </div>
+              {filteredPlatformTenants.map((tenantItem) => (
+                <button
+                  type="button"
+                  className={`tenant-list-row ${selectedTenant.businessName === tenantItem.businessName ? 'active' : ''}`}
+                  key={tenantItem.businessName}
+                  onClick={() => {
+                    setSelectedTenantName(tenantItem.businessName)
+                    setProfileTenantName(tenantItem.businessName)
+                  }}
+                >
+                  <strong>{tenantItem.businessName}</strong>
+                  <span>{tenantItem.contact}</span>
+                  <span>{tenantItem.email}</span>
+                </button>
+              ))}
+              {!filteredPlatformTenants.length && (
+                <p className="tenant-empty-state">No tenants match your search.</p>
+              )}
+            </div>
+            {isCreateTenantOpen && (
+              <CreateTenantModal
+                onClose={() => setIsCreateTenantOpen(false)}
+                onCreate={(newTenant) => {
+                  setPlatformTenants((tenants) => [newTenant, ...tenants])
+                  setSelectedTenantName(newTenant.businessName)
+                  setIsCreateTenantOpen(false)
+                }}
+              />
+            )}
+            {profileTenant && (
+              <TenantProfileModal
+                tenantRecord={profileTenant}
+                onClose={() => setProfileTenantName('')}
+              />
+            )}
+          </section>
+        )}
+
+        {activeModule === 'subscriptions' && (
+          <section className="panel span-3">
+            <div className="panel-heading">
+              <div>
+                <p>Subscription Management</p>
+                <h2>Subscription options</h2>
+              </div>
+            </div>
+            <div className="subscription-plan-list" aria-label="Subscription plans">
+              <div className="subscription-plan-head">
+                <span>Plan</span>
+                <span>Description</span>
+                <span>Users</span>
+                <span>Price p.month</span>
+                <span>Active</span>
+              </div>
+              {subscriptionPlans.map((plan) => (
+                <article className={plan.isPublic ? '' : 'hidden-plan'} key={plan.name}>
+                  <strong>{plan.name}</strong>
+                  <span>{plan.description}</span>
+                  <span>{plan.users}</span>
+                  <span>{plan.price}</span>
+                  <label className="settings-active-tick subscription-active-tick" title={plan.isActive ? 'Active subscription option' : 'Inactive subscription option'}>
+                    <input type="checkbox" checked={plan.isActive} onChange={() => toggleSubscriptionPlan(plan.name)} />
+                    <span>{plan.isPublic ? 'Active' : 'Hidden'}</span>
+                  </label>
+                </article>
+              ))}
+            </div>
+          </section>
+        )}
+
+        {activeModule === 'support' && (
+          <section className="panel span-3">
+            <div className="panel-heading">
+              <div>
+                <p>Support Centre</p>
+                <h2>Tenant communication hub</h2>
+              </div>
+              <button type="button" className="compact-action-button">Add ticket</button>
+            </div>
+            <div className="support-ticket-list">
+              {supportTickets.map((ticket) => (
+                <article key={ticket.number}>
+                  <strong>{ticket.number}</strong>
+                  <span>{ticket.tenant}</span>
+                  <Status label={ticket.priority} />
+                  <span>{ticket.category}</span>
+                  <Status label={ticket.status} />
+                  <span>{ticket.assigned}</span>
+                  <small>Logged {ticket.logged} · Updated {ticket.updated}</small>
+                </article>
+              ))}
+            </div>
+            <div className="support-boundary-grid">
+              <article>
+                <strong>Support staff can see</strong>
+                <span>System logs, error messages, API failures and service status.</span>
+              </article>
+              <article>
+                <strong>Support staff cannot see</strong>
+                <span>Patient records, clinical notes, documents or calendar entries.</span>
+              </article>
+            </div>
+          </section>
+        )}
+
+        {activeModule === 'health' && (
+          <>
+            <section className="panel span-3">
+              <div className="panel-heading">
+                <div>
+                  <p>System Health</p>
+                  <h2>Live operational dashboard</h2>
+                </div>
+              </div>
+              <div className="system-health-grid">
+                {serviceStatuses.map(([service, status, uptime, response]) => (
+                  <article key={service}>
+                    <div>
+                      <strong>{service}</strong>
+                      <span>{uptime} uptime · {response}</span>
+                    </div>
+                    <Status label={status} />
+                  </article>
+                ))}
+              </div>
+            </section>
+            <section className="panel span-3">
+              <div className="super-admin-stat-row">
+                {[
+                  ['Current Uptime', '99.96%'],
+                  ['Response Time', '142ms'],
+                  ['Failed Jobs', '2'],
+                  ['Queue Size', '54'],
+                  ['Error Rate', '0.04%'],
+                  ['Active Sessions', '73'],
+                ].map(([label, value]) => (
+                  <Metric key={label} label={label} value={value} detail="platform statistic" />
+                ))}
+              </div>
+            </section>
+          </>
+        )}
+
+        {activeModule === 'configuration' && (
+          <section className="panel span-3">
+            <div className="panel-heading">
+              <div>
+                <p>Platform Configuration</p>
+                <h2>Global AlliDesk settings</h2>
+              </div>
+              <button>Save Platform Settings</button>
+            </div>
+            <div className="platform-config-grid">
+              {[
+                ['Platform Name', 'AlliDesk'],
+                ['Support Email', 'support@allidesk.co.za'],
+                ['Support Phone', '+27 21 000 0000'],
+                ['Marketing Website', 'https://allidesk.co.za'],
+                ['Web App', 'https://app.allidesk.co.za'],
+                ['Maintenance Mode', 'Off'],
+                ['Privacy Policy Version', '2026.07'],
+                ['Terms & Conditions Version', '2026.07'],
+                ['Default Time Zone', 'Africa/Johannesburg'],
+                ['Default Language', 'English'],
+              ].map(([label, value]) => (
+                <label key={label}>
+                  <span>{label}</span>
+                  <input value={value} readOnly />
+                </label>
+              ))}
+            </div>
+            <p className="settings-footnote">No tenant-specific settings belong in Platform Configuration.</p>
+          </section>
+        )}
+      </section>
+    </div>
+  )
+}
+
+type PlatformTenantRecord = {
+  businessName: string
+  tradingName: string
+  companyReg: string
+  vat: string
+  contact: string
+  email: string
+  phone: string
+  country: string
+  timezone: string
+  plan: string
+  status: string
+  billingCycle: string
+  renewal: string
+  trial: string
+  users: string
+  storage: string
+  created: string
+  activity: string
+}
+
+function TenantProfileModal({ tenantRecord, onClose }: { tenantRecord: PlatformTenantRecord; onClose: () => void }) {
+  const [activeTenantTab, setActiveTenantTab] = useState<'details' | 'subscription' | 'settings'>('details')
+  const subscriptionActions = ['Generate Tenant Invoice', 'Mark Invoice Paid', 'Record Offline Payment', 'View Billing History']
+  return (
+    <div className="modal-backdrop" role="presentation">
+      <section className="modal-window tenant-profile-modal" aria-label={`${tenantRecord.businessName} tenant profile`}>
+        <div className="modal-header">
+          <div>
+            <p>Tenant Management</p>
+            <h2>{tenantRecord.businessName}</h2>
+          </div>
+          <button type="button" className="modal-close" onClick={onClose} aria-label="Close tenant profile">
+            x
+          </button>
+        </div>
+        <div className="modal-body">
+          <section className="tenant-profile-card in-modal">
+            <div className="tenant-management-header">
+              <div>
+                <span>Tenant profile</span>
+                <strong>{tenantRecord.businessName}</strong>
+                <small>Practice metadata is synced from the tenant Admin's Practice Configuration.</small>
+              </div>
+              <Status label={tenantRecord.status} />
+            </div>
+            <div className="tenant-profile-summary-row">
+              <article>
+                <span>Users</span>
+                <strong>{tenantRecord.users}</strong>
+              </article>
+              <article>
+                <span>Storage</span>
+                <strong>{tenantRecord.storage}</strong>
+              </article>
+              <article>
+                <span>Created</span>
+                <strong>{tenantRecord.created}</strong>
+              </article>
+              <article>
+                <span>Activity</span>
+                <strong>{tenantRecord.activity}</strong>
+              </article>
+            </div>
+            <p className="tenant-sync-note">Business setup is tenant-supplied metadata from Practice Configuration.</p>
+            <div className="tenant-profile-tabs" aria-label="Tenant profile sections">
+              {[
+                ['details', 'Tenant details'],
+                ['subscription', 'Subscription'],
+                ['settings', 'Settings'],
+              ].map(([id, label]) => (
+                <button
+                  type="button"
+                  className={activeTenantTab === id ? 'active' : ''}
+                  key={id}
+                  onClick={() => setActiveTenantTab(id as typeof activeTenantTab)}
+                >
+                  {label}
+                </button>
+              ))}
+            </div>
+            {activeTenantTab === 'details' && (
+              <div className="tenant-tab-grid">
+                <section className="tenant-tab-section">
+                  <h3>Admin user</h3>
+                  <dl>
+                    <div><dt>Name</dt><dd>{tenantRecord.contact}</dd></div>
+                    <div><dt>Email</dt><dd>{tenantRecord.email}</dd></div>
+                    <div><dt>Contact</dt><dd>{tenantRecord.phone}</dd></div>
+                    <div><dt>Region</dt><dd>{tenantRecord.country} · {tenantRecord.timezone}</dd></div>
+                  </dl>
+                </section>
+                <section className="tenant-tab-section">
+                  <h3>Practice metadata</h3>
+                  <dl>
+                    <div><dt>Practice</dt><dd>{tenantRecord.businessName}</dd></div>
+                    <div><dt>Trading</dt><dd>{tenantRecord.tradingName}</dd></div>
+                    <div><dt>Registration</dt><dd>{tenantRecord.companyReg}</dd></div>
+                    <div><dt>VAT</dt><dd>{tenantRecord.vat}</dd></div>
+                  </dl>
+                </section>
+              </div>
+            )}
+            {activeTenantTab === 'subscription' && (
+              <>
+                <div className="tenant-tab-grid subscription-tab-grid">
+                  <section className="tenant-tab-section">
+                    <div className="tenant-tab-section-head">
+                      <h3>Subscription</h3>
+                      <div>
+                        <button type="button">Change Plan</button>
+                        <button type="button">Cancel Subscription</button>
+                      </div>
+                    </div>
+                    <dl>
+                      <div><dt>Plan</dt><dd>{tenantRecord.plan}</dd></div>
+                      <div><dt>Billing</dt><dd>{tenantRecord.status === 'Suspended' ? 'Payment failed' : 'Current'}</dd></div>
+                      <div><dt>Trial</dt><dd>{tenantRecord.trial}</dd></div>
+                    </dl>
+                  </section>
+                  <section className="tenant-tab-section">
+                    <h3>Billing cycle</h3>
+                    <dl>
+                      <div><dt>Next bill</dt><dd>{tenantRecord.renewal}</dd></div>
+                      <div><dt>Cycle</dt><dd>{tenantRecord.billingCycle}</dd></div>
+                      <div><dt>Invoice</dt><dd>{tenantRecord.status === 'Suspended' ? 'Overdue' : tenantRecord.status === 'Trial' ? 'Trial invoice pending' : 'Paid'}</dd></div>
+                    </dl>
+                  </section>
+                </div>
+                <div className="tenant-action-row subscription-management-actions">
+                  {subscriptionActions.map((action) => (
+                    <button type="button" key={`${tenantRecord.businessName}-${action}`}>{action}</button>
+                  ))}
+                </div>
+              </>
+            )}
+            {activeTenantTab === 'settings' && (
+              <>
+                <div className="tenant-tab-grid subscription-tab-grid">
+                  <section className="tenant-tab-section">
+                    <h3>Workspace</h3>
+                    <dl>
+                      <div><dt>Status</dt><dd>{tenantRecord.status}</dd></div>
+                      <div><dt>Access</dt><dd>{tenantRecord.status === 'Suspended' ? 'Suspended' : 'Enabled'}</dd></div>
+                      <div><dt>Archive</dt><dd>Active workspace</dd></div>
+                    </dl>
+                  </section>
+                  <section className="tenant-tab-section">
+                    <h3>Access boundary</h3>
+                    <dl>
+                      <div><dt>Configuration</dt><dd>Tenant Admin controlled</dd></div>
+                      <div><dt>Data access</dt><dd>Restricted by POPIA boundary</dd></div>
+                      <div><dt>Support</dt><dd>Technical diagnostics only</dd></div>
+                    </dl>
+                  </section>
+                </div>
+                <div className="tenant-action-row subscription-management-actions">
+                  {['Suspend Tenant', 'Reactivate Tenant', 'Archive Tenant', 'View Configuration'].map((action) => (
+                    <button type="button" key={`${tenantRecord.businessName}-${action}`}>{action}</button>
+                  ))}
+                </div>
+              </>
+            )}
+          </section>
+          <p className="create-tenant-privacy-note">Super Admin cannot browse or edit tenant patients, bookings, clinical notes, documents or tenant operational records from this profile.</p>
         </div>
       </section>
+    </div>
+  )
+}
 
-      <section className="panel">
-        <div className="panel-heading">
+function CreateTenantModal({ onClose, onCreate }: { onClose: () => void; onCreate: (tenantRecord: PlatformTenantRecord) => void }) {
+  const trialStartDate = appTodayIso
+  const firstBillingDate = getFirstTenantBillingDate(appTodayIso)
+  const [draftTenant, setDraftTenant] = useState({
+    businessName: '',
+    tradingName: '',
+    companyReg: '',
+    vat: '',
+    contact: '',
+    email: '',
+    phone: '',
+    temporaryPassword: '',
+    passwordAction: 'Require reset on first login',
+    country: 'South Africa',
+    timezone: 'Africa/Johannesburg',
+    plan: 'Monthly subscription',
+    status: 'Trial',
+    billingCycle: 'Monthly in advance',
+    renewal: firstBillingDate,
+    trial: `Trial until ${firstBillingDate}`,
+  })
+  const updateDraftTenant = (field: keyof typeof draftTenant, value: string) => {
+    setDraftTenant((current) => ({ ...current, [field]: value }))
+  }
+  const createTenant = () => {
+    const businessName = draftTenant.businessName.trim()
+    const tenantAdminName = draftTenant.contact.trim()
+    const tenantAdminEmail = draftTenant.email.trim()
+    if (!businessName || !tenantAdminName || !tenantAdminEmail) return
+    onCreate({
+      businessName,
+      tradingName: 'Awaiting Practice Configuration',
+      companyReg: 'Awaiting Practice Configuration',
+      vat: 'Awaiting Practice Configuration',
+      contact: tenantAdminName,
+      email: tenantAdminEmail,
+      phone: draftTenant.phone.trim() || '-',
+      country: draftTenant.country,
+      timezone: draftTenant.timezone,
+      plan: draftTenant.plan,
+      status: draftTenant.status,
+      billingCycle: draftTenant.billingCycle,
+      renewal: draftTenant.renewal,
+      trial: draftTenant.trial,
+      users: '1',
+      storage: '0 GB',
+      created: appTodayIso,
+      activity: 'New tenant',
+    })
+  }
+
+  return (
+    <div className="modal-backdrop" role="presentation">
+      <section className="modal-window create-tenant-modal" aria-label="Create tenant">
+        <div className="modal-header">
           <div>
-            <p>User management</p>
-            <h2>Tenant admin actions</h2>
+            <p>Tenant Management</p>
+            <h2>Create Tenant</h2>
           </div>
+          <button type="button" className="modal-close" onClick={onClose} aria-label="Close create tenant">
+            x
+          </button>
         </div>
-        <div className="tool-list">
-          <button>Create tenant Admin</button>
-          <button>Reset Admin access</button>
-          <button>Suspend tenant</button>
-          <button>Open support access</button>
+        <div className="modal-body">
+          <section className="create-tenant-section">
+            <h3>Tenant shell</h3>
+            <div className="create-tenant-form-grid">
+              <label>
+                <span>Practice Name *</span>
+                <input required value={draftTenant.businessName} onChange={(event) => updateDraftTenant('businessName', event.target.value)} />
+              </label>
+              <label>
+                <span>Country</span>
+                <input value={draftTenant.country} onChange={(event) => updateDraftTenant('country', event.target.value)} />
+              </label>
+              <label>
+                <span>Time Zone</span>
+                <input value={draftTenant.timezone} onChange={(event) => updateDraftTenant('timezone', event.target.value)} />
+              </label>
+              <p className="create-tenant-rule-note wide-field">Registration, VAT, address, public contact details, banking and billing setup are completed later by the tenant Admin in Practice Configuration and synced into this tenant profile.</p>
+              <div className="create-tenant-subheading">
+                <span>Tenant Admin User</span>
+              </div>
+              <label>
+                <span>Primary Contact *</span>
+                <input required value={draftTenant.contact} onChange={(event) => updateDraftTenant('contact', event.target.value)} />
+              </label>
+              <label>
+                <span>Contact Email *</span>
+                <input required type="email" value={draftTenant.email} onChange={(event) => updateDraftTenant('email', event.target.value)} />
+              </label>
+              <label>
+                <span>Contact Number</span>
+                <input value={draftTenant.phone} onChange={(event) => updateDraftTenant('phone', event.target.value)} />
+              </label>
+              <label>
+                <span>Temporary Password</span>
+                <input type="password" value={draftTenant.temporaryPassword} onChange={(event) => updateDraftTenant('temporaryPassword', event.target.value)} />
+              </label>
+              <label>
+                <span>Password Action</span>
+                <select value={draftTenant.passwordAction} onChange={(event) => updateDraftTenant('passwordAction', event.target.value)}>
+                  <option>Require reset on first login</option>
+                  <option>Send reset link</option>
+                  <option>Set password manually</option>
+                </select>
+              </label>
+            </div>
+          </section>
+          <section className="create-tenant-section">
+            <h3>Trial and billing</h3>
+            <div className="create-tenant-form-grid subscription-picker-grid">
+              <label>
+                <span>Subscription Option</span>
+                <select value={draftTenant.plan} onChange={(event) => updateDraftTenant('plan', event.target.value)}>
+                  <option>Monthly subscription</option>
+                  <option>Solo practice</option>
+                  <option>Team practice</option>
+                  <option>Growth practice</option>
+                </select>
+              </label>
+            </div>
+            <div className="create-tenant-billing-summary">
+              <article>
+                <span>Status</span>
+                <strong>Trial</strong>
+              </article>
+              <article>
+                <span>Trial starts</span>
+                <strong>{trialStartDate}</strong>
+              </article>
+              <article>
+                <span>First billing date</span>
+                <strong>{firstBillingDate}</strong>
+              </article>
+              <article>
+                <span>Billing cycle</span>
+                <strong>Monthly in advance</strong>
+              </article>
+            </div>
+            <p className="create-tenant-rule-note">Billing starts on the 2nd for planning: tenants created from the 1st-15th bill on the 2nd of the next month; tenants created from the 16th onward bill on the 2nd of the following month. If the tenant does not cancel before billing starts, the next month is billed in advance.</p>
+          </section>
+          <p className="create-tenant-privacy-note">This creates tenant setup metadata only. Super Admin cannot create or view patient, clinical, appointment, document or tenant operational records.</p>
+        </div>
+        <div className="modal-footer">
+          <button type="button" className="secondary-button" onClick={onClose}>Cancel</button>
+          <button type="button" onClick={createTenant}>Save Tenant</button>
         </div>
       </section>
-
-      {view === 'overview' && (
-        <section className="panel span-3">
-          <div className="panel-heading">
-            <div>
-              <p>Scope reminder</p>
-              <h2>Super Admin does not manage practice operations</h2>
-            </div>
-          </div>
-          <p className="quiet">
-            Patient records, therapist notes, reports, appointments, invoices and payments belong inside each tenant
-            workspace. The platform owner manages tenant lifecycle and tenant Admin access only.
-          </p>
-        </section>
-      )}
     </div>
   )
 }

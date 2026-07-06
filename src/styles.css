@@ -156,7 +156,67 @@ button:active {
   background: transparent;
 }
 
-.main-nav button span {
+.main-nav.platform-nav button {
+  align-items: center;
+  min-height: 40px;
+  padding: 7px 10px;
+}
+
+.main-nav.platform-nav button:last-child {
+  margin-top: 0;
+}
+
+.nav-copy {
+  display: grid;
+  gap: 2px;
+  width: auto;
+  height: auto;
+  min-width: 0;
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+}
+
+.nav-copy strong {
+  overflow: hidden;
+  color: inherit;
+  font-size: 0.74rem;
+  font-weight: 850;
+  line-height: 1.2;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.nav-copy small {
+  color: rgba(255, 255, 255, 0.62);
+  font-size: 0.58rem;
+  font-weight: 750;
+  line-height: 1.2;
+}
+
+.sidebar-platform-note {
+  display: grid;
+  gap: 5px;
+  margin-top: auto;
+  padding: 10px;
+  border: 1px solid rgba(252, 132, 76, 0.28);
+  border-radius: 8px;
+  background: rgba(252, 132, 76, 0.1);
+}
+
+.sidebar-platform-note strong {
+  color: white;
+  font-size: 0.72rem;
+}
+
+.sidebar-platform-note span {
+  color: rgba(255, 255, 255, 0.72);
+  font-size: 0.64rem;
+  font-weight: 750;
+  line-height: 1.35;
+}
+
+.main-nav button .nav-icon {
   width: 28px;
   height: 28px;
   border-radius: 9px;
@@ -244,7 +304,8 @@ h2 {
   gap: 10px;
 }
 
-.role-pill {
+.role-pill,
+.role-switcher select {
   min-height: 34px;
   display: inline-flex;
   align-items: center;
@@ -254,6 +315,35 @@ h2 {
   background: white;
   color: var(--indigo);
   font-weight: 800;
+}
+
+.role-switcher {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+}
+
+.role-switcher select {
+  min-width: 112px;
+  padding-right: 28px;
+  appearance: none;
+  cursor: pointer;
+}
+
+.role-switcher::after {
+  position: absolute;
+  right: 11px;
+  color: var(--muted);
+  font-size: 0.68rem;
+  font-weight: 900;
+  pointer-events: none;
+  content: "v";
+}
+
+.role-switcher:hover select,
+.role-switcher select:focus {
+  border-color: rgba(153, 153, 237, 0.72);
+  box-shadow: 0 6px 18px rgba(34, 22, 114, 0.08);
 }
 
 .topbar-actions button,
@@ -397,6 +487,13 @@ button:disabled {
 .session-row time {
   color: var(--indigo);
   font-weight: 800;
+}
+
+.panel-heading .compact-action-button {
+  min-height: 28px;
+  padding: 0 9px;
+  border-radius: 7px;
+  font-size: 0.68rem;
 }
 
 .session-row span,
@@ -670,9 +767,37 @@ button:disabled {
 
 .status.confirmed,
 .status.ready,
-.status.consent-signed {
+.status.consent-signed,
+.status.active,
+.status.current,
+.status.paid,
+.status.resolved,
+.status.operational {
   background: #ddf7e8;
   color: #116b3d;
+}
+
+.status.trial,
+.status.medium,
+.status.in-progress,
+.status.waiting-for-tenant,
+.status.performance-degraded,
+.status.trial-invoice-pending {
+  background: #fff3d9;
+  color: #9a5a00;
+}
+
+.status.suspended,
+.status.high,
+.status.payment-failed,
+.status.service-unavailable {
+  background: #ffe4d7;
+  color: #9d3b11;
+}
+
+.status.low {
+  background: #e8edff;
+  color: #24318f;
 }
 
 .action-grid,
@@ -3001,6 +3126,721 @@ button:disabled {
 .billing-config-row b {
   justify-self: end;
   color: var(--indigo);
+}
+
+.super-admin-shell {
+  max-width: 1500px;
+  width: 100%;
+}
+
+.super-admin-content {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.super-admin-metric-grid,
+.super-admin-stat-row {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.privacy-rule-list,
+.tenant-list-table,
+.subscription-management-list,
+.subscription-plan-list,
+.support-ticket-list,
+.dashboard-support-list,
+.system-health-grid,
+.platform-config-grid {
+  display: grid;
+  gap: 8px;
+}
+
+.privacy-rule-list span,
+.system-health-grid article,
+.support-boundary-grid article {
+  display: grid;
+  gap: 4px;
+  padding: 10px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #fbfbfe;
+}
+
+.privacy-rule-list span,
+.system-health-grid span,
+.support-boundary-grid span,
+.tenant-management-grid span,
+.tenant-management-header span,
+.subscription-management-list span,
+.dashboard-support-list span,
+.dashboard-support-list small,
+.support-ticket-list span,
+.support-ticket-list small,
+.platform-config-grid span {
+  color: var(--muted);
+  font-size: 0.68rem;
+  font-weight: 800;
+}
+
+.tenant-list-head,
+.tenant-list-row {
+  display: grid;
+  grid-template-columns: minmax(180px, 1.2fr) minmax(150px, 0.8fr) minmax(220px, 1.2fr);
+  align-items: center;
+  gap: 10px;
+  min-height: 42px;
+  padding: 9px 10px;
+  border-radius: 8px;
+}
+
+.tenant-header-actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+.tenant-header-actions input {
+  width: min(260px, 36vw);
+  min-height: 34px;
+  padding: 0 10px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: white;
+  color: var(--ink);
+  font-size: 0.78rem;
+  font-weight: 800;
+}
+
+.tenant-header-actions input:focus {
+  outline: 2px solid rgba(255, 126, 66, 0.22);
+  border-color: rgba(255, 126, 66, 0.52);
+}
+
+.tenant-list-head {
+  min-height: 30px;
+  background: var(--cloud);
+}
+
+.tenant-list-head span {
+  color: var(--muted);
+  font-size: 0.66rem;
+  font-weight: 900;
+  text-transform: uppercase;
+}
+
+.tenant-list-row {
+  border: 1px solid var(--line);
+  background: #fbfbfe;
+  color: var(--ink);
+  text-align: left;
+}
+
+.tenant-list-row:hover,
+.tenant-list-row.active {
+  border-color: rgba(153, 153, 237, 0.72);
+  background: var(--lilac);
+}
+
+.tenant-list-row strong,
+.tenant-list-row span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.tenant-list-row strong {
+  color: var(--ink);
+  font-size: 0.82rem;
+}
+
+.tenant-list-row span {
+  color: var(--muted);
+  font-size: 0.74rem;
+  font-weight: 800;
+}
+
+.tenant-empty-state {
+  margin: 0;
+  padding: 12px;
+  border: 1px dashed rgba(153, 153, 237, 0.5);
+  border-radius: 8px;
+  color: var(--muted);
+  font-size: 0.78rem;
+  font-weight: 800;
+  text-align: center;
+}
+
+.tenant-profile-card {
+  display: grid;
+  gap: 10px;
+  margin-top: 10px;
+  padding: 12px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #fbfbfe;
+}
+
+.tenant-profile-modal {
+  width: min(920px, calc(100vw - 28px));
+}
+
+.tenant-profile-modal .modal-body {
+  gap: 10px;
+  padding: 12px;
+}
+
+.tenant-profile-card.in-modal {
+  margin-top: 0;
+  gap: 9px;
+  padding: 12px;
+}
+
+.tenant-profile-modal .tenant-management-grid {
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 7px;
+}
+
+.tenant-profile-modal .subscription-detail-grid {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.tenant-profile-summary-row {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 7px;
+}
+
+.tenant-profile-summary-row article {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+  padding: 8px;
+  border: 1px solid rgba(153, 153, 237, 0.22);
+  border-radius: 8px;
+  background: white;
+}
+
+.tenant-profile-summary-row span {
+  color: var(--muted);
+  font-size: 0.62rem;
+  font-weight: 900;
+  text-transform: uppercase;
+}
+
+.tenant-profile-summary-row strong {
+  overflow: hidden;
+  color: var(--ink);
+  font-size: 0.82rem;
+  font-weight: 900;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.tenant-profile-tabs {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 6px;
+  padding: 4px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: white;
+}
+
+.tenant-profile-tabs button {
+  min-height: 32px;
+  padding: 0 10px;
+  border-radius: 7px;
+  background: transparent;
+  color: var(--muted);
+  font-size: 0.72rem;
+  font-weight: 900;
+}
+
+.tenant-profile-tabs button:hover,
+.tenant-profile-tabs button.active {
+  background: var(--lilac);
+  color: var(--indigo);
+}
+
+.tenant-tab-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.tenant-tab-section {
+  display: grid;
+  gap: 7px;
+  min-width: 0;
+  padding: 10px;
+  border: 1px solid rgba(222, 223, 240, 0.78);
+  border-radius: 8px;
+  background: white;
+}
+
+.tenant-tab-section h3 {
+  margin: 0;
+  color: var(--ink);
+  font-size: 0.78rem;
+}
+
+.tenant-tab-section-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.tenant-tab-section-head > div {
+  display: inline-flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 5px;
+}
+
+.tenant-tab-section-head button {
+  min-height: 24px;
+  padding: 0 7px;
+  border-radius: 7px;
+  background: var(--lilac);
+  color: var(--indigo);
+  font-size: 0.62rem;
+  font-weight: 900;
+}
+
+.tenant-tab-section-head button:hover {
+  background: var(--indigo);
+  color: white;
+}
+
+.tenant-tab-section dl {
+  display: grid;
+  gap: 0;
+  margin: 0;
+}
+
+.tenant-tab-section dl div {
+  display: grid;
+  grid-template-columns: 92px minmax(0, 1fr);
+  gap: 8px;
+  min-height: 28px;
+  align-items: center;
+  border-top: 1px solid rgba(222, 223, 240, 0.58);
+}
+
+.tenant-tab-section dl div:first-child {
+  border-top: 0;
+}
+
+.tenant-tab-section dt,
+.tenant-tab-section dd {
+  min-width: 0;
+  margin: 0;
+}
+
+.tenant-tab-section dt {
+  color: var(--muted);
+  font-size: 0.64rem;
+  font-weight: 900;
+}
+
+.tenant-tab-section dd {
+  overflow: hidden;
+  color: var(--ink);
+  font-size: 0.72rem;
+  font-weight: 900;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.subscription-management-actions {
+  padding-top: 2px;
+}
+
+.tenant-management-header,
+.system-health-grid article,
+.support-boundary-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 10px;
+}
+
+.tenant-management-header > div {
+  display: grid;
+  gap: 3px;
+}
+
+.tenant-management-header small {
+  color: var(--muted);
+  font-size: 0.72rem;
+  font-weight: 800;
+}
+
+.tenant-sync-note {
+  margin: 0;
+  padding: 7px 9px;
+  border: 1px solid rgba(153, 153, 237, 0.26);
+  border-radius: 8px;
+  background: white;
+  color: var(--muted);
+  font-size: 0.68rem;
+  font-weight: 800;
+  line-height: 1.3;
+}
+
+.tenant-management-header strong,
+.subscription-management-list strong,
+.support-ticket-list strong,
+.system-health-grid strong,
+.support-boundary-grid strong {
+  color: var(--ink);
+  font-size: 0.88rem;
+}
+
+.tenant-management-grid,
+.platform-config-grid {
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+}
+
+.tenant-management-grid div,
+.platform-config-grid label {
+  display: grid;
+  gap: 3px;
+  min-width: 0;
+  padding: 8px;
+  border: 1px solid rgba(222, 223, 240, 0.74);
+  border-radius: 7px;
+  background: white;
+}
+
+.tenant-profile-modal .tenant-management-grid div {
+  padding: 7px 8px;
+  border-color: rgba(222, 223, 240, 0.58);
+  background: rgba(255, 255, 255, 0.86);
+}
+
+.tenant-management-grid strong {
+  overflow: hidden;
+  color: var(--ink);
+  font-size: 0.72rem;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.tenant-action-row,
+.subscription-action-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.tenant-action-row button,
+.subscription-action-row button {
+  min-height: 28px;
+  padding: 0 8px;
+  border-radius: 7px;
+  background: var(--lilac);
+  color: var(--indigo);
+  font-size: 0.68rem;
+  font-weight: 900;
+}
+
+.tenant-action-row button:hover,
+.subscription-action-row button:hover {
+  background: var(--indigo);
+  color: white;
+}
+
+.subscription-management-list article {
+  display: grid;
+  grid-template-columns: minmax(180px, 1fr) auto minmax(100px, 0.5fr) minmax(120px, 0.7fr);
+  align-items: center;
+  gap: 10px;
+  padding: 11px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #fbfbfe;
+}
+
+.subscription-management-list article > div:first-child {
+  display: grid;
+  gap: 3px;
+}
+
+.subscription-action-row {
+  grid-column: 1 / -1;
+}
+
+.subscription-plan-head,
+.subscription-plan-list article {
+  display: grid;
+  grid-template-columns: minmax(130px, 0.9fr) minmax(220px, 1.4fr) minmax(120px, 0.8fr) minmax(130px, 0.8fr) 90px;
+  align-items: center;
+  gap: 10px;
+  min-height: 38px;
+  padding: 8px 4px;
+  border-bottom: 1px solid var(--line);
+}
+
+.subscription-plan-head {
+  min-height: 30px;
+  border-top: 1px solid var(--line);
+  color: var(--muted);
+  font-size: 0.64rem;
+  font-weight: 900;
+  text-transform: uppercase;
+}
+
+.subscription-plan-list article {
+  color: var(--ink);
+}
+
+.subscription-plan-list article.hidden-plan {
+  background: #fbfbfe;
+}
+
+.subscription-plan-list strong {
+  color: var(--ink);
+  font-size: 0.78rem;
+  font-weight: 900;
+}
+
+.subscription-plan-list span {
+  color: var(--ink);
+  font-size: 0.74rem;
+  font-weight: 800;
+}
+
+.subscription-plan-list article.hidden-plan > strong::after {
+  content: "Hidden";
+  display: inline-block;
+  margin-left: 7px;
+  padding: 2px 6px;
+  border-radius: 999px;
+  background: var(--lilac);
+  color: var(--indigo);
+  font-size: 0.58rem;
+  font-weight: 900;
+  vertical-align: middle;
+}
+
+.subscription-active-tick {
+  justify-self: start;
+}
+
+.subscription-active-tick span {
+  color: var(--muted);
+  font-size: 0.66rem;
+}
+
+.support-ticket-list article {
+  display: grid;
+  grid-template-columns: 86px minmax(150px, 1fr) auto 110px auto minmax(120px, 0.8fr) minmax(170px, 1fr);
+  align-items: center;
+  gap: 8px;
+  padding: 10px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #fbfbfe;
+}
+
+.dashboard-support-list article {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto auto minmax(82px, auto);
+  align-items: center;
+  gap: 8px;
+  min-height: 42px;
+  padding: 9px 0;
+  border-bottom: 1px solid rgba(222, 223, 240, 0.82);
+}
+
+.dashboard-support-list article:last-child {
+  border-bottom: 0;
+}
+
+.dashboard-support-list article > div {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+}
+
+.dashboard-support-list strong {
+  overflow: hidden;
+  color: var(--ink);
+  font-size: 0.78rem;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.support-boundary-grid {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  margin-top: 10px;
+}
+
+.platform-config-grid label input {
+  width: 100%;
+  min-height: 30px;
+  padding: 0 8px;
+  border: 1px solid var(--line);
+  border-radius: 7px;
+  background: #fbfbfe;
+  color: var(--ink);
+  font-weight: 800;
+}
+
+.create-tenant-modal {
+  width: min(760px, calc(100vw - 28px));
+}
+
+.create-tenant-modal .modal-body {
+  gap: 10px;
+  padding: 12px;
+}
+
+.create-tenant-modal .modal-footer {
+  padding: 10px 12px;
+}
+
+.create-tenant-modal .modal-footer button {
+  min-height: 34px;
+  padding: 0 15px;
+  font-size: 0.78rem;
+}
+
+.create-tenant-section {
+  display: grid;
+  gap: 11px;
+  padding: 12px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #fbfbfe;
+}
+
+.create-tenant-section h3 {
+  margin: 0;
+  color: var(--ink);
+  font-size: 0.82rem;
+}
+
+.create-tenant-form-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 9px 10px;
+}
+
+.create-tenant-form-grid label {
+  display: grid;
+  gap: 5px;
+  min-width: 0;
+}
+
+.create-tenant-subheading {
+  grid-column: 1 / -1;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-top: 2px;
+  padding-top: 9px;
+  border-top: 1px solid rgba(222, 223, 240, 0.95);
+}
+
+.create-tenant-subheading span {
+  color: var(--coral);
+  font-size: 0.62rem;
+  font-weight: 900;
+  letter-spacing: 0;
+  text-transform: uppercase;
+}
+
+.create-tenant-form-grid span {
+  color: var(--muted);
+  font-size: 0.64rem;
+  font-weight: 900;
+  line-height: 1.15;
+  text-transform: uppercase;
+}
+
+.create-tenant-form-grid input,
+.create-tenant-form-grid select {
+  width: 100%;
+  min-height: 34px;
+  padding: 0 9px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: white;
+  color: var(--ink);
+  font: inherit;
+  font-size: 0.82rem;
+  font-weight: 800;
+}
+
+.create-tenant-form-grid input:focus,
+.create-tenant-form-grid select:focus {
+  outline: 2px solid rgba(255, 126, 66, 0.24);
+  border-color: rgba(255, 126, 66, 0.5);
+}
+
+.create-tenant-form-grid.subscription-grid {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.create-tenant-form-grid.subscription-picker-grid {
+  grid-template-columns: minmax(220px, 320px);
+}
+
+.create-tenant-billing-summary {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.create-tenant-billing-summary article {
+  display: grid;
+  gap: 3px;
+  min-width: 0;
+  padding: 9px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: white;
+}
+
+.create-tenant-billing-summary span {
+  color: var(--muted);
+  font-size: 0.62rem;
+  font-weight: 900;
+  text-transform: uppercase;
+}
+
+.create-tenant-billing-summary strong {
+  color: var(--ink);
+  font-size: 0.78rem;
+  font-weight: 900;
+  overflow-wrap: anywhere;
+}
+
+.create-tenant-rule-note {
+  margin: 0;
+  color: var(--muted);
+  font-size: 0.72rem;
+  font-weight: 800;
+  line-height: 1.35;
+}
+
+.create-tenant-privacy-note {
+  margin: 0;
+  padding: 9px 10px;
+  border: 1px solid rgba(255, 126, 66, 0.18);
+  border-radius: 8px;
+  background: #fff7f3;
+  color: var(--muted);
+  font-size: 0.72rem;
+  font-weight: 800;
+  line-height: 1.35;
 }
 
 .settings-layout {
@@ -5493,7 +6333,26 @@ input[type="checkbox"] {
     text-align: center;
   }
 
-  .sidebar .main-nav button span {
+  .sidebar .main-nav.platform-nav button {
+    align-items: center;
+    min-height: 56px;
+  }
+
+  .sidebar .main-nav.platform-nav .nav-copy small {
+    display: none;
+  }
+
+  .sidebar .main-nav.platform-nav .nav-copy strong {
+    font-size: 0.62rem;
+    line-height: 1.1;
+    white-space: normal;
+  }
+
+  .sidebar-platform-note {
+    display: none;
+  }
+
+  .sidebar .main-nav button .nav-icon {
     width: 26px;
     height: 26px;
     background: transparent;
@@ -5516,6 +6375,7 @@ input[type="checkbox"] {
   .admin-strip,
   .page-grid,
   .settings-layout,
+  .super-admin-shell,
   .patients-layout,
   .patient-grid,
   .role-card-grid,
@@ -5540,6 +6400,39 @@ input[type="checkbox"] {
 
   .settings-menu-panel {
     position: static;
+  }
+
+  .super-admin-content,
+  .super-admin-metric-grid,
+  .super-admin-stat-row,
+  .tenant-management-grid,
+  .tenant-profile-modal .tenant-management-grid,
+  .tenant-profile-modal .subscription-detail-grid,
+  .tenant-profile-summary-row,
+  .platform-config-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .support-ticket-list article,
+  .tenant-list-head,
+  .tenant-list-row,
+  .subscription-plan-head,
+  .subscription-plan-list article,
+  .subscription-management-list article {
+    grid-template-columns: 1fr;
+  }
+
+  .subscription-plan-head {
+    display: none;
+  }
+
+  .tenant-header-actions {
+    width: 100%;
+    justify-content: stretch;
+  }
+
+  .tenant-header-actions input {
+    width: 100%;
   }
 
   .settings-form-grid {
@@ -5577,6 +6470,10 @@ input[type="checkbox"] {
   .main-nav,
   .page-grid,
   .settings-layout,
+  .super-admin-shell,
+  .super-admin-content,
+  .super-admin-metric-grid,
+  .super-admin-stat-row,
   .patients-layout,
   .profile-summary-grid,
   .profile-section-grid,
@@ -5713,6 +6610,9 @@ input[type="checkbox"] {
   }
 
   .settings-split,
+  .tenant-management-grid,
+  .platform-config-grid,
+  .support-boundary-grid,
   .therapist-colour-list,
   .session-detail-actions {
     grid-template-columns: 1fr;
@@ -5783,6 +6683,17 @@ input[type="checkbox"] {
 
   .billing-config-row b {
     justify-self: start;
+  }
+
+  .create-tenant-form-grid,
+  .create-tenant-form-grid.subscription-grid,
+  .tenant-tab-grid,
+  .tenant-profile-modal .tenant-management-grid,
+  .tenant-profile-modal .subscription-detail-grid,
+  .tenant-profile-summary-row,
+  .tenant-profile-tabs,
+  .create-tenant-billing-summary {
+    grid-template-columns: 1fr;
   }
 
   .modal-footer {
