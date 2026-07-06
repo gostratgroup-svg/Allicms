@@ -1,8 +1,15 @@
 import { type Dispatch, type PointerEvent, type SetStateAction, useEffect, useMemo, useRef, useState } from 'react'
+import { NavLink, useLocation } from 'react-router-dom'
+import { useAuth, type ActiveRole, type Profile } from './auth/AuthContext'
+import { useAuthorization, type AccessArea, type Permission } from './auth/permissions'
+import { isSupabaseConfigured, testSupabaseConnection, type SupabaseConnectionTestResult } from './lib/supabase'
+import { AppShell, MainContent, Sidebar, Topbar } from './layout/AppShell'
+import { AppRoutes, appRoutes, getRouteForPath } from './routes/appRoutes'
 
 type View = 'overview' | 'sessions' | 'patients' | 'finances' | 'settings'
 type Role = 'Admin' | 'Reception' | 'Therapist' | 'Super Admin'
 type SuperAdminModule = 'dashboard' | 'tenants' | 'subscriptions' | 'support' | 'health' | 'configuration'
+type PermissionPreviewArea = { area: AccessArea; label: string }
 type SessionSlot = { date: string; time: string; patientName?: string }
 type CalendarSession = {
   id: string
@@ -127,6 +134,28 @@ const superAdminNavItems: Array<{ id: SuperAdminModule; label: string; detail: s
   { id: 'health', label: 'System Health', detail: 'Operational status', icon: 'platform-health' },
   { id: 'configuration', label: 'Platform Configuration', detail: 'Global AlliDesk settings', icon: 'platform-config' },
 ]
+
+const permissionPreviewAreas: PermissionPreviewArea[] = [
+  { area: 'patients', label: 'Patients' },
+  { area: 'bookings', label: 'Bookings' },
+  { area: 'clinical', label: 'Clinical' },
+  { area: 'finance', label: 'Finance' },
+  { area: 'reports', label: 'Reports' },
+  { area: 'settings', label: 'Settings' },
+]
+
+const keyPermissionLabels: Partial<Record<Permission, string>> = {
+  'platform.tenants.manage': 'Manage tenants',
+  'platform.subscriptions.manage': 'Manage subscriptions',
+  'platform.support.manage': 'Support centre',
+  'tenant.users.manage': 'Manage users',
+  'tenant.practice.configure': 'Practice setup',
+  'tenant.patients.manage': 'Manage patients',
+  'tenant.bookings.manage': 'Manage bookings',
+  'tenant.clinical.manage': 'Clinical notes',
+  'tenant.finance.manage': 'Manage finance',
+  'tenant.reports.manage': 'Reports',
+}
 
 function NavIcon({ icon }: { icon: string }) {
   const commonProps = {
@@ -1498,7 +1527,32 @@ function getPatientLinkRoute() {
   return hashMatch ?? pathMatch
 }
 
+function getIdentityDisplayName(profile: Profile | null, email?: string) {
+  const fullName = [profile?.first_name, profile?.last_name].filter(Boolean).join(' ').trim()
+  return fullName || profile?.email || email || 'Signed in user'
+}
+
+function getResolvedRoleLabel(activeRole: ActiveRole) {
+  if (activeRole === 'super_admin') return 'Super Admin'
+  if (activeRole === 'admin') return 'Admin'
+  if (activeRole === 'receptionist') return 'Reception'
+  if (activeRole === 'therapist') return 'Therapist'
+  if (activeRole === 'finance') return 'Finance'
+  return 'Authenticated'
+}
+
+function getRouteIcon(path: string) {
+  if (path === '/dashboard') return 'home'
+  if (path === '/patients') return 'person'
+  if (path === '/finance' || path === '/billing') return 'coins'
+  if (path === '/settings') return 'gear'
+  return 'blocks'
+}
+
 function App() {
+  const { user, profile, tenantMemberships, activeTenant, activeRole, selectActiveTenant, signOut } = useAuth()
+  const authorization = useAuthorization()
+  const location = useLocation()
   const [view, setView] = useState<View>('overview')
   const [role, setRole] = useState<Role>('Admin')
   const [activeSuperAdminModule, setActiveSuperAdminModule] = useState<SuperAdminModule>('dashboard')
@@ -1517,11 +1571,40 @@ function App() {
   const [topNotice, setTopNotice] = useState('')
   const patientLinkMatch = getPatientLinkRoute()
   const currentDayIso = useLocalTodayIso()
+  const resolvedRoleLabel = getResolvedRoleLabel(activeRole)
+  const isResolvedSuperAdmin = activeRole === 'super_admin'
+  const tenantDisplayName = isResolvedSuperAdmin ? 'Platform workspace' : activeTenant?.practice_name ?? tenant.name
+  const identityDisplayName = getIdentityDisplayName(profile, user?.email)
+  const identityContextLabel = isResolvedSuperAdmin ? 'AlliDesk Platform' : tenantDisplayName
+  const canSwitchTenant = !isResolvedSuperAdmin && tenantMemberships.length > 1
+  const previewPermissions = authorization.permissions.slice(0, 6)
+  const activeRoute = getRouteForPath(location.pathname)
 
   const openNewSession = (slot?: SessionSlot) => {
     setNewSessionSlot(slot ?? null)
     setIsNewSessionOpen(true)
   }
+
+  useEffect(() => {
+    if (activeRole === 'super_admin') {
+      setRole('Super Admin')
+      return
+    }
+
+    if (activeRole === 'admin') {
+      setRole('Admin')
+      return
+    }
+
+    if (activeRole === 'receptionist') {
+      setRole('Reception')
+      return
+    }
+
+    if (activeRole === 'therapist') {
+      setRole('Therapist')
+    }
+  }, [activeRole])
 
   useEffect(() => {
     if (!topNotice) return
@@ -1793,177 +1876,88 @@ function App() {
     }
   }
 
-  return (
-    <div className="app-shell">
-      {topNotice && <div className="top-action-notice" role="status">{topNotice}</div>}
-      <aside className="sidebar">
-        <div className="brand">
-          <img src="/assets/AlliDesk_Main_App_logo.png" alt="AlliDesk" className="brand-logo" />
-        </div>
+  const sidebar = (
+    <Sidebar>
+      <div className="brand">
+        <img src="/assets/AlliDesk_Main_App_logo.png" alt="AlliDesk" className="brand-logo" />
+      </div>
 
-        <nav className={`main-nav ${role === 'Super Admin' ? 'platform-nav' : ''}`} aria-label={role === 'Super Admin' ? 'Platform navigation' : 'Main navigation'}>
-          {role === 'Super Admin' ? (
-            superAdminNavItems.map((item) => (
-              <button className={activeSuperAdminModule === item.id ? 'active' : ''} key={item.id} onClick={() => setActiveSuperAdminModule(item.id)}>
-                <span className="nav-icon" aria-hidden="true">
-                  <NavIcon icon={item.icon} />
-                </span>
-                <span className="nav-copy">
-                  <strong>{item.label}</strong>
-                </span>
-              </button>
-            ))
-          ) : (
-            navItems.map((item) => (
-              <button className={view === item.id ? 'active' : ''} key={item.id} onClick={() => setView(item.id)}>
-                <span className="nav-icon" aria-hidden="true">
-                  <NavIcon icon={item.icon} />
-                </span>
-                {item.label}
-              </button>
-            ))
-          )}
-        </nav>
-        {role === 'Super Admin' && (
-          <div className="sidebar-platform-note">
-            <strong>POPIA foundation</strong>
-            <span>Super Admin manages the platform, not tenant customer or patient data.</span>
-          </div>
+      <nav className={`main-nav ${role === 'Super Admin' ? 'platform-nav' : ''}`} aria-label={role === 'Super Admin' ? 'Platform navigation' : 'Main navigation'}>
+        {role === 'Super Admin' ? (
+          superAdminNavItems.map((item) => (
+            <button className={activeSuperAdminModule === item.id ? 'active' : ''} key={item.id} onClick={() => setActiveSuperAdminModule(item.id)}>
+              <span className="nav-icon" aria-hidden="true">
+                <NavIcon icon={item.icon} />
+              </span>
+              <span className="nav-copy">
+                <strong>{item.label}</strong>
+              </span>
+            </button>
+          ))
+        ) : (
+          appRoutes.map((item) => (
+            <NavLink className={({ isActive }) => (isActive ? 'active' : '')} to={item.path} key={item.path}>
+              <span className="nav-icon" aria-hidden="true">
+                <NavIcon icon={getRouteIcon(item.path)} />
+              </span>
+              {item.label}
+            </NavLink>
+          ))
         )}
+      </nav>
+      {role === 'Super Admin' && (
+        <div className="sidebar-platform-note">
+          <strong>POPIA foundation</strong>
+          <span>Super Admin manages the platform, not tenant customer or patient data.</span>
+        </div>
+      )}
+    </Sidebar>
+  )
 
-      </aside>
-
-      <main>
-        <header className="topbar">
-          <div>
-            <p>{role} view · {role === 'Super Admin' ? 'Platform workspace' : tenant.name}</p>
-            <h1>{role === 'Super Admin' ? superAdminPageTitle(activeSuperAdminModule) : pageTitle(view)}</h1>
+  const topbar = (
+    <Topbar
+      eyebrow={`${resolvedRoleLabel} · ${identityContextLabel}`}
+      title={role === 'Super Admin' ? superAdminPageTitle(activeSuperAdminModule) : activeRoute.title}
+      actions={(
+        <div className="topbar-actions">
+          <div className="identity-context-pill" aria-label="Resolved identity context">
+            <span>{resolvedRoleLabel}</span>
+            <strong>{identityDisplayName}</strong>
+            <small>{identityContextLabel}</small>
           </div>
-          <div className="topbar-actions">
-            <label className="role-switcher" aria-label="Switch role view">
-              <select value={role} onChange={(event) => setRole(event.target.value as Role)}>
-                {roles.map((roleOption) => (
-                  <option value={roleOption.role} key={roleOption.role}>{roleOption.role}</option>
+          {canSwitchTenant && (
+            <label className="tenant-switcher" aria-label="Switch active tenant">
+              <span>Workspace</span>
+              <select value={activeTenant?.id ?? ''} onChange={(event) => selectActiveTenant(event.target.value)}>
+                {tenantMemberships.map((membership) => (
+                  <option value={membership.tenant_id} key={membership.id}>
+                    {membership.tenant?.practice_name ?? 'Tenant unavailable'} · {getResolvedRoleLabel(membership.role)}
+                  </option>
                 ))}
               </select>
             </label>
-            {role !== 'Super Admin' && (
-              <button type="button" onClick={() => openNewSession()}>
-                New Booking
-              </button>
-            )}
-          </div>
-        </header>
+          )}
+          <label className="role-switcher" aria-label="Switch role view">
+            <select value={role} onChange={(event) => setRole(event.target.value as Role)}>
+              {roles.map((roleOption) => (
+                <option value={roleOption.role} key={roleOption.role}>{roleOption.role}</option>
+              ))}
+            </select>
+          </label>
+          <button type="button" className="logout-button" onClick={() => void signOut()}>
+            Logout
+          </button>
+          {role !== 'Super Admin' && (
+            <button type="button" onClick={() => openNewSession()}>
+              New Booking
+            </button>
+          )}
+        </div>
+      )}
+    />
+  )
 
-        {role !== 'Super Admin' && view === 'settings' && (
-          <Settings
-            role={role}
-            setRole={setRole}
-            practiceEntities={practiceEntityRecords}
-            setPracticeEntities={setPracticeEntityRecords}
-            practiceLocations={practiceLocationRecords}
-            setPracticeLocations={setPracticeLocationRecords}
-            procedurePriceLists={procedurePriceLists}
-            setProcedurePriceLists={setProcedurePriceLists}
-            procedurePriceRecords={procedurePriceRecords}
-            setProcedurePriceRecords={setProcedurePriceRecords}
-          />
-        )}
-        {role === 'Super Admin' && <SuperAdminWorkspace activeModule={activeSuperAdminModule} />}
-        {view !== 'settings' && role !== 'Super Admin' && (
-          <>
-            <section className="admin-strip" aria-label="Practice health">
-              <Metric label="Today's sessions" value={String(todaySessions.length)} detail={`${todaySessionsNeedingNotes.length} still need notes`} />
-              <Metric label="Feedback due" value={String(feedbackDue)} detail={`${feedbackDue} session feedback items outstanding`} />
-              <Metric label="Outstanding" value={formatMoney(outstandingInvoiceTotal)} detail="session-linked balances" />
-              <Metric label="Patient To Do's" value={String(patientTodoCount)} detail="open patient actions" />
-            </section>
-
-            {view === 'overview' && (
-              <Overview
-                role={role}
-                calendarSessions={calendarSessionRecords}
-                pendingInvoiceSessions={sessionsNeedingInvoiceConfirmation}
-                onOpenFinances={() => setView('finances')}
-                onUpdateSession={updateBookedSession}
-                onOpenPatientProfile={(patientName) => {
-                  setSelectedPatientName(patientName)
-                  setQuery('')
-                  setView('patients')
-                }}
-                onMarkNoShow={markSessionNoShow}
-                onCancelSession={cancelSession}
-                onSavePatientNote={addPatientNote}
-                invoiceRecords={invoiceRecords}
-                onConfirmInvoice={confirmInvoice}
-                onMarkPaymentReceived={markPaymentReceived}
-              />
-            )}
-            {view === 'sessions' && (
-              <Sessions
-                calendarSessions={calendarSessionRecords}
-                selectedSessionId={selectedCalendarSessionId}
-                setSelectedSessionId={setSelectedCalendarSessionId}
-                onUpdateSession={updateBookedSession}
-                onOpenPatientProfile={(patientName) => {
-                  setSelectedPatientName(patientName)
-                  setQuery('')
-                  setView('patients')
-                }}
-                onNewSession={openNewSession}
-                onMarkNoShow={markSessionNoShow}
-                onCancelSession={cancelSession}
-                onSavePatientNote={addPatientNote}
-                invoiceRecords={invoiceRecords}
-                onConfirmInvoice={confirmInvoice}
-                onMarkPaymentReceived={markPaymentReceived}
-              />
-            )}
-            {view === 'patients' && (
-              <Patients
-                query={query}
-                setQuery={setQuery}
-                filteredPatients={filteredPatients}
-                calendarSessions={calendarSessionRecords}
-                selectedPatientName={selectedPatientName}
-                setSelectedPatientName={setSelectedPatientName}
-                setPatientRecords={setPatientRecords}
-                onUpdateSession={updateBookedSession}
-                onOpenPatientProfile={(patientName) => {
-                  setSelectedPatientName(patientName)
-                  setQuery('')
-                  setView('patients')
-                }}
-                onMarkNoShow={markSessionNoShow}
-                onCancelSession={cancelSession}
-                onSavePatientNote={addPatientNote}
-                invoiceRecords={invoiceRecords}
-                onConfirmInvoice={confirmInvoice}
-                onMarkPaymentReceived={markPaymentReceived}
-                onCreateStatement={createPatientStatement}
-              />
-            )}
-            {view === 'finances' && (
-              <Finances
-                sessionInvoiceDetails={sessionInvoiceDetails}
-                invoiceRecords={invoiceRecords}
-                onUpdateSession={updateBookedSession}
-                onOpenPatientProfile={(patientName) => {
-                  setSelectedPatientName(patientName)
-                  setQuery('')
-                  setView('patients')
-                }}
-                onMarkNoShow={markSessionNoShow}
-                onCancelSession={cancelSession}
-                onSavePatientNote={addPatientNote}
-                onConfirmInvoice={confirmInvoice}
-                onMarkPaymentReceived={markPaymentReceived}
-              />
-            )}
-          </>
-        )}
-      </main>
-      {isNewSessionOpen && (
+  const modals = isNewSessionOpen ? (
         <NewSessionModal
           patients={patientRecords}
           calendarSessions={calendarSessionRecords}
@@ -2014,8 +2008,35 @@ function App() {
           onIntakeMessageCopied={(patientName) => setTopNotice(`New patient message copied for ${patientName}.`)}
           onClose={() => setIsNewSessionOpen(false)}
         />
-      )}
-    </div>
+  ) : null
+
+  return (
+    <AppShell topNotice={topNotice} sidebar={sidebar} topbar={topbar} modals={modals}>
+      <MainContent>
+        <section className="permission-preview-panel" aria-label="Permission foundation preview">
+          <div>
+            <p>Permission foundation preview</p>
+            <strong>{resolvedRoleLabel}</strong>
+            <span>This preview is not enforcing access yet.</span>
+          </div>
+          <div className="permission-preview-list" aria-label="Key permissions">
+            {previewPermissions.map((permission) => (
+              <span key={permission}>{keyPermissionLabels[permission] ?? permission}</span>
+            ))}
+          </div>
+          <div className="permission-access-grid" aria-label="Future area access preview">
+            {permissionPreviewAreas.map((item) => (
+              <span className={authorization.canAccess(item.area) ? 'allowed' : 'blocked'} key={item.area}>
+                {item.label}
+              </span>
+            ))}
+          </div>
+        </section>
+
+        {role === 'Super Admin' && <SuperAdminWorkspace activeModule={activeSuperAdminModule} />}
+        {role !== 'Super Admin' && <AppRoutes />}
+      </MainContent>
+    </AppShell>
   )
 }
 
@@ -6730,6 +6751,12 @@ function SuperAdminWorkspace({ activeModule }: { activeModule: SuperAdminModule 
   const [isCreateTenantOpen, setIsCreateTenantOpen] = useState(false)
   const [profileTenantName, setProfileTenantName] = useState('')
   const [tenantSearch, setTenantSearch] = useState('')
+  const [supabaseConnection, setSupabaseConnection] = useState<SupabaseConnectionTestResult>({
+    configured: isSupabaseConfigured,
+    ok: false,
+    status: isSupabaseConfigured ? 'error' : 'not_configured',
+    message: isSupabaseConfigured ? 'Checking Supabase connection...' : 'Supabase env variables are not configured.',
+  })
   const platformMetrics = [
     { label: 'Total Tenants', value: '28', detail: 'platform workspaces' },
     { label: 'Active Tenants', value: '24', detail: 'currently subscribed' },
@@ -6769,6 +6796,24 @@ function SuperAdminWorkspace({ activeModule }: { activeModule: SuperAdminModule 
     ['Queue Processing', 'Operational', '99.95%', '54 jobs'],
     ['Notifications', 'Operational', '99.96%', '84ms'],
     ['Scheduled Jobs', 'Operational', '99.97%', '0 failed'],
+  ]
+  useEffect(() => {
+    let isMounted = true
+    testSupabaseConnection().then((result) => {
+      if (isMounted) setSupabaseConnection(result)
+    })
+    return () => {
+      isMounted = false
+    }
+  }, [])
+  const supabaseServiceStatus = supabaseConnection.ok
+    ? 'Operational'
+    : supabaseConnection.configured
+      ? 'Service Unavailable'
+      : 'Not Configured'
+  const platformServiceStatuses = [
+    ...serviceStatuses,
+    ['Supabase', supabaseServiceStatus, supabaseConnection.status.replaceAll('_', ' '), supabaseConnection.message],
   ]
   const [subscriptionPlans, setSubscriptionPlans] = useState([
     { name: 'Free', description: 'Internal testing and assisted setup', users: 'Internal only', price: 'R 0', isActive: true, isPublic: false },
@@ -6979,7 +7024,7 @@ function SuperAdminWorkspace({ activeModule }: { activeModule: SuperAdminModule 
                 </div>
               </div>
               <div className="system-health-grid">
-                {serviceStatuses.map(([service, status, uptime, response]) => (
+                {platformServiceStatuses.map(([service, status, uptime, response]) => (
                   <article key={service}>
                     <div>
                       <strong>{service}</strong>
