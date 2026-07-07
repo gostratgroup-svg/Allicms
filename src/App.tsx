@@ -4,6 +4,8 @@ import { useAuth, type ActiveRole, type Profile } from './auth/AuthContext'
 import { useAuthorization, type AccessArea, type Permission } from './auth/permissions'
 import { isSupabaseConfigured, testSupabaseConnection, type SupabaseConnectionTestResult } from './lib/supabase'
 import { AppShell, MainContent, Sidebar, Topbar } from './layout/AppShell'
+import { NotificationMenu } from './components/NotificationMenu'
+import { UserAccountMenu } from './components/UserAccountMenu'
 import { AppRoutes, appRoutes, getRouteForPath } from './routes/appRoutes'
 
 type View = 'overview' | 'sessions' | 'patients' | 'finances' | 'settings'
@@ -1579,6 +1581,7 @@ function App() {
   const canSwitchTenant = !isResolvedSuperAdmin && tenantMemberships.length > 1
   const previewPermissions = authorization.permissions.slice(0, 6)
   const activeRoute = getRouteForPath(location.pathname)
+  const visibleAppRoutes = appRoutes.filter((item) => authorization.canAccess(item.accessArea))
 
   const openNewSession = (slot?: SessionSlot) => {
     setNewSessionSlot(slot ?? null)
@@ -1895,7 +1898,7 @@ function App() {
             </button>
           ))
         ) : (
-          appRoutes.map((item) => (
+          visibleAppRoutes.map((item) => (
             <NavLink className={({ isActive }) => (isActive ? 'active' : '')} to={item.path} key={item.path}>
               <span className="nav-icon" aria-hidden="true">
                 <NavIcon icon={getRouteIcon(item.path)} />
@@ -1920,11 +1923,14 @@ function App() {
       title={role === 'Super Admin' ? superAdminPageTitle(activeSuperAdminModule) : activeRoute.title}
       actions={(
         <div className="topbar-actions">
-          <div className="identity-context-pill" aria-label="Resolved identity context">
-            <span>{resolvedRoleLabel}</span>
-            <strong>{identityDisplayName}</strong>
-            <small>{identityContextLabel}</small>
-          </div>
+          <NotificationMenu />
+          <UserAccountMenu
+            displayName={identityDisplayName}
+            email={user?.email}
+            roleLabel={resolvedRoleLabel}
+            workspaceName={identityContextLabel}
+            onLogout={() => void signOut()}
+          />
           {canSwitchTenant && (
             <label className="tenant-switcher" aria-label="Switch active tenant">
               <span>Workspace</span>
@@ -1944,9 +1950,6 @@ function App() {
               ))}
             </select>
           </label>
-          <button type="button" className="logout-button" onClick={() => void signOut()}>
-            Logout
-          </button>
           {role !== 'Super Admin' && (
             <button type="button" onClick={() => openNewSession()}>
               New Booking
