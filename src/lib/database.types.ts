@@ -39,6 +39,14 @@ type TherapistProfileRelationship = {
   referencedColumns: ['id']
 }
 
+type PriceListRelationship = {
+  foreignKeyName: string
+  columns: ['price_list_id']
+  isOneToOne: false
+  referencedRelation: 'price_lists'
+  referencedColumns: ['id']
+}
+
 export type Database = {
   public: {
     Tables: {
@@ -497,6 +505,96 @@ export type Database = {
           created_at?: string
           updated_at?: string
           deleted_at?: string | null
+        },
+        [TenantRelationship]
+      >
+      price_list_items: PublicTable<
+        {
+          id: string
+          tenant_id: string
+          price_list_id: string
+          procedure_name: string
+          procedure_code: string | null
+          description: string | null
+          price: number
+          duration_minutes: number | null
+          is_active: boolean
+          metadata: Json
+          deleted_at: string | null
+          created_at: string
+          updated_at: string
+        },
+        {
+          id?: string
+          tenant_id: string
+          price_list_id: string
+          procedure_name: string
+          procedure_code?: string | null
+          description?: string | null
+          price?: number
+          duration_minutes?: number | null
+          is_active?: boolean
+          metadata?: Json
+          deleted_at?: string | null
+          created_at?: string
+          updated_at?: string
+        },
+        {
+          id?: string
+          tenant_id?: string
+          price_list_id?: string
+          procedure_name?: string
+          procedure_code?: string | null
+          description?: string | null
+          price?: number
+          duration_minutes?: number | null
+          is_active?: boolean
+          metadata?: Json
+          deleted_at?: string | null
+          created_at?: string
+          updated_at?: string
+        },
+        [TenantRelationship, PriceListRelationship]
+      >
+      price_lists: PublicTable<
+        {
+          id: string
+          tenant_id: string
+          name: string
+          description: string | null
+          list_type: string | null
+          is_default: boolean
+          is_active: boolean
+          metadata: Json
+          deleted_at: string | null
+          created_at: string
+          updated_at: string
+        },
+        {
+          id?: string
+          tenant_id: string
+          name: string
+          description?: string | null
+          list_type?: string | null
+          is_default?: boolean
+          is_active?: boolean
+          metadata?: Json
+          deleted_at?: string | null
+          created_at?: string
+          updated_at?: string
+        },
+        {
+          id?: string
+          tenant_id?: string
+          name?: string
+          description?: string | null
+          list_type?: string | null
+          is_default?: boolean
+          is_active?: boolean
+          metadata?: Json
+          deleted_at?: string | null
+          created_at?: string
+          updated_at?: string
         },
         [TenantRelationship]
       >

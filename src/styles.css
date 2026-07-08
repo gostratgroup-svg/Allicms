@@ -1360,6 +1360,11 @@ button:disabled {
   gap: var(--space-3);
 }
 
+.finance-price-lists-page {
+  display: grid;
+  gap: var(--space-3);
+}
+
 .practice-profile-summary {
   display: flex;
   gap: var(--space-5);
@@ -1619,6 +1624,18 @@ button:disabled {
 
 .practice-billing-form {
   grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.finance-price-list-form {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.finance-procedure-form {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.finance-procedure-list button {
+  grid-template-columns: minmax(0, 1fr) minmax(0, 0.7fr) auto;
 }
 
 .practice-billing-toggle-grid {
@@ -8232,6 +8249,9 @@ input[type="checkbox"] {
 
   .practice-locations-layout,
   .practice-billing-form,
+  .finance-price-list-form,
+  .finance-procedure-form,
+  .finance-procedure-list button,
   .practice-branding-layout,
   .practice-branding-form,
   .practice-communication-form,

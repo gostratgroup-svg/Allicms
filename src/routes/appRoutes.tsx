@@ -5,6 +5,7 @@ import { PageHeader, type BreadcrumbItem } from '../components/PageHeader'
 import { AccessDeniedState } from '../components/UiState'
 import { BookingsPage } from '../pages/Bookings'
 import { FinancePage } from '../pages/Finance'
+import { FinancePriceListsPage } from '../pages/FinancePriceLists'
 import { OverviewPage } from '../pages/Overview'
 import { PatientsPage } from '../pages/Patients'
 import { PracticeBankingPage } from '../pages/PracticeBanking'
@@ -23,7 +24,7 @@ export type AppRoute = {
   title: string
   description: string
   accessArea: AccessArea
-  placeholderPattern: 'overview' | 'bookings' | 'patients' | 'finance' | 'practice' | 'practiceProfile' | 'practiceLocations' | 'practiceBanking' | 'practiceBilling' | 'practiceBranding' | 'practiceCommunicationTemplates' | 'practiceTherapists' | 'settings'
+  placeholderPattern: 'overview' | 'bookings' | 'patients' | 'finance' | 'financePriceLists' | 'practice' | 'practiceProfile' | 'practiceLocations' | 'practiceBanking' | 'practiceBilling' | 'practiceBranding' | 'practiceCommunicationTemplates' | 'practiceTherapists' | 'settings'
   showInNav?: boolean
 }
 
@@ -59,6 +60,15 @@ export const appRoutes: AppRoute[] = [
     accessArea: 'finance',
     description: 'Billing queue, invoices, payments, statements, price lists and finance reports structure.',
     placeholderPattern: 'finance',
+  },
+  {
+    path: '/finance/price-lists',
+    label: 'Price Lists',
+    title: 'Price Lists',
+    accessArea: 'practice_billing',
+    description: 'Create and maintain tenant price lists and procedure line items.',
+    placeholderPattern: 'financePriceLists',
+    showInNav: false,
   },
   {
     path: '/practice',
@@ -205,6 +215,7 @@ function PlaceholderPage({ route }: { route: AppRoute }) {
       {route.placeholderPattern === 'bookings' && <BookingsPage />}
       {route.placeholderPattern === 'patients' && <PatientsPage />}
       {route.placeholderPattern === 'finance' && <FinancePage />}
+      {route.placeholderPattern === 'financePriceLists' && <FinancePriceListsPage />}
       {route.placeholderPattern === 'practice' && <PracticePage />}
       {route.placeholderPattern === 'practiceBanking' && <PracticeBankingPage />}
       {route.placeholderPattern === 'practiceBilling' && <PracticeBillingPage />}
@@ -236,6 +247,14 @@ function getRouteBreadcrumbs(route: AppRoute): BreadcrumbItem[] {
     return [
       { label: 'Workspace', to: '/overview' },
       { label: 'Practice', to: '/practice' },
+      { label: route.label },
+    ]
+  }
+
+  if (route.path.startsWith('/finance/') && route.path !== '/finance') {
+    return [
+      { label: 'Workspace', to: '/overview' },
+      { label: 'Finance', to: '/finance' },
       { label: route.label },
     ]
   }

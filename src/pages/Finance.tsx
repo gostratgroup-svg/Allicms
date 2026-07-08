@@ -25,6 +25,7 @@ const financeSections: SectionHubItem[] = [
     title: 'Price Lists',
     description: 'Procedure lists, procedure codes, descriptions, prices and duration defaults will be configured here.',
     status: 'Pricing setup',
+    to: '/finance/price-lists',
   },
   {
     title: 'Reports',
