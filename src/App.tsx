@@ -1544,10 +1544,12 @@ function getResolvedRoleLabel(activeRole: ActiveRole) {
 }
 
 function getRouteIcon(path: string) {
-  if (path === '/dashboard') return 'home'
+  if (path === '/overview') return 'home'
+  if (path === '/bookings') return 'blocks'
   if (path === '/patients') return 'person'
-  if (path === '/finance' || path === '/billing') return 'coins'
+  if (path === '/finance') return 'coins'
   if (path === '/settings') return 'gear'
+  if (path === '/practice') return 'blocks'
   return 'blocks'
 }
 
@@ -1581,7 +1583,7 @@ function App() {
   const canSwitchTenant = !isResolvedSuperAdmin && tenantMemberships.length > 1
   const previewPermissions = authorization.permissions.slice(0, 6)
   const activeRoute = getRouteForPath(location.pathname)
-  const visibleAppRoutes = appRoutes.filter((item) => authorization.canAccess(item.accessArea))
+  const visibleAppRoutes = appRoutes.filter((item) => item.showInNav !== false && authorization.canAccess(item.accessArea))
 
   const openNewSession = (slot?: SessionSlot) => {
     setNewSessionSlot(slot ?? null)

@@ -10,6 +10,7 @@ export type Permission =
   | 'platform.configuration.manage'
   | 'tenant.overview.view'
   | 'tenant.users.manage'
+  | 'tenant.team.view'
   | 'tenant.practice.configure'
   | 'tenant.patients.view'
   | 'tenant.patients.manage'
@@ -38,6 +39,9 @@ export type AccessArea =
   | 'bookings'
   | 'clinical'
   | 'finance'
+  | 'practice_team'
+  | 'practice_billing'
+  | 'practice_banking'
   | 'reports'
   | 'documents'
   | 'settings'
@@ -72,6 +76,7 @@ const rolePermissions: Record<NonNullable<ActiveRole>, Permission[]> = {
   admin: [
     'tenant.overview.view',
     'tenant.users.manage',
+    'tenant.team.view',
     'tenant.practice.configure',
     'tenant.patients.view',
     'tenant.patients.manage',
@@ -89,6 +94,7 @@ const rolePermissions: Record<NonNullable<ActiveRole>, Permission[]> = {
   ],
   therapist: [
     'tenant.overview.view',
+    'tenant.team.view',
     'tenant.patients.view',
     'tenant.bookings.view',
     'tenant.bookings.manage',
@@ -101,6 +107,7 @@ const rolePermissions: Record<NonNullable<ActiveRole>, Permission[]> = {
   ],
   receptionist: [
     'tenant.overview.view',
+    'tenant.team.view',
     'tenant.patients.view',
     'tenant.patients.manage',
     'tenant.bookings.view',
@@ -112,6 +119,7 @@ const rolePermissions: Record<NonNullable<ActiveRole>, Permission[]> = {
   ],
   finance: [
     'tenant.overview.view',
+    'tenant.team.view',
     'tenant.patients.view',
     'tenant.bookings.view',
     'tenant.finance.view',
@@ -135,6 +143,9 @@ const areaPermissions: Record<AccessArea, Permission[]> = {
   bookings: ['tenant.bookings.view'],
   clinical: ['tenant.clinical.view'],
   finance: ['tenant.finance.view'],
+  practice_team: ['tenant.team.view', 'tenant.practice.configure'],
+  practice_billing: ['tenant.finance.view', 'tenant.practice.configure'],
+  practice_banking: ['tenant.finance.view', 'tenant.practice.configure'],
   reports: ['tenant.reports.view'],
   documents: ['tenant.documents.view'],
   settings: ['tenant.practice.configure', 'tenant.users.manage'],

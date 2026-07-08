@@ -1229,6 +1229,19 @@ button:disabled {
   gap: var(--space-3);
 }
 
+.section-hub {
+  display: grid;
+  gap: var(--space-3);
+}
+
+.section-hub-intro {
+  display: flex;
+  gap: var(--space-5);
+  align-items: flex-start;
+  justify-content: space-between;
+  padding: var(--space-6);
+}
+
 .settings-framework-intro {
   display: flex;
   gap: var(--space-5);
@@ -1237,6 +1250,8 @@ button:disabled {
   padding: var(--space-6);
 }
 
+.section-hub-intro span,
+.section-hub-card span,
 .settings-framework-intro span,
 .settings-framework-card span {
   color: var(--muted);
@@ -1245,6 +1260,8 @@ button:disabled {
   text-transform: uppercase;
 }
 
+.section-hub-intro h3,
+.section-hub-card h3,
 .settings-framework-intro h3,
 .settings-framework-card h3 {
   margin: 4px 0 5px;
@@ -1253,6 +1270,8 @@ button:disabled {
   line-height: 1.12;
 }
 
+.section-hub-intro p,
+.section-hub-card p,
 .settings-framework-intro p,
 .settings-framework-card p {
   margin: 0;
@@ -1262,8 +1281,15 @@ button:disabled {
   line-height: var(--line-height-body);
 }
 
+.section-hub-intro p,
 .settings-framework-intro p {
   max-width: 760px;
+}
+
+.section-hub-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: var(--space-3);
 }
 
 .settings-framework-grid {
@@ -1272,12 +1298,460 @@ button:disabled {
   gap: var(--space-3);
 }
 
+.section-hub-card {
+  min-height: 168px;
+  display: grid;
+  gap: var(--space-5);
+  align-content: space-between;
+  padding: var(--space-5);
+}
+
+.section-hub-card-link {
+  color: inherit;
+  text-decoration: none;
+}
+
+.section-hub-card-link .section-hub-card {
+  height: 100%;
+  transition: border-color 0.16s ease, box-shadow 0.16s ease, transform 0.16s ease;
+}
+
+.section-hub-card-link:hover .section-hub-card {
+  border-color: rgba(153, 153, 237, 0.7);
+  box-shadow: var(--shadow-hover);
+  transform: translateY(-1px);
+}
+
 .settings-framework-card {
   min-height: 168px;
   display: grid;
   gap: var(--space-5);
   align-content: space-between;
   padding: var(--space-5);
+}
+
+.practice-profile-page {
+  display: grid;
+  gap: var(--space-3);
+}
+
+.practice-locations-page {
+  display: grid;
+  gap: var(--space-3);
+}
+
+.practice-billing-page {
+  display: grid;
+  gap: var(--space-3);
+}
+
+.practice-branding-page {
+  display: grid;
+  gap: var(--space-3);
+}
+
+.practice-communication-page {
+  display: grid;
+  gap: var(--space-3);
+}
+
+.practice-therapists-page {
+  display: grid;
+  gap: var(--space-3);
+}
+
+.practice-profile-summary {
+  display: flex;
+  gap: var(--space-5);
+  align-items: flex-start;
+  justify-content: space-between;
+  padding: var(--space-6);
+}
+
+.practice-profile-summary span,
+.practice-profile-form-header span,
+.practice-profile-notice span {
+  color: var(--muted);
+  font-size: var(--font-size-small);
+  font-weight: var(--font-weight-strong);
+  text-transform: uppercase;
+}
+
+.practice-profile-summary h3,
+.practice-profile-form-header h3 {
+  margin: 4px 0 5px;
+  color: var(--ink);
+  font-size: var(--font-size-card-title);
+  line-height: 1.12;
+}
+
+.practice-profile-summary p {
+  max-width: 760px;
+  margin: 0;
+  color: var(--muted);
+  font-size: var(--font-size-body);
+  font-weight: var(--font-weight-body);
+  line-height: var(--line-height-body);
+}
+
+.practice-profile-summary-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 7px;
+  justify-content: flex-end;
+}
+
+.practice-profile-notice {
+  display: grid;
+  gap: 4px;
+  padding: var(--space-4);
+  border-color: rgba(252, 132, 76, 0.32);
+  background: rgba(255, 238, 225, 0.62);
+}
+
+.practice-profile-notice strong {
+  color: var(--ink);
+  font-size: 0.82rem;
+}
+
+.practice-profile-notice span {
+  text-transform: none;
+}
+
+.practice-profile-form-card {
+  display: grid;
+  gap: var(--space-4);
+  padding: var(--space-5);
+}
+
+.practice-profile-form-header {
+  display: flex;
+  gap: var(--space-4);
+  align-items: flex-start;
+  justify-content: space-between;
+}
+
+.practice-profile-form {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.practice-profile-message {
+  min-height: 34px;
+  display: flex;
+  align-items: center;
+  padding: 8px 10px;
+  border-radius: 8px;
+  font-size: 0.74rem;
+  font-weight: 800;
+}
+
+.practice-profile-message.success {
+  background: var(--color-success-bg);
+  color: var(--color-success-text);
+}
+
+.practice-profile-message.error {
+  background: var(--color-danger-bg);
+  color: var(--color-danger-text);
+}
+
+.practice-locations-layout {
+  display: grid;
+  grid-template-columns: minmax(260px, 0.82fr) minmax(0, 1.3fr);
+  gap: var(--space-3);
+  align-items: start;
+}
+
+.practice-locations-list-card {
+  display: grid;
+  gap: var(--space-4);
+  padding: var(--space-5);
+}
+
+.practice-locations-list-header {
+  display: flex;
+  gap: var(--space-4);
+  align-items: flex-start;
+  justify-content: space-between;
+}
+
+.practice-locations-list-header span {
+  color: var(--muted);
+  font-size: var(--font-size-small);
+  font-weight: var(--font-weight-strong);
+  text-transform: uppercase;
+}
+
+.practice-locations-list-header h3 {
+  margin: 4px 0 0;
+  color: var(--ink);
+  font-size: var(--font-size-card-title);
+  line-height: 1.12;
+}
+
+.practice-location-cards {
+  display: grid;
+  gap: 8px;
+}
+
+.practice-location-cards button {
+  width: 100%;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 10px;
+  align-items: start;
+  min-height: 82px;
+  padding: 12px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: white;
+  color: var(--ink);
+  text-align: left;
+}
+
+.practice-location-cards button:hover,
+.practice-location-cards button.active {
+  border-color: rgba(153, 153, 237, 0.72);
+  background: #fbfbfe;
+  box-shadow: var(--shadow-card);
+}
+
+.practice-location-cards button > div:first-child {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+}
+
+.practice-location-cards strong {
+  color: var(--ink);
+  font-size: 0.82rem;
+  line-height: 1.2;
+}
+
+.practice-location-cards span {
+  color: var(--muted);
+  font-size: 0.7rem;
+  font-weight: 700;
+  line-height: 1.35;
+}
+
+.practice-location-card-badges {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+  justify-content: flex-end;
+}
+
+.practice-location-form {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.practice-therapist-editor-stack {
+  display: grid;
+  gap: var(--space-3);
+}
+
+.practice-therapist-form {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.practice-registration-list {
+  display: grid;
+  gap: 8px;
+}
+
+.practice-registration-list > span {
+  color: var(--muted);
+  font-size: var(--font-size-small);
+  font-weight: var(--font-weight-strong);
+}
+
+.practice-registration-list button {
+  width: 100%;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 0.85fr) auto;
+  gap: 10px;
+  align-items: center;
+  min-height: 58px;
+  padding: 10px 12px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: white;
+  color: var(--ink);
+  text-align: left;
+}
+
+.practice-registration-list button:hover,
+.practice-registration-list button.active {
+  border-color: rgba(153, 153, 237, 0.72);
+  background: #fbfbfe;
+  box-shadow: var(--shadow-card);
+}
+
+.practice-registration-list strong {
+  color: var(--ink);
+  font-size: 0.78rem;
+  line-height: 1.2;
+}
+
+.practice-registration-list span {
+  color: var(--muted);
+  font-size: 0.68rem;
+  font-weight: 700;
+  line-height: 1.35;
+}
+
+.practice-registration-list button > div {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+  justify-content: flex-end;
+}
+
+.practice-registration-form {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.practice-registration-actions {
+  display: flex;
+  justify-content: flex-end;
+}
+
+.practice-billing-form {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.practice-billing-toggle-grid {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.practice-billing-bank-preview {
+  display: grid;
+  gap: 4px;
+  padding: var(--space-4);
+  background: #fbfbfe;
+}
+
+.practice-billing-bank-preview span {
+  color: var(--muted);
+  font-size: var(--font-size-small);
+  font-weight: var(--font-weight-strong);
+  text-transform: uppercase;
+}
+
+.practice-billing-bank-preview strong {
+  color: var(--ink);
+  font-size: 0.86rem;
+}
+
+.practice-branding-layout {
+  display: grid;
+  grid-template-columns: minmax(0, 1.35fr) minmax(260px, 0.65fr);
+  gap: var(--space-3);
+  align-items: start;
+}
+
+.practice-branding-form {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.practice-branding-form input[type="color"] {
+  min-height: 42px;
+  padding: 4px;
+}
+
+.practice-branding-preview {
+  display: grid;
+  gap: var(--space-3);
+  padding: var(--space-5);
+}
+
+.practice-branding-preview > span,
+.practice-branding-preview-logo small {
+  color: var(--muted);
+  font-size: var(--font-size-small);
+  font-weight: var(--font-weight-strong);
+  text-transform: uppercase;
+}
+
+.practice-branding-preview-band {
+  min-height: 94px;
+  display: flex;
+  align-items: flex-end;
+  padding: var(--space-4);
+  border-radius: 8px;
+  color: white;
+}
+
+.practice-branding-preview-band strong {
+  font-size: 1rem;
+  line-height: 1.12;
+}
+
+.practice-branding-preview-logo {
+  display: grid;
+  gap: 4px;
+  padding: var(--space-4);
+  border-radius: 8px;
+  background: #fbfbfe;
+}
+
+.practice-branding-preview-logo p {
+  margin: 0;
+  color: var(--ink);
+  font-size: 0.76rem;
+  font-weight: 800;
+  overflow-wrap: anywhere;
+}
+
+.practice-branding-preview-swatches {
+  display: flex;
+  gap: 8px;
+}
+
+.practice-branding-preview-swatches span {
+  width: 34px;
+  height: 34px;
+  border: 1px solid rgba(18, 15, 50, 0.12);
+  border-radius: 999px;
+}
+
+.practice-communication-form {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.practice-communication-form textarea {
+  min-height: 150px;
+}
+
+.practice-template-preview {
+  display: grid;
+  gap: 6px;
+  padding: var(--space-4);
+  background: #fbfbfe;
+}
+
+.practice-template-preview span {
+  color: var(--muted);
+  font-size: var(--font-size-small);
+  font-weight: var(--font-weight-strong);
+  text-transform: uppercase;
+}
+
+.practice-template-preview strong {
+  color: var(--ink);
+  font-size: 0.86rem;
+}
+
+.practice-template-preview p {
+  margin: 0;
+  color: var(--muted);
+  font-size: 0.76rem;
+  font-weight: 700;
+  line-height: 1.45;
+  white-space: pre-wrap;
 }
 
 .ui-state-panel,
@@ -7739,13 +8213,39 @@ input[type="checkbox"] {
   .dashboard-kpi-grid,
   .dashboard-framework-grid,
   .dashboard-action-grid,
+  .section-hub-grid,
   .settings-framework-grid {
     grid-template-columns: 1fr;
   }
 
   .dashboard-welcome-card,
+  .section-hub-intro,
+  .practice-profile-summary,
+  .practice-profile-form-header,
   .settings-framework-intro {
     flex-direction: column;
+  }
+
+  .practice-profile-form {
+    grid-template-columns: 1fr;
+  }
+
+  .practice-locations-layout,
+  .practice-billing-form,
+  .practice-branding-layout,
+  .practice-branding-form,
+  .practice-communication-form,
+  .practice-registration-form,
+  .practice-registration-list button,
+  .practice-therapist-form,
+  .practice-location-form,
+  .practice-location-cards button {
+    grid-template-columns: 1fr;
+  }
+
+  .practice-registration-list button > div,
+  .practice-location-card-badges {
+    justify-content: flex-start;
   }
 
   .list-page-placeholder-header,

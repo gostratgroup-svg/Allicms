@@ -2,34 +2,29 @@ import { Card, StatusBadge } from '../components/ui'
 
 const settingsSections = [
   {
-    title: 'Practice profile',
-    description: 'Practice identity, locations, contact details and operating defaults will be configured here.',
-    status: 'Profile setup',
+    title: 'My Profile',
+    description: 'Personal profile details, contact preferences and user-specific display information.',
+    status: 'Personal settings',
   },
   {
-    title: 'Team & roles',
-    description: 'Tenant users, role assignments and therapist profile settings will be managed here.',
-    status: 'Access setup',
+    title: 'Notifications',
+    description: 'Personal notification preferences for booking, finance, patient and platform updates.',
+    status: 'Notification setup',
   },
   {
-    title: 'Billing settings',
-    description: 'Procedure lists, ICD-10 defaults, payment terms and invoicing preferences will be configured here.',
-    status: 'Finance setup',
+    title: 'Password & Security',
+    description: 'Password reset, account security and future authentication preferences.',
+    status: 'Security',
   },
   {
-    title: 'Clinical settings',
-    description: 'Clinical note types, intake templates and practice-specific clinical defaults will be configured here.',
-    status: 'Clinical setup',
+    title: 'Appearance',
+    description: 'Personal display preferences, theme options and interface density settings.',
+    status: 'Display',
   },
   {
-    title: 'Communication settings',
-    description: 'Email, SMS, WhatsApp and patient-link message templates will be configured here later.',
-    status: 'Comms setup',
-  },
-  {
-    title: 'Security & access',
-    description: 'Workspace access rules, audit visibility and future security preferences will be managed here.',
-    status: 'Security setup',
+    title: 'Calendar Preferences',
+    description: 'Personal calendar defaults, working hours display and reminder preferences.',
+    status: 'Calendar',
   },
 ]
 
@@ -38,11 +33,11 @@ export function SettingsPage() {
     <div className="settings-framework">
       <Card className="settings-framework-intro">
         <div>
-          <span>Tenant configuration</span>
-          <h3>Settings framework</h3>
+          <span>User settings</span>
+          <h3>Personal settings</h3>
           <p>
-            This static settings framework prepares the configuration areas that will later control the
-            tenant workspace defaults and production setup.
+            This static settings framework prepares personal preferences. Practice administration now lives
+            in the Practice area.
           </p>
         </div>
         <StatusBadge tone="info">Static placeholder</StatusBadge>

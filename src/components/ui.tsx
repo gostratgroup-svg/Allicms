@@ -1,8 +1,9 @@
-import type { InputHTMLAttributes, ReactNode } from 'react'
+import type { CSSProperties, InputHTMLAttributes, ReactNode } from 'react'
 
 type CardProps = {
   children: ReactNode
   className?: string
+  style?: CSSProperties
 }
 
 type ButtonProps = {
@@ -26,8 +27,8 @@ type SearchBarProps = {
   onChange: (value: string) => void
 } & Omit<InputHTMLAttributes<HTMLInputElement>, 'onChange' | 'value' | 'type'>
 
-export function Card({ children, className = '' }: CardProps) {
-  return <section className={`ui-card ${className}`.trim()}>{children}</section>
+export function Card({ children, className = '', style }: CardProps) {
+  return <section className={`ui-card ${className}`.trim()} style={style}>{children}</section>
 }
 
 export function Button({ children, className = '', type = 'button', variant = 'primary', disabled = false, onClick }: ButtonProps) {

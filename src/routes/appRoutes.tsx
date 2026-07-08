@@ -1,10 +1,20 @@
 import type { ReactNode } from 'react'
 import { Navigate, Route, Routes } from 'react-router-dom'
 import { useAuthorization, type AccessArea } from '../auth/permissions'
-import { ListPagePlaceholder } from '../components/ListPagePlaceholder'
 import { PageHeader, type BreadcrumbItem } from '../components/PageHeader'
-import { AccessDeniedState, EmptyState } from '../components/UiState'
-import { DashboardPage } from '../pages/Dashboard'
+import { AccessDeniedState } from '../components/UiState'
+import { BookingsPage } from '../pages/Bookings'
+import { FinancePage } from '../pages/Finance'
+import { OverviewPage } from '../pages/Overview'
+import { PatientsPage } from '../pages/Patients'
+import { PracticeBankingPage } from '../pages/PracticeBanking'
+import { PracticeBillingPage } from '../pages/PracticeBilling'
+import { PracticeBrandingPage } from '../pages/PracticeBranding'
+import { PracticeCommunicationTemplatesPage } from '../pages/PracticeCommunicationTemplates'
+import { PracticePage } from '../pages/Practice'
+import { PracticeLocationsPage } from '../pages/PracticeLocations'
+import { PracticeProfilePage } from '../pages/PracticeProfile'
+import { PracticeTherapistsPage } from '../pages/PracticeTherapists'
 import { SettingsPage } from '../pages/Settings'
 
 export type AppRoute = {
@@ -13,130 +23,147 @@ export type AppRoute = {
   title: string
   description: string
   accessArea: AccessArea
-  placeholderPattern?: 'dashboard' | 'list' | 'settings' | 'simple'
-  searchPlaceholder?: string
-  emptyState?: string
-  primaryActionLabel?: string
+  placeholderPattern: 'overview' | 'bookings' | 'patients' | 'finance' | 'practice' | 'practiceProfile' | 'practiceLocations' | 'practiceBanking' | 'practiceBilling' | 'practiceBranding' | 'practiceCommunicationTemplates' | 'practiceTherapists' | 'settings'
+  showInNav?: boolean
 }
 
 export const appRoutes: AppRoute[] = [
   {
-    path: '/dashboard',
-    label: 'Dashboard',
-    title: 'Dashboard',
+    path: '/overview',
+    label: 'Overview',
+    title: 'Overview',
     accessArea: 'overview',
-    description: 'A routed dashboard placeholder for tenant workspace metrics, tasks and daily operating context.',
-    placeholderPattern: 'dashboard',
+    description: 'Future permission-driven command centre for daily bookings, billing tasks, patient actions and follow-ups.',
+    placeholderPattern: 'overview',
+  },
+  {
+    path: '/bookings',
+    label: 'Bookings',
+    title: 'Bookings',
+    accessArea: 'bookings',
+    description: 'Calendar, new booking, location calendar, therapist calendar and booking queue structure.',
+    placeholderPattern: 'bookings',
   },
   {
     path: '/patients',
     label: 'Patients',
     title: 'Patients',
     accessArea: 'patients',
-    description: 'A routed patients placeholder for the future live patient database and patient profile workspace.',
-    placeholderPattern: 'list',
-    searchPlaceholder: 'Search patients',
-    emptyState: 'No patients connected yet.',
-    primaryActionLabel: 'New patient',
-  },
-  {
-    path: '/appointments',
-    label: 'Appointments',
-    title: 'Appointments',
-    accessArea: 'bookings',
-    description: 'A routed appointments placeholder for booking workflows, attendance status and session lifecycle actions.',
-    placeholderPattern: 'list',
-    searchPlaceholder: 'Search appointments',
-    emptyState: 'No appointments connected yet.',
-    primaryActionLabel: 'New appointment',
-  },
-  {
-    path: '/calendar',
-    label: 'Calendar',
-    title: 'Calendar',
-    accessArea: 'bookings',
-    description: 'A routed calendar placeholder for weekly, daily and blocked-time scheduling views.',
-  },
-  {
-    path: '/clinical-notes',
-    label: 'Clinical Notes',
-    title: 'Clinical Notes',
-    accessArea: 'clinical',
-    description: 'A routed clinical notes placeholder for versioned notes, session feedback and internal process notes.',
-  },
-  {
-    path: '/documents',
-    label: 'Documents',
-    title: 'Documents',
-    accessArea: 'documents',
-    description: 'A routed documents placeholder for generated reports, uploaded files and future Supabase storage records.',
-    placeholderPattern: 'list',
-    searchPlaceholder: 'Search documents',
-    emptyState: 'No documents connected yet.',
-    primaryActionLabel: 'Upload document',
-  },
-  {
-    path: '/billing',
-    label: 'Billing',
-    title: 'Billing',
-    accessArea: 'finance',
-    description: 'A routed billing placeholder for procedures, ICD-10 codes, invoice creation and billing configuration workflows.',
-    placeholderPattern: 'list',
-    searchPlaceholder: 'Search billing items',
-    emptyState: 'No billing records connected yet.',
-    primaryActionLabel: 'New billing item',
+    description: 'Patient database, onboarding, history, Patient Link and document structure.',
+    placeholderPattern: 'patients',
   },
   {
     path: '/finance',
     label: 'Finance',
     title: 'Finance',
     accessArea: 'finance',
-    description: 'A routed finance placeholder for payments, statements, outstanding balances and financial reporting.',
-    placeholderPattern: 'list',
-    searchPlaceholder: 'Search finance records',
-    emptyState: 'No finance records connected yet.',
-    primaryActionLabel: 'New statement',
+    description: 'Billing queue, invoices, payments, statements, price lists and finance reports structure.',
+    placeholderPattern: 'finance',
   },
   {
-    path: '/reports',
-    label: 'Reports',
-    title: 'Reports',
-    accessArea: 'reports',
-    description: 'A routed reports placeholder for operational, financial and clinical reporting views.',
-    placeholderPattern: 'list',
-    searchPlaceholder: 'Search reports',
-    emptyState: 'No reports connected yet.',
-    primaryActionLabel: 'New report',
-  },
-  {
-    path: '/team',
-    label: 'Team',
-    title: 'Team',
+    path: '/practice',
+    label: 'Practice',
+    title: 'Practice',
     accessArea: 'settings',
-    description: 'A routed team placeholder for tenant users, therapists, receptionists and finance staff.',
-    placeholderPattern: 'list',
-    searchPlaceholder: 'Search team members',
-    emptyState: 'No team records connected yet.',
-    primaryActionLabel: 'Invite user',
+    description: 'Practice administration, locations, team, therapists, branding, banking and configuration structure.',
+    placeholderPattern: 'practice',
+  },
+  {
+    path: '/practice/profile',
+    label: 'Practice Profile',
+    title: 'Practice Profile',
+    accessArea: 'settings',
+    description: 'Create and maintain the current tenant practice profile.',
+    placeholderPattern: 'practiceProfile',
+    showInNav: false,
+  },
+  {
+    path: '/practice/locations',
+    label: 'Locations',
+    title: 'Practice Locations',
+    accessArea: 'settings',
+    description: 'Create and maintain active tenant practice locations.',
+    placeholderPattern: 'practiceLocations',
+    showInNav: false,
+  },
+  {
+    path: '/practice/therapists',
+    label: 'Therapists',
+    title: 'Therapist Profiles',
+    accessArea: 'practice_team',
+    description: 'Create and maintain therapist profiles and professional registrations.',
+    placeholderPattern: 'practiceTherapists',
+    showInNav: false,
+  },
+  {
+    path: '/practice/banking',
+    label: 'Banking Details',
+    title: 'Banking Details',
+    accessArea: 'practice_banking',
+    description: 'Create and maintain tenant-owned practice bank accounts.',
+    placeholderPattern: 'practiceBanking',
+    showInNav: false,
+  },
+  {
+    path: '/practice/billing',
+    label: 'Billing Configuration',
+    title: 'Billing Configuration',
+    accessArea: 'practice_billing',
+    description: 'Create and maintain tenant billing defaults.',
+    placeholderPattern: 'practiceBilling',
+    showInNav: false,
+  },
+  {
+    path: '/practice/branding',
+    label: 'Branding',
+    title: 'Practice Branding',
+    accessArea: 'settings',
+    description: 'Create and maintain tenant branding configuration.',
+    placeholderPattern: 'practiceBranding',
+    showInNav: false,
+  },
+  {
+    path: '/practice/communication-templates',
+    label: 'Communication Templates',
+    title: 'Communication Templates',
+    accessArea: 'settings',
+    description: 'Create and maintain manual message templates for future automation.',
+    placeholderPattern: 'practiceCommunicationTemplates',
+    showInNav: false,
   },
   {
     path: '/settings',
     label: 'Settings',
     title: 'Settings',
-    accessArea: 'settings',
-    description: 'A routed settings placeholder for practice, patient, billing, guide and release-note configuration.',
+    accessArea: 'overview',
+    description: 'Personal user settings for profile, notifications, password, appearance and calendar preferences.',
     placeholderPattern: 'settings',
   },
 ]
 
+const legacyRouteRedirects: Record<string, string> = {
+  '/dashboard': '/overview',
+  '/appointments': '/bookings',
+  '/calendar': '/bookings',
+  '/clinical-notes': '/patients',
+  '/documents': '/patients',
+  '/billing': '/finance',
+  '/reports': '/finance',
+  '/team': '/practice',
+}
+
 export function getRouteForPath(pathname: string) {
-  return appRoutes.find((route) => route.path === pathname) ?? appRoutes[0]
+  const redirectedPath = legacyRouteRedirects[pathname] ?? pathname
+  return appRoutes.find((route) => route.path === redirectedPath) ?? appRoutes[0]
 }
 
 export function AppRoutes() {
   return (
     <Routes>
-      <Route path="/" element={<Navigate to="/dashboard" replace />} />
+      <Route path="/" element={<Navigate to="/overview" replace />} />
+      {Object.entries(legacyRouteRedirects).map(([from, to]) => (
+        <Route path={from} element={<Navigate to={to} replace />} key={from} />
+      ))}
       {appRoutes.map((route) => (
         <Route
           path={route.path}
@@ -148,7 +175,7 @@ export function AppRoutes() {
           key={route.path}
         />
       ))}
-      <Route path="*" element={<Navigate to="/dashboard" replace />} />
+      <Route path="*" element={<Navigate to="/overview" replace />} />
     </Routes>
   )
 }
@@ -174,24 +201,19 @@ function AccessNotAllowed({ route }: { route: AppRoute }) {
 function PlaceholderPage({ route }: { route: AppRoute }) {
   return (
     <RoutedPageFrame route={route}>
-      {route.placeholderPattern === 'dashboard' ? (
-        <DashboardPage />
-      ) : route.placeholderPattern === 'list' ? (
-        <ListPagePlaceholder
-          title={route.title}
-          description={route.description}
-          searchPlaceholder={route.searchPlaceholder ?? `Search ${route.label.toLowerCase()}`}
-          emptyState={route.emptyState ?? `No ${route.label.toLowerCase()} records connected yet.`}
-          primaryActionLabel={route.primaryActionLabel}
-        />
-      ) : route.placeholderPattern === 'settings' ? (
-        <SettingsPage />
-      ) : (
-        <EmptyState
-          title={`${route.title} module placeholder`}
-          description="This routed workspace is ready for the production module implementation."
-        />
-      )}
+      {route.placeholderPattern === 'overview' && <OverviewPage />}
+      {route.placeholderPattern === 'bookings' && <BookingsPage />}
+      {route.placeholderPattern === 'patients' && <PatientsPage />}
+      {route.placeholderPattern === 'finance' && <FinancePage />}
+      {route.placeholderPattern === 'practice' && <PracticePage />}
+      {route.placeholderPattern === 'practiceBanking' && <PracticeBankingPage />}
+      {route.placeholderPattern === 'practiceBilling' && <PracticeBillingPage />}
+      {route.placeholderPattern === 'practiceBranding' && <PracticeBrandingPage />}
+      {route.placeholderPattern === 'practiceCommunicationTemplates' && <PracticeCommunicationTemplatesPage />}
+      {route.placeholderPattern === 'practiceProfile' && <PracticeProfilePage />}
+      {route.placeholderPattern === 'practiceLocations' && <PracticeLocationsPage />}
+      {route.placeholderPattern === 'practiceTherapists' && <PracticeTherapistsPage />}
+      {route.placeholderPattern === 'settings' && <SettingsPage />}
     </RoutedPageFrame>
   )
 }
@@ -210,8 +232,16 @@ function RoutedPageFrame({ route, children }: { route: AppRoute; children: React
 }
 
 function getRouteBreadcrumbs(route: AppRoute): BreadcrumbItem[] {
+  if (route.path.startsWith('/practice/') && route.path !== '/practice') {
+    return [
+      { label: 'Workspace', to: '/overview' },
+      { label: 'Practice', to: '/practice' },
+      { label: route.label },
+    ]
+  }
+
   return [
-    { label: 'Workspace', to: '/dashboard' },
+    { label: 'Workspace', to: '/overview' },
     { label: route.label },
   ]
 }
