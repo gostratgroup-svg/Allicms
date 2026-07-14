@@ -28,6 +28,16 @@ type SessionProcedureRow = Database['public']['Tables']['session_procedures']['R
 type SessionWorkflowEventRow = Database['public']['Tables']['session_workflow_events']['Row']
 type TherapistRow = Database['public']['Tables']['therapist_profiles']['Row']
 type LocationRow = Database['public']['Tables']['practice_locations']['Row']
+type FinancialAccountRow = Database['public']['Tables']['financial_accounts']['Row']
+type PaymentRow = Database['public']['Tables']['payments']['Row']
+type PaymentAllocationRow = Database['public']['Tables']['payment_allocations']['Row']
+type AccountCreditRow = Database['public']['Tables']['account_credits']['Row']
+type ReceiptRow = Database['public']['Tables']['receipts']['Row']
+type PaymentStatusHistoryRow = Database['public']['Tables']['payment_status_history']['Row']
+type PaymentWorkflowEventRow = Database['public']['Tables']['payment_workflow_events']['Row']
+type PatientHistoryEventRow = Database['public']['Tables']['patient_history_events']['Row']
+
+type FinanceSection = 'invoices' | 'payments' | 'accounts' | 'receipts'
 
 type DraftQueueItem = {
   session: SessionRow
@@ -87,10 +97,36 @@ type LineDraft = {
   deleted_at?: string | null
 }
 
+type AllocationDraft = {
+  invoice_id: string
+  amount: string
+}
+
+type PaymentForm = {
+  financial_account_id: string
+  patient_id: string
+  responsible_party_id: string
+  primary_invoice_id: string
+  payer_name: string
+  payment_date: string
+  amount: string
+  currency_code: string
+  payment_method: string
+  payment_reference: string
+  external_transaction_reference: string
+  notes: string
+  allocations: AllocationDraft[]
+}
+
 const editableStatuses = ['draft', 'review_required', 'ready_to_confirm']
 const confirmableStatuses = ['draft', 'ready_to_confirm']
 const immutableStatuses = ['confirmed', 'issued', 'awaiting_payment', 'partially_paid', 'paid', 'overdue', 'cancelled', 'voided', 'written_off']
-const statusOptions = ['all', 'draft', 'review_required', 'ready_to_confirm', 'confirmed', 'awaiting_payment', 'paid', 'cancelled', 'voided']
+const statusOptions = ['all', 'draft', 'review_required', 'ready_to_confirm', 'confirmed', 'awaiting_payment', 'partially_paid', 'paid', 'overdue', 'cancelled', 'voided']
+const paymentStatusOptions = ['all', 'recorded', 'unallocated', 'partially_allocated', 'allocated', 'reversed']
+const paymentMethodOptions = ['cash', 'eft', 'card', 'online', 'medical_aid', 'account_credit', 'other']
+const issueableStatuses = ['confirmed']
+const payableInvoiceStatuses = ['awaiting_payment', 'partially_paid', 'overdue']
+const paymentReferenceRequiredMethods = ['eft', 'card', 'online', 'medical_aid']
 const dateRangeOptions = [
   { value: 'all', label: 'All dates' },
   { value: '30', label: 'Past 30 days' },
@@ -123,11 +159,11 @@ function formatPatientName(patient: PatientRow | null | undefined) {
 }
 
 function getStatusTone(status: string): 'neutral' | 'success' | 'warning' | 'danger' | 'info' {
-  if (status === 'confirmed' || status === 'issued' || status === 'awaiting_payment') return 'success'
+  if (status === 'confirmed' || status === 'issued' || status === 'awaiting_payment' || status === 'allocated') return 'success'
   if (status === 'draft' || status === 'ready_to_confirm') return 'info'
-  if (status === 'review_required' || status === 'overdue' || status === 'partially_paid') return 'warning'
-  if (status === 'cancelled' || status === 'voided' || status === 'written_off') return 'danger'
-  if (status === 'paid') return 'success'
+  if (status === 'review_required' || status === 'overdue' || status === 'partially_paid' || status === 'partially_allocated' || status === 'unallocated') return 'warning'
+  if (status === 'cancelled' || status === 'voided' || status === 'written_off' || status === 'reversed' || status === 'failed') return 'danger'
+  if (status === 'paid' || status === 'recorded' || status === 'available') return 'success'
   return 'neutral'
 }
 
@@ -145,6 +181,20 @@ function getEventLabel(eventType: string) {
     patient_link_update_ready: 'Patient Link Update Ready',
     communication_ready: 'Communication Ready',
     pdf_generation_ready: 'PDF Generation Ready',
+    invoice_issued: 'Invoice Issued',
+    invoice_awaiting_payment: 'Awaiting Payment',
+    invoice_partially_paid: 'Partially Paid',
+    invoice_paid: 'Invoice Paid',
+    invoice_overdue: 'Invoice Overdue',
+    payment_recorded: 'Payment Recorded',
+    payment_allocated: 'Payment Allocated',
+    payment_partially_allocated: 'Partially Allocated',
+    payment_unallocated: 'Unallocated Balance',
+    payment_reversed: 'Payment Reversed',
+    allocation_reversed: 'Allocation Reversed',
+    receipt_created: 'Receipt Created',
+    receipt_ready: 'Receipt Ready',
+    account_credit_created: 'Account Credit Created',
   }
   return labels[eventType] ?? formatLabel(eventType)
 }
@@ -161,6 +211,20 @@ function getFriendlyFinanceError(error: unknown, fallback: string) {
   if (message.includes('requires at least one line')) return 'The invoice needs at least one line item before confirmation.'
   if (message.includes('requires a due date')) return 'Add a due date before confirming this invoice.'
   if (message.includes('requires reconciliation')) return 'This invoice needs reconciliation before it can be confirmed.'
+  if (message.includes('Only confirmed invoices can be issued')) return 'Only confirmed invoices can be issued.'
+  if (message.includes('Only confirmed, eligible')) return 'Only confirmed, eligible invoices can be issued.'
+  if (message.includes('Payment amount must be greater than zero')) return 'Payment amount must be greater than zero.'
+  if (message.includes('Payer name is required')) return 'Payer name is required.'
+  if (message.includes('Valid payment currency')) return 'Use a valid three-letter payment currency.'
+  if (message.includes('Allocation amount must be greater than zero')) return 'Allocation amount must be greater than zero.'
+  if (message.includes('Invoice is not eligible')) return 'That invoice is not eligible for payment allocation.'
+  if (message.includes('Payment and invoice currency must match')) return 'Payment and invoice currencies must match.'
+  if (message.includes('Allocation exceeds available payment balance')) return 'Allocation exceeds the available payment balance.'
+  if (message.includes('Allocation exceeds invoice balance')) return 'Allocation exceeds the current invoice balance.'
+  if (message.includes('Reversed payments cannot be allocated')) return 'Reversed payments cannot receive allocations.'
+  if (message.includes('Payment reversal reason is required')) return 'A payment reversal reason is required.'
+  if (message.includes('external transaction reference has already been recorded')) return 'This external transaction reference has already been recorded.'
+  if (message.includes('payments_unique_active_external_transaction_reference_idx')) return 'This external transaction reference has already been recorded for an active payment.'
   if (message.includes('duplicate key') || message.includes('23505')) return 'This action was already recorded. Refreshing will show the latest invoice state.'
   return message
 }
@@ -198,6 +262,58 @@ function toMoneyNumber(value: string, fallback = 0) {
 
 function getInvoiceDisplay(invoice: InvoiceRow) {
   return invoice.invoice_number ?? invoice.draft_reference
+}
+
+function getPaymentDisplay(payment: PaymentRow) {
+  return payment.payment_reference || payment.external_transaction_reference || `Payment ${payment.id.slice(0, 8)}`
+}
+
+function getEmptyPaymentForm(invoice?: InvoiceRow | null, patient?: PatientRow | null, responsibleParty?: ResponsiblePartyRow | null): PaymentForm {
+  const today = new Date().toISOString().slice(0, 10)
+  const balanceDue = Number(invoice?.balance_due ?? 0)
+  return {
+    financial_account_id: '',
+    patient_id: invoice?.patient_id ?? patient?.id ?? '',
+    responsible_party_id: invoice?.responsible_party_id ?? responsibleParty?.id ?? '',
+    primary_invoice_id: invoice?.id ?? '',
+    payer_name: responsibleParty?.full_name ?? (patient ? formatPatientName(patient) : ''),
+    payment_date: today,
+    amount: balanceDue > 0 ? String(balanceDue) : '',
+    currency_code: invoice?.currency_code ?? 'ZAR',
+    payment_method: 'eft',
+    payment_reference: '',
+    external_transaction_reference: '',
+    notes: '',
+    allocations: invoice ? [{ invoice_id: invoice.id, amount: balanceDue > 0 ? String(balanceDue) : '' }] : [],
+  }
+}
+
+function getOverdueDays(invoice: InvoiceRow) {
+  if (!invoice.due_date || Number(invoice.balance_due ?? 0) <= 0 || ['paid', 'voided', 'cancelled', 'written_off'].includes(invoice.invoice_status)) return 0
+  const dueTime = new Date(`${invoice.due_date}T00:00:00`).getTime()
+  const today = new Date()
+  today.setHours(0, 0, 0, 0)
+  return Math.max(0, Math.floor((today.getTime() - dueTime) / (24 * 60 * 60 * 1000)))
+}
+
+function getAllocationJson(allocations: AllocationDraft[]) {
+  return allocations
+    .map((allocation, index) => ({
+      invoice_id: allocation.invoice_id,
+      amount: toMoneyNumber(allocation.amount),
+      allocation_order: index + 1,
+    }))
+    .filter((allocation) => allocation.invoice_id && allocation.amount > 0)
+}
+
+function isValidIsoDate(value: string) {
+  if (!value) return false
+  const date = new Date(`${value}T00:00:00`)
+  return !Number.isNaN(date.getTime()) && value === date.toISOString().slice(0, 10)
+}
+
+function getActiveAllocationKey(paymentId: string, invoiceId: string) {
+  return `${paymentId}:${invoiceId}`
 }
 
 function isDraftEditable(invoice: InvoiceRow | null, canManageFinance: boolean) {
@@ -372,16 +488,32 @@ export function FinancePage() {
   const [sessionEvents, setSessionEvents] = useState<SessionWorkflowEventRow[]>([])
   const [therapists, setTherapists] = useState<TherapistRow[]>([])
   const [locations, setLocations] = useState<LocationRow[]>([])
+  const [financialAccounts, setFinancialAccounts] = useState<FinancialAccountRow[]>([])
+  const [payments, setPayments] = useState<PaymentRow[]>([])
+  const [paymentAllocations, setPaymentAllocations] = useState<PaymentAllocationRow[]>([])
+  const [accountCredits, setAccountCredits] = useState<AccountCreditRow[]>([])
+  const [receipts, setReceipts] = useState<ReceiptRow[]>([])
+  const [paymentStatusHistory, setPaymentStatusHistory] = useState<PaymentStatusHistoryRow[]>([])
+  const [paymentWorkflowEvents, setPaymentWorkflowEvents] = useState<PaymentWorkflowEventRow[]>([])
+  const [patientHistoryEvents, setPatientHistoryEvents] = useState<PatientHistoryEventRow[]>([])
+  const [activeSection, setActiveSection] = useState<FinanceSection>('invoices')
   const [selectedInvoiceId, setSelectedInvoiceId] = useState(searchParams.get('invoice') ?? '')
   const [selectedInvoiceDetail, setSelectedInvoiceDetail] = useState<InvoiceDetail | null>(null)
+  const [selectedPaymentId, setSelectedPaymentId] = useState(searchParams.get('payment') ?? '')
   const [search, setSearch] = useState('')
   const [statusFilter, setStatusFilter] = useState('all')
   const [dateRange, setDateRange] = useState('90')
+  const [paymentSearch, setPaymentSearch] = useState('')
+  const [paymentStatusFilter, setPaymentStatusFilter] = useState('all')
   const [therapistFilter, setTherapistFilter] = useState('all')
   const [locationFilter, setLocationFilter] = useState('all')
   const [reconciliationOnly, setReconciliationOnly] = useState(false)
   const [invoiceForm, setInvoiceForm] = useState<InvoiceDraftForm>(() => getEmptyInvoiceForm(null))
   const [lineDrafts, setLineDrafts] = useState<LineDraft[]>([])
+  const [paymentForm, setPaymentForm] = useState<PaymentForm>(() => getEmptyPaymentForm(null))
+  const [allocationDrafts, setAllocationDrafts] = useState<AllocationDraft[]>([])
+  const [showPaymentForm, setShowPaymentForm] = useState(false)
+  const [reversalReason, setReversalReason] = useState('')
   const [confirmReviewOpen, setConfirmReviewOpen] = useState(false)
 
   const patientById = useMemo(() => new Map(patients.map((patient) => [patient.id, patient])), [patients])
@@ -389,6 +521,28 @@ export function FinancePage() {
   const therapistById = useMemo(() => new Map(therapists.map((therapist) => [therapist.id, therapist])), [therapists])
   const locationById = useMemo(() => new Map(locations.map((location) => [location.id, location])), [locations])
   const sessionById = useMemo(() => new Map(sessions.map((session) => [session.id, session])), [sessions])
+  const financialAccountById = useMemo(() => new Map(financialAccounts.map((account) => [account.id, account])), [financialAccounts])
+  const paymentById = useMemo(() => new Map(payments.map((payment) => [payment.id, payment])), [payments])
+  const receiptByPaymentId = useMemo(() => {
+    const map = new Map<string, ReceiptRow>()
+    receipts.forEach((receipt) => map.set(receipt.payment_id, receipt))
+    return map
+  }, [receipts])
+  const allocationsByInvoiceId = useMemo(() => {
+    const map = new Map<string, PaymentAllocationRow[]>()
+    paymentAllocations.forEach((allocation) => {
+      if (allocation.allocation_status !== 'active') return
+      map.set(allocation.invoice_id, [...(map.get(allocation.invoice_id) ?? []), allocation])
+    })
+    return map
+  }, [paymentAllocations])
+  const allocationsByPaymentId = useMemo(() => {
+    const map = new Map<string, PaymentAllocationRow[]>()
+    paymentAllocations.forEach((allocation) => {
+      map.set(allocation.payment_id, [...(map.get(allocation.payment_id) ?? []), allocation])
+    })
+    return map
+  }, [paymentAllocations])
   const invoiceBySessionId = useMemo(() => {
     const map = new Map<string, InvoiceRow>()
     invoices.forEach((invoice) => {
@@ -444,6 +598,32 @@ export function FinancePage() {
     })
   }, [dateRange, invoices, locationFilter, patientById, reconciliationOnly, responsiblePartyById, search, statusFilter, therapistFilter])
 
+  const payableInvoices = useMemo(() => invoices.filter((invoice) => (
+    payableInvoiceStatuses.includes(invoice.invoice_status)
+    && Number(invoice.balance_due ?? 0) > 0
+    && !invoice.deleted_at
+  )), [invoices])
+
+  const filteredPayments = useMemo(() => {
+    const searchTerm = paymentSearch.trim().toLowerCase()
+    return payments.filter((payment) => {
+      if (paymentStatusFilter !== 'all' && payment.payment_status !== paymentStatusFilter) return false
+      if (!searchTerm) return true
+      const patient = payment.patient_id ? patientById.get(payment.patient_id) : null
+      const party = payment.responsible_party_id ? responsiblePartyById.get(payment.responsible_party_id) : null
+      return [
+        getPaymentDisplay(payment),
+        payment.payer_name,
+        payment.payment_method,
+        payment.payment_status,
+        payment.payment_reference,
+        payment.external_transaction_reference,
+        formatPatientName(patient),
+        party?.full_name,
+      ].filter(Boolean).join(' ').toLowerCase().includes(searchTerm)
+    })
+  }, [patientById, paymentSearch, paymentStatusFilter, payments, responsiblePartyById])
+
   const selectedInvoice = useMemo(() => invoices.find((invoice) => invoice.id === selectedInvoiceId) ?? null, [invoices, selectedInvoiceId])
   const selectedSession = selectedInvoice?.session_id ? sessionById.get(selectedInvoice.session_id) ?? null : null
   const selectedPatient = selectedInvoice ? patientById.get(selectedInvoice.patient_id) ?? null : null
@@ -451,6 +631,30 @@ export function FinancePage() {
   const selectedTherapist = selectedInvoice?.therapist_profile_id ? therapistById.get(selectedInvoice.therapist_profile_id) ?? null : null
   const selectedLocation = selectedInvoice?.practice_location_id ? locationById.get(selectedInvoice.practice_location_id) ?? null : null
   const selectedIsEditable = isDraftEditable(selectedInvoice, canManageFinance)
+  const selectedInvoiceAllocations = selectedInvoice ? allocationsByInvoiceId.get(selectedInvoice.id) ?? [] : []
+  const selectedInvoiceOverdueDays = selectedInvoice ? getOverdueDays(selectedInvoice) : 0
+  const selectedPayment = useMemo(() => payments.find((payment) => payment.id === selectedPaymentId) ?? null, [payments, selectedPaymentId])
+  const selectedPaymentPatient = selectedPayment?.patient_id ? patientById.get(selectedPayment.patient_id) ?? null : null
+  const selectedPaymentResponsibleParty = selectedPayment?.responsible_party_id ? responsiblePartyById.get(selectedPayment.responsible_party_id) ?? null : null
+  const selectedPaymentAccount = selectedPayment?.financial_account_id ? financialAccountById.get(selectedPayment.financial_account_id) ?? null : null
+  const selectedPaymentAllocations = selectedPayment ? allocationsByPaymentId.get(selectedPayment.id) ?? [] : []
+  const selectedPaymentReceipt = selectedPayment ? receiptByPaymentId.get(selectedPayment.id) ?? null : null
+  const selectedPaymentHistory = useMemo(
+    () => selectedPayment ? paymentStatusHistory.filter((event) => event.payment_id === selectedPayment.id) : [],
+    [paymentStatusHistory, selectedPayment],
+  )
+  const selectedPaymentEvents = useMemo(
+    () => selectedPayment ? paymentWorkflowEvents.filter((event) => event.payment_id === selectedPayment.id) : [],
+    [paymentWorkflowEvents, selectedPayment],
+  )
+  const selectedInvoicePatientHistory = useMemo(
+    () => selectedInvoice ? patientHistoryEvents.filter((event) => event.patient_id === selectedInvoice.patient_id && event.source_id === selectedInvoice.id) : [],
+    [patientHistoryEvents, selectedInvoice],
+  )
+  const selectedPaymentPatientHistory = useMemo(
+    () => selectedPayment ? patientHistoryEvents.filter((event) => event.patient_id === selectedPayment.patient_id && event.source_id === selectedPayment.id) : [],
+    [patientHistoryEvents, selectedPayment],
+  )
   const confirmationBlocker = useMemo(
     () => validateReadyToConfirm(selectedInvoiceDetail, invoiceForm, lineDrafts),
     [invoiceForm, lineDrafts, selectedInvoiceDetail],
@@ -486,6 +690,14 @@ export function FinancePage() {
         eventResult,
         therapistResult,
         locationResult,
+        accountResult,
+        paymentResult,
+        allocationResult,
+        creditResult,
+        receiptResult,
+        paymentHistoryResult,
+        paymentWorkflowResult,
+        patientHistoryResult,
       ] = await Promise.all([
         supabase.from('invoices').select('*').eq('tenant_id', tenantId).is('deleted_at', null).order('created_at', { ascending: false }),
         supabase.from('patients').select('*').eq('tenant_id', tenantId).is('deleted_at', null),
@@ -495,6 +707,14 @@ export function FinancePage() {
         supabase.from('session_workflow_events').select('*').eq('tenant_id', tenantId).eq('event_type', 'draft_invoice_requested').is('deleted_at', null).order('created_at', { ascending: false }),
         supabase.from('therapist_profiles').select('*').eq('tenant_id', tenantId).is('deleted_at', null),
         supabase.from('practice_locations').select('*').eq('tenant_id', tenantId).is('deleted_at', null),
+        supabase.from('financial_accounts').select('*').eq('tenant_id', tenantId).is('deleted_at', null).order('account_name'),
+        supabase.from('payments').select('*').eq('tenant_id', tenantId).is('deleted_at', null).order('payment_date', { ascending: false }),
+        supabase.from('payment_allocations').select('*').eq('tenant_id', tenantId).is('deleted_at', null).order('allocated_at', { ascending: false }),
+        supabase.from('account_credits').select('*').eq('tenant_id', tenantId).is('deleted_at', null).order('created_at', { ascending: false }),
+        supabase.from('receipts').select('*').eq('tenant_id', tenantId).is('deleted_at', null).order('issued_at', { ascending: false }),
+        supabase.from('payment_status_history').select('*').eq('tenant_id', tenantId).is('deleted_at', null).order('created_at', { ascending: false }),
+        supabase.from('payment_workflow_events').select('*').eq('tenant_id', tenantId).is('deleted_at', null).order('created_at', { ascending: false }),
+        supabase.from('patient_history_events').select('*').eq('tenant_id', tenantId).is('deleted_at', null).in('source_table', ['invoices', 'payments', 'payment_allocations', 'receipts']).order('occurred_at', { ascending: false }),
       ])
 
       if (invoiceResult.error) throw invoiceResult.error
@@ -505,6 +725,14 @@ export function FinancePage() {
       if (eventResult.error) throw eventResult.error
       if (therapistResult.error) throw therapistResult.error
       if (locationResult.error) throw locationResult.error
+      if (accountResult.error) throw accountResult.error
+      if (paymentResult.error) throw paymentResult.error
+      if (allocationResult.error) throw allocationResult.error
+      if (creditResult.error) throw creditResult.error
+      if (receiptResult.error) throw receiptResult.error
+      if (paymentHistoryResult.error) throw paymentHistoryResult.error
+      if (paymentWorkflowResult.error) throw paymentWorkflowResult.error
+      if (patientHistoryResult.error) throw patientHistoryResult.error
 
       setInvoices(invoiceResult.data ?? [])
       setPatients(patientResult.data ?? [])
@@ -514,6 +742,14 @@ export function FinancePage() {
       setSessionEvents(eventResult.data ?? [])
       setTherapists(therapistResult.data ?? [])
       setLocations(locationResult.data ?? [])
+      setFinancialAccounts(accountResult.data ?? [])
+      setPayments(paymentResult.data ?? [])
+      setPaymentAllocations(allocationResult.data ?? [])
+      setAccountCredits(creditResult.data ?? [])
+      setReceipts(receiptResult.data ?? [])
+      setPaymentStatusHistory(paymentHistoryResult.data ?? [])
+      setPaymentWorkflowEvents(paymentWorkflowResult.data ?? [])
+      setPatientHistoryEvents(patientHistoryResult.data ?? [])
     } catch (error) {
       setLoadError(getFriendlyFinanceError(error, 'Finance records could not be loaded.'))
     } finally {
@@ -581,6 +817,11 @@ export function FinancePage() {
   }, [invoices, selectedInvoiceId])
 
   useEffect(() => {
+    if (!selectedPaymentId && payments[0]) setSelectedPaymentId(payments[0].id)
+    if (selectedPaymentId && payments.length && !payments.some((payment) => payment.id === selectedPaymentId)) setSelectedPaymentId(payments[0].id)
+  }, [payments, selectedPaymentId])
+
+  useEffect(() => {
     if (filteredInvoices.length && selectedInvoiceId && !filteredInvoices.some((invoice) => invoice.id === selectedInvoiceId)) {
       setSelectedInvoiceId(filteredInvoices[0].id)
     }
@@ -588,15 +829,40 @@ export function FinancePage() {
 
   useEffect(() => {
     if (selectedInvoiceId) {
-      setSearchParams({ invoice: selectedInvoiceId }, { replace: true })
+      setSearchParams((current) => {
+        const next = new URLSearchParams(current)
+        next.set('invoice', selectedInvoiceId)
+        if (selectedPaymentId) next.set('payment', selectedPaymentId)
+        return next
+      }, { replace: true })
       loadInvoiceDetail(selectedInvoiceId)
     } else {
-      setSearchParams({}, { replace: true })
+      setSearchParams((current) => {
+        const next = new URLSearchParams(current)
+        next.delete('invoice')
+        if (selectedPaymentId) next.set('payment', selectedPaymentId)
+        return next
+      }, { replace: true })
       setSelectedInvoiceDetail(null)
     }
-  }, [loadInvoiceDetail, selectedInvoiceId, setSearchParams])
+  }, [loadInvoiceDetail, selectedInvoiceId, selectedPaymentId, setSearchParams])
+
+  useEffect(() => {
+    setSearchParams((current) => {
+      const next = new URLSearchParams(current)
+      if (selectedPaymentId) next.set('payment', selectedPaymentId)
+      else next.delete('payment')
+      if (selectedInvoiceId) next.set('invoice', selectedInvoiceId)
+      return next
+    }, { replace: true })
+  }, [selectedInvoiceId, selectedPaymentId, setSearchParams])
 
   const refreshSelectedInvoice = async (invoiceId = selectedInvoiceId) => {
+    await refreshWorkspace()
+    if (invoiceId) await loadInvoiceDetail(invoiceId)
+  }
+
+  const refreshFinanceState = async (invoiceId = selectedInvoiceId) => {
     await refreshWorkspace()
     if (invoiceId) await loadInvoiceDetail(invoiceId)
   }
@@ -612,6 +878,72 @@ export function FinancePage() {
       .single()
     if (result.error) throw result.error
     return result.data
+  }
+
+  const loadFreshPayment = async (paymentId: string) => {
+    if (!supabase || !activeTenant?.id) throw new Error('Payment workspace is not ready.')
+    const result = await supabase
+      .from('payments')
+      .select('*')
+      .eq('id', paymentId)
+      .eq('tenant_id', activeTenant.id)
+      .is('deleted_at', null)
+      .single()
+    if (result.error) throw result.error
+    return result.data
+  }
+
+  const loadFreshInvoices = async (invoiceIds: string[]) => {
+    const uniqueIds = Array.from(new Set(invoiceIds.filter(Boolean)))
+    if (!uniqueIds.length) return new Map<string, InvoiceRow>()
+    if (!supabase || !activeTenant?.id) throw new Error('Invoice workspace is not ready.')
+    const result = await supabase
+      .from('invoices')
+      .select('*')
+      .eq('tenant_id', activeTenant.id)
+      .in('id', uniqueIds)
+      .is('deleted_at', null)
+    if (result.error) throw result.error
+    return new Map((result.data ?? []).map((invoice) => [invoice.id, invoice]))
+  }
+
+  const validateAccountContext = (accountId: string, patientId: string, responsiblePartyId: string) => {
+    if (!accountId) return ''
+    const account = financialAccountById.get(accountId)
+    if (!account) return 'Selected financial account is no longer available.'
+    if (account.account_status !== 'active') return 'Selected financial account is not active.'
+    if (account.patient_id && patientId && account.patient_id !== patientId) return 'Selected financial account belongs to a different patient.'
+    if (account.responsible_party_id && responsiblePartyId && account.responsible_party_id !== responsiblePartyId) return 'Selected financial account belongs to a different responsible party.'
+    return ''
+  }
+
+  const validateAllocationSet = async (allocations: AllocationDraft[], currencyCode: string, availableAmount: number, paymentId?: string) => {
+    const allocationPayload = getAllocationJson(allocations)
+    if (!allocationPayload.length) return { error: '', allocations: allocationPayload }
+    const freshInvoices = await loadFreshInvoices(allocationPayload.map((allocation) => allocation.invoice_id))
+    const seenKeys = new Set<string>()
+    let runningTotal = 0
+
+    for (const allocation of allocationPayload) {
+      const invoice = freshInvoices.get(allocation.invoice_id)
+      if (!invoice) return { error: 'One of the selected invoices is no longer available.', allocations: allocationPayload }
+      if (!payableInvoiceStatuses.includes(invoice.invoice_status)) return { error: `${getInvoiceDisplay(invoice)} is not eligible for payment allocation.`, allocations: allocationPayload }
+      if (Number(invoice.balance_due ?? 0) <= 0) return { error: `${getInvoiceDisplay(invoice)} has no outstanding balance.`, allocations: allocationPayload }
+      if (invoice.currency_code !== currencyCode) return { error: `${getInvoiceDisplay(invoice)} uses ${invoice.currency_code}, which does not match this payment currency.`, allocations: allocationPayload }
+      if (allocation.amount > Number(invoice.balance_due ?? 0)) return { error: `Allocation for ${getInvoiceDisplay(invoice)} exceeds the current invoice balance.`, allocations: allocationPayload }
+      if (paymentId) {
+        const key = getActiveAllocationKey(paymentId, invoice.id)
+        if (seenKeys.has(key)) return { error: `Duplicate allocation entry for ${getInvoiceDisplay(invoice)}.`, allocations: allocationPayload }
+        if (paymentAllocations.some((existing) => existing.payment_id === paymentId && existing.invoice_id === invoice.id && existing.allocation_status === 'active')) {
+          return { error: `${getInvoiceDisplay(invoice)} already has an active allocation from this payment.`, allocations: allocationPayload }
+        }
+        seenKeys.add(key)
+      }
+      runningTotal += allocation.amount
+    }
+
+    if (runningTotal > availableAmount) return { error: 'Allocation total exceeds the available payment amount.', allocations: allocationPayload }
+    return { error: '', allocations: allocationPayload }
   }
 
   const createDraftFromSession = async (sessionId: string) => {
@@ -940,6 +1272,259 @@ export function FinancePage() {
     }
   }
 
+  const issueSelectedInvoice = async () => {
+    if (!supabase || !selectedInvoice || !canManageFinance || saving) return
+    if (!issueableStatuses.includes(selectedInvoice.invoice_status)) {
+      setActionError('Only confirmed invoices can be issued.')
+      return
+    }
+    if (selectedInvoice.reconciliation_required) {
+      setActionError('Resolve invoice reconciliation before issuing this invoice.')
+      return
+    }
+    setSaving(true)
+    setActionError('')
+    setSuccessMessage('')
+    try {
+      const freshInvoice = await loadFreshInvoice(selectedInvoice.id)
+      if (freshInvoice.updated_at !== selectedInvoice.updated_at || freshInvoice.invoice_status !== selectedInvoice.invoice_status) {
+        await refreshSelectedInvoice(selectedInvoice.id)
+        throw new Error('This invoice changed before issuing. The latest invoice has been loaded; please review and issue again.')
+      }
+      const result = await supabase.rpc('issue_invoice', { target_invoice_id: selectedInvoice.id })
+      if (result.error) throw result.error
+      const row = result.data?.[0]
+      if (!row?.invoice_id) throw new Error('Invoice issuing did not return an invoice.')
+      const issuedInvoice = await loadFreshInvoice(row.invoice_id)
+      if (!issuedInvoice.issued_at || !['issued', 'awaiting_payment', 'partially_paid', 'paid', 'overdue'].includes(issuedInvoice.invoice_status)) {
+        await refreshSelectedInvoice(row.invoice_id)
+        throw new Error('The invoice was not returned in an issued payment state. Please refresh and review before continuing.')
+      }
+      await refreshFinanceState(row.invoice_id)
+      setSuccessMessage(row.issued_invoice ? 'Invoice issued and awaiting payment.' : 'Invoice was already issued.')
+    } catch (error) {
+      setActionError(getFriendlyFinanceError(error, 'Invoice could not be issued.'))
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  const openPaymentFormForInvoice = (invoice: InvoiceRow) => {
+    const patient = patientById.get(invoice.patient_id) ?? null
+    const party = invoice.responsible_party_id ? responsiblePartyById.get(invoice.responsible_party_id) ?? null : null
+    const account = financialAccounts.find((item) => (
+      (invoice.responsible_party_id && item.responsible_party_id === invoice.responsible_party_id)
+      || item.patient_id === invoice.patient_id
+    ))
+    setPaymentForm({
+      ...getEmptyPaymentForm(invoice, patient, party),
+      financial_account_id: account?.id ?? '',
+    })
+    setShowPaymentForm(true)
+    setActiveSection('payments')
+  }
+
+  const addPaymentAllocationDraft = () => {
+    setPaymentForm((current) => ({
+      ...current,
+      allocations: [...current.allocations, { invoice_id: '', amount: '' }],
+    }))
+  }
+
+  const updatePaymentAllocationDraft = (index: number, field: keyof AllocationDraft, value: string) => {
+    setPaymentForm((current) => ({
+      ...current,
+      allocations: current.allocations.map((allocation, allocationIndex) => allocationIndex === index ? { ...allocation, [field]: value } : allocation),
+    }))
+  }
+
+  const removePaymentAllocationDraft = (index: number) => {
+    setPaymentForm((current) => ({
+      ...current,
+      allocations: current.allocations.filter((_, allocationIndex) => allocationIndex !== index),
+    }))
+  }
+
+  const savePayment = async () => {
+    if (!supabase || !activeTenant?.id || !canManageFinance || saving) return
+    const amount = toMoneyNumber(paymentForm.amount)
+    const currencyCode = paymentForm.currency_code.trim().toUpperCase() || 'ZAR'
+    if (!paymentForm.payer_name.trim()) {
+      setActionError('Payer name is required.')
+      return
+    }
+    if (amount <= 0) {
+      setActionError('Payment amount must be greater than zero.')
+      return
+    }
+    if (!paymentForm.payment_date) {
+      setActionError('Payment date is required.')
+      return
+    }
+    if (!isValidIsoDate(paymentForm.payment_date)) {
+      setActionError('Payment date must be a valid date.')
+      return
+    }
+    if (!paymentMethodOptions.includes(paymentForm.payment_method)) {
+      setActionError('Choose a valid payment method.')
+      return
+    }
+    if (paymentReferenceRequiredMethods.includes(paymentForm.payment_method) && !paymentForm.payment_reference.trim() && !paymentForm.external_transaction_reference.trim()) {
+      setActionError('This payment method requires a payment reference or external transaction reference.')
+      return
+    }
+    if (currencyCode.length !== 3) {
+      setActionError('Payment currency must be a valid three-letter code.')
+      return
+    }
+    const contextError = validateAccountContext(paymentForm.financial_account_id, paymentForm.patient_id, paymentForm.responsible_party_id)
+    if (contextError) {
+      setActionError(contextError)
+      return
+    }
+    setSaving(true)
+    setActionError('')
+    setSuccessMessage('')
+    try {
+      const duplicateExternalReference = paymentForm.external_transaction_reference.trim()
+        ? payments.some((payment) => (
+            payment.external_transaction_reference === paymentForm.external_transaction_reference.trim()
+            && payment.payment_status !== 'reversed'
+          ))
+        : false
+      if (duplicateExternalReference) throw new Error('This external transaction reference has already been recorded.')
+
+      const validation = await validateAllocationSet(paymentForm.allocations, currencyCode, amount)
+      if (validation.error) throw new Error(validation.error)
+
+      const result = await supabase.rpc('record_payment', {
+        target_tenant_id: activeTenant.id,
+        financial_account_id_input: paymentForm.financial_account_id || null,
+        patient_id_input: paymentForm.patient_id || null,
+        responsible_party_id_input: paymentForm.responsible_party_id || null,
+        primary_invoice_id_input: paymentForm.primary_invoice_id || null,
+        payer_name_input: paymentForm.payer_name.trim(),
+        payment_date_input: paymentForm.payment_date,
+        amount_input: amount,
+        currency_code_input: currencyCode,
+        payment_method_input: paymentForm.payment_method,
+        payment_reference_input: paymentForm.payment_reference.trim() || null,
+        external_transaction_reference_input: paymentForm.external_transaction_reference.trim() || null,
+        bank_account_id_input: null,
+        therapist_profile_id_input: null,
+        practice_location_id_input: null,
+        notes_input: paymentForm.notes.trim() || null,
+        allocations_input: validation.allocations as Json,
+      })
+      if (result.error) throw result.error
+      const row = result.data?.[0]
+      if (!row?.payment_id) throw new Error('Payment recording did not return a payment.')
+      const verifiedPayment = await loadFreshPayment(row.payment_id)
+      if (verifiedPayment.payment_status !== row.payment_status) throw new Error('Payment was recorded, but the reloaded payment status did not match the RPC result. Please refresh and review before continuing.')
+      if (Number(verifiedPayment.amount) !== amount) throw new Error('Payment was recorded, but the reloaded amount did not match the submitted amount. Please review the payment before continuing.')
+      await refreshFinanceState(paymentForm.primary_invoice_id || selectedInvoiceId)
+      setSelectedPaymentId(row.payment_id)
+      setShowPaymentForm(false)
+      setPaymentForm(getEmptyPaymentForm(null))
+      setSuccessMessage(`Payment recorded. Status: ${formatLabel(row.payment_status)}.`)
+    } catch (error) {
+      setActionError(getFriendlyFinanceError(error, 'Payment could not be recorded.'))
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  const addAllocationDraft = () => {
+    setAllocationDrafts((current) => [...current, { invoice_id: '', amount: '' }])
+  }
+
+  const updateAllocationDraft = (index: number, field: keyof AllocationDraft, value: string) => {
+    setAllocationDrafts((current) => current.map((allocation, allocationIndex) => allocationIndex === index ? { ...allocation, [field]: value } : allocation))
+  }
+
+  const removeAllocationDraft = (index: number) => {
+    setAllocationDrafts((current) => current.filter((_, allocationIndex) => allocationIndex !== index))
+  }
+
+  const allocateSelectedPayment = async () => {
+    if (!supabase || !selectedPayment || !canManageFinance || saving) return
+    if (selectedPayment.payment_status === 'reversed') {
+      setActionError('Reversed payments cannot receive allocations.')
+      return
+    }
+    setSaving(true)
+    setActionError('')
+    setSuccessMessage('')
+    try {
+      const freshPayment = await loadFreshPayment(selectedPayment.id)
+      if (freshPayment.updated_at !== selectedPayment.updated_at || freshPayment.payment_status !== selectedPayment.payment_status || Number(freshPayment.unallocated_amount) !== Number(selectedPayment.unallocated_amount)) {
+        await refreshFinanceState()
+        throw new Error('This payment changed while you were reviewing it. The latest payment has been loaded; please review before allocating again.')
+      }
+      const validation = await validateAllocationSet(allocationDrafts, freshPayment.currency_code, Number(freshPayment.unallocated_amount), freshPayment.id)
+      if (!validation.allocations.length) throw new Error('Add at least one invoice allocation.')
+      if (validation.error) throw new Error(validation.error)
+      const result = await supabase.rpc('allocate_payment', {
+        target_payment_id: selectedPayment.id,
+        allocations: validation.allocations as Json,
+      })
+      if (result.error) throw result.error
+      const row = result.data?.[0]
+      if (!row?.payment_id) throw new Error('Payment allocation did not return a payment.')
+      const verifiedPayment = await loadFreshPayment(row.payment_id)
+      if (verifiedPayment.payment_status !== row.payment_status || Number(verifiedPayment.unallocated_amount) !== Number(row.unallocated_amount)) {
+        throw new Error('Payment allocation completed, but the reloaded payment status or balance did not match the RPC result. Please refresh and review.')
+      }
+      await refreshFinanceState()
+      setAllocationDrafts([])
+      setSuccessMessage(`Payment allocation saved. Status: ${formatLabel(row.payment_status)}.`)
+    } catch (error) {
+      setActionError(getFriendlyFinanceError(error, 'Payment could not be allocated.'))
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  const reverseSelectedPayment = async () => {
+    if (!supabase || !selectedPayment || !canManageFinance || saving) return
+    if (selectedPayment.payment_status === 'reversed') {
+      setActionError('This payment has already been reversed.')
+      return
+    }
+    if (!reversalReason.trim()) {
+      setActionError('A reversal reason is required.')
+      return
+    }
+    const confirmed = window.confirm('Reverse this payment and all active allocations? This keeps an auditable reversal history.')
+    if (!confirmed) return
+    setSaving(true)
+    setActionError('')
+    setSuccessMessage('')
+    try {
+      const freshPayment = await loadFreshPayment(selectedPayment.id)
+      if (freshPayment.updated_at !== selectedPayment.updated_at || freshPayment.payment_status !== selectedPayment.payment_status) {
+        await refreshFinanceState()
+        throw new Error('This payment changed while you were reviewing it. The latest payment has been loaded; please review before reversing again.')
+      }
+      const result = await supabase.rpc('reverse_payment', {
+        target_payment_id: selectedPayment.id,
+        reversal_reason_input: reversalReason.trim(),
+      })
+      if (result.error) throw result.error
+      const row = result.data?.[0]
+      if (!row?.payment_id) throw new Error('Payment reversal did not return a payment.')
+      const verifiedPayment = await loadFreshPayment(row.payment_id)
+      if (verifiedPayment.payment_status !== 'reversed' || !verifiedPayment.reversed_at) throw new Error('Payment reversal returned, but the payment was not verified as reversed. Please refresh and review.')
+      await refreshFinanceState()
+      setReversalReason('')
+      setSuccessMessage(row.reversed_payment ? 'Payment reversed and affected invoice balances refreshed.' : 'Payment was already reversed.')
+    } catch (error) {
+      setActionError(getFriendlyFinanceError(error, 'Payment could not be reversed.'))
+    } finally {
+      setSaving(false)
+    }
+  }
+
   const addManualLine = () => {
     setLineDrafts((current) => [...current, getInitialLineDraft(undefined, current.length + 1)])
   }
@@ -967,6 +1552,20 @@ export function FinancePage() {
         </div>
       )}
 
+      <div className="finance-tabs" role="tablist" aria-label="Finance workspace sections">
+        {(['invoices', 'payments', 'accounts', 'receipts'] satisfies FinanceSection[]).map((section) => (
+          <button
+            key={section}
+            type="button"
+            className={activeSection === section ? 'active' : ''}
+            onClick={() => setActiveSection(section)}
+          >
+            {formatLabel(section)}
+          </button>
+        ))}
+      </div>
+
+      {activeSection === 'invoices' && (
       <div className="finance-grid">
         <div className="finance-left-column">
           <Card className="finance-panel">
@@ -1113,9 +1712,21 @@ export function FinancePage() {
                   <div><span>Created</span><strong>{formatDateTime(selectedInvoice.created_at)}</strong></div>
                   <div><span>Updated</span><strong>{formatDateTime(selectedInvoice.updated_at)}</strong></div>
                   <div><span>Confirmed</span><strong>{formatDateTime(selectedInvoice.confirmed_at)}</strong></div>
+                  <div><span>Issued</span><strong>{formatDateTime(selectedInvoice.issued_at)}</strong></div>
                   <div><span>Due date</span><strong>{formatDate(selectedInvoice.due_date)}</strong></div>
+                  <div><span>Payment status</span><strong>{formatLabel(selectedInvoice.payment_status)}</strong></div>
+                  <div><span>Amount paid</span><strong>{formatMoney(selectedInvoice.amount_paid, selectedInvoice.currency_code)}</strong></div>
+                  <div><span>Balance due</span><strong>{formatMoney(selectedInvoice.balance_due, selectedInvoice.currency_code)}</strong></div>
+                  <div><span>Allocations</span><strong>{selectedInvoiceAllocations.length}</strong></div>
+                  <div><span>Overdue</span><strong>{selectedInvoiceOverdueDays > 0 ? `${selectedInvoiceOverdueDays} day${selectedInvoiceOverdueDays === 1 ? '' : 's'} overdue` : 'No'}</strong></div>
                   <div><span>Manual edit</span><strong>{selectedInvoice.manually_edited ? selectedInvoice.manual_edit_reason ?? 'Yes' : 'No'}</strong></div>
                 </div>
+                {selectedInvoiceOverdueDays > 0 && (
+                  <div className="finance-warning-box">
+                    <strong>Payment overdue</strong>
+                    <span>This invoice is {selectedInvoiceOverdueDays} day{selectedInvoiceOverdueDays === 1 ? '' : 's'} overdue based on the database due date and balance due.</span>
+                  </div>
+                )}
                 {selectedInvoice.reconciliation_required && (
                   <div className="finance-warning-box">
                     <strong>Reconciliation required</strong>
@@ -1125,6 +1736,10 @@ export function FinancePage() {
                 <div className="finance-trace-note">
                   <strong>Traceability boundary</strong>
                   <span>Session procedures remain the delivered-care source. Invoice line edits change this invoice snapshot only and never rewrite the source session.</span>
+                </div>
+                <div className="finance-actions-row">
+                  <Button variant="secondary" onClick={issueSelectedInvoice} disabled={saving || !canManageFinance || !issueableStatuses.includes(selectedInvoice.invoice_status)}>Issue invoice</Button>
+                  <Button variant="secondary" onClick={() => openPaymentFormForInvoice(selectedInvoice)} disabled={saving || !canManageFinance || !payableInvoiceStatuses.includes(selectedInvoice.invoice_status) || Number(selectedInvoice.balance_due ?? 0) <= 0}>Record payment</Button>
                 </div>
               </Card>
 
@@ -1268,6 +1883,24 @@ export function FinancePage() {
                     )) : <EmptyState title="No workflow events yet" description="Invoice automation markers will appear here." />}
                   </div>
                 </Card>
+
+                <Card className="finance-panel">
+                  <div className="finance-panel-header">
+                    <div>
+                      <p>Patient history</p>
+                      <h3>Finance timeline verification</h3>
+                    </div>
+                  </div>
+                  <div className="finance-event-list">
+                    {selectedInvoicePatientHistory.length ? selectedInvoicePatientHistory.map((event) => (
+                      <article key={event.id}>
+                        <strong>{event.event_title}</strong>
+                        <span>{event.event_body ?? formatLabel(event.event_type)}</span>
+                        <small>{formatDateTime(event.occurred_at)} · {event.is_patient_visible ? 'Patient visible' : 'Internal only'}</small>
+                      </article>
+                    )) : <EmptyState title="No finance patient history" description="Invoice finance events written to patient history will appear here." />}
+                  </div>
+                </Card>
               </div>
 
               {confirmReviewOpen && (
@@ -1308,6 +1941,345 @@ export function FinancePage() {
           )}
         </div>
       </div>
+      )}
+
+      {activeSection === 'payments' && (
+        <div className="finance-grid">
+          <div className="finance-left-column">
+            <Card className="finance-panel">
+              <div className="finance-panel-header">
+                <div>
+                  <p>Payments</p>
+                  <h3>Recorded payments</h3>
+                </div>
+                <div className="finance-actions-row compact">
+                  <StatusBadge tone="neutral">{filteredPayments.length}</StatusBadge>
+                  <Button onClick={() => {
+                    setPaymentForm(getEmptyPaymentForm(selectedInvoice, selectedPatient, selectedResponsibleParty))
+                    setShowPaymentForm(true)
+                  }} disabled={saving || !canManageFinance}>Record payment</Button>
+                </div>
+              </div>
+              <div className="finance-filters payment-filters">
+                <SearchBar label="Search payments" value={paymentSearch} placeholder="Payer, reference or patient" onChange={setPaymentSearch} />
+                <label>
+                  <span>Status</span>
+                  <select value={paymentStatusFilter} onChange={(event) => setPaymentStatusFilter(event.target.value)}>
+                    {paymentStatusOptions.map((status) => <option key={status} value={status}>{formatLabel(status)}</option>)}
+                  </select>
+                </label>
+              </div>
+              <div className="invoice-record-list">
+                {filteredPayments.length ? filteredPayments.map((payment) => {
+                  const patient = payment.patient_id ? patientById.get(payment.patient_id) : null
+                  const allocations = allocationsByPaymentId.get(payment.id) ?? []
+                  return (
+                    <button
+                      key={payment.id}
+                      type="button"
+                      className={payment.id === selectedPaymentId ? 'active' : ''}
+                      onClick={() => setSelectedPaymentId(payment.id)}
+                    >
+                      <div>
+                        <strong>{getPaymentDisplay(payment)}</strong>
+                        <span>{payment.payer_name} · {formatPatientName(patient)}</span>
+                        <small>{formatDate(payment.payment_date)} · {formatLabel(payment.payment_method)} · {allocations.length} allocation(s)</small>
+                      </div>
+                      <div>
+                        <StatusBadge tone={getStatusTone(payment.payment_status)}>{formatLabel(payment.payment_status)}</StatusBadge>
+                        <b>{formatMoney(payment.amount, payment.currency_code)}</b>
+                        <small>Unallocated {formatMoney(payment.unallocated_amount, payment.currency_code)}</small>
+                      </div>
+                    </button>
+                  )
+                }) : (
+                  <EmptyState title="No payments found" description="Recorded payments and allocation history will appear here." />
+                )}
+              </div>
+            </Card>
+
+            {showPaymentForm && (
+              <Card className="finance-panel">
+                <div className="finance-panel-header">
+                  <div>
+                    <p>Payment recording</p>
+                    <h3>Capture payment and allocations</h3>
+                  </div>
+                  <Button variant="ghost" onClick={() => setShowPaymentForm(false)} disabled={saving}>Close</Button>
+                </div>
+                <div className="invoice-edit-grid">
+                  <label><span>Payer</span><input value={paymentForm.payer_name} onChange={(event) => setPaymentForm((current) => ({ ...current, payer_name: event.target.value }))} /></label>
+                  <label><span>Payment date</span><input type="date" value={paymentForm.payment_date} onChange={(event) => setPaymentForm((current) => ({ ...current, payment_date: event.target.value }))} /></label>
+                  <label><span>Amount</span><input type="number" min="0.01" step="0.01" value={paymentForm.amount} onChange={(event) => setPaymentForm((current) => ({ ...current, amount: event.target.value }))} /></label>
+                  <label><span>Currency</span><input maxLength={3} value={paymentForm.currency_code} onChange={(event) => setPaymentForm((current) => ({ ...current, currency_code: event.target.value.toUpperCase() }))} /></label>
+                  <label><span>Method</span><select value={paymentForm.payment_method} onChange={(event) => setPaymentForm((current) => ({ ...current, payment_method: event.target.value }))}>{paymentMethodOptions.map((method) => <option key={method} value={method}>{formatLabel(method)}</option>)}</select></label>
+                  <label><span>Account</span><select value={paymentForm.financial_account_id} onChange={(event) => setPaymentForm((current) => ({ ...current, financial_account_id: event.target.value }))}><option value="">No account selected</option>{financialAccounts.map((account) => <option key={account.id} value={account.id}>{account.account_name}</option>)}</select></label>
+                  <label><span>Patient</span><select value={paymentForm.patient_id} onChange={(event) => setPaymentForm((current) => ({ ...current, patient_id: event.target.value }))}><option value="">No patient</option>{patients.map((patient) => <option key={patient.id} value={patient.id}>{formatPatientName(patient)}</option>)}</select></label>
+                  <label><span>Responsible party</span><select value={paymentForm.responsible_party_id} onChange={(event) => setPaymentForm((current) => ({ ...current, responsible_party_id: event.target.value }))}><option value="">No responsible party</option>{responsibleParties.map((party) => <option key={party.id} value={party.id}>{party.full_name}</option>)}</select></label>
+                  <label><span>Primary invoice</span><select value={paymentForm.primary_invoice_id} onChange={(event) => setPaymentForm((current) => ({ ...current, primary_invoice_id: event.target.value }))}><option value="">No primary invoice</option>{payableInvoices.map((invoice) => <option key={invoice.id} value={invoice.id}>{getInvoiceDisplay(invoice)} · {formatMoney(invoice.balance_due, invoice.currency_code)}</option>)}</select></label>
+                  <label><span>Reference</span><input value={paymentForm.payment_reference} onChange={(event) => setPaymentForm((current) => ({ ...current, payment_reference: event.target.value }))} /></label>
+                  <label><span>External reference</span><input value={paymentForm.external_transaction_reference} onChange={(event) => setPaymentForm((current) => ({ ...current, external_transaction_reference: event.target.value }))} /></label>
+                  <label className="wide-field"><span>Notes</span><textarea value={paymentForm.notes} onChange={(event) => setPaymentForm((current) => ({ ...current, notes: event.target.value }))} /></label>
+                </div>
+                <div className="finance-panel-header">
+                  <div>
+                    <p>Allocations</p>
+                    <h3>Apply this payment to invoices</h3>
+                  </div>
+                  <Button variant="secondary" onClick={addPaymentAllocationDraft} disabled={saving}>Add allocation</Button>
+                </div>
+                <div className="allocation-draft-list">
+                  {paymentForm.allocations.length ? paymentForm.allocations.map((allocation, index) => (
+                    <article key={`${allocation.invoice_id}-${index}`} className="allocation-draft-row">
+                      <label><span>Invoice</span><select value={allocation.invoice_id} onChange={(event) => updatePaymentAllocationDraft(index, 'invoice_id', event.target.value)}><option value="">Choose invoice</option>{payableInvoices.map((invoice) => <option key={invoice.id} value={invoice.id}>{getInvoiceDisplay(invoice)} · {formatMoney(invoice.balance_due, invoice.currency_code)}</option>)}</select></label>
+                      <label><span>Amount</span><input type="number" min="0.01" step="0.01" value={allocation.amount} onChange={(event) => updatePaymentAllocationDraft(index, 'amount', event.target.value)} /></label>
+                      <Button variant="ghost" onClick={() => removePaymentAllocationDraft(index)} disabled={saving}>Remove</Button>
+                    </article>
+                  )) : <EmptyState title="No allocations yet" description="Record an unallocated payment or add invoice allocations now." />}
+                </div>
+                <div className="finance-actions-row">
+                  <Button variant="secondary" onClick={() => setShowPaymentForm(false)} disabled={saving}>Cancel</Button>
+                  <Button onClick={savePayment} disabled={saving || !canManageFinance}>Save payment</Button>
+                </div>
+              </Card>
+            )}
+          </div>
+
+          <div className="finance-detail-column">
+            {!selectedPayment ? (
+              <Card className="finance-panel">
+                <EmptyState title="Select a payment" description="Choose a payment to view allocations, receipt readiness and workflow events." />
+              </Card>
+            ) : (
+              <>
+                <Card className="finance-panel">
+                  <div className="finance-panel-header">
+                    <div>
+                      <p>Payment detail</p>
+                      <h3>{getPaymentDisplay(selectedPayment)}</h3>
+                    </div>
+                    <StatusBadge tone={getStatusTone(selectedPayment.payment_status)}>{formatLabel(selectedPayment.payment_status)}</StatusBadge>
+                  </div>
+                  <div className="invoice-overview-grid">
+                    <div><span>Payer</span><strong>{selectedPayment.payer_name}</strong></div>
+                    <div><span>Patient</span><strong>{formatPatientName(selectedPaymentPatient)}</strong></div>
+                    <div><span>Responsible party</span><strong>{selectedPaymentResponsibleParty?.full_name ?? 'Not set'}</strong></div>
+                    <div><span>Account</span><strong>{selectedPaymentAccount?.account_name ?? 'Not linked'}</strong></div>
+                    <div><span>Method</span><strong>{formatLabel(selectedPayment.payment_method)}</strong></div>
+                    <div><span>Payment date</span><strong>{formatDate(selectedPayment.payment_date)}</strong></div>
+                    <div><span>Amount</span><strong>{formatMoney(selectedPayment.amount, selectedPayment.currency_code)}</strong></div>
+                    <div><span>Allocated</span><strong>{formatMoney(selectedPayment.allocated_amount, selectedPayment.currency_code)}</strong></div>
+                    <div><span>Unallocated</span><strong>{formatMoney(selectedPayment.unallocated_amount, selectedPayment.currency_code)}</strong></div>
+                    <div><span>Receipt</span><strong>{selectedPaymentReceipt?.receipt_number ?? 'Not ready'}</strong></div>
+                    <div><span>Reference</span><strong>{selectedPayment.payment_reference ?? 'Not set'}</strong></div>
+                    <div><span>External ref</span><strong>{selectedPayment.external_transaction_reference ?? 'Not set'}</strong></div>
+                  </div>
+                  {selectedPayment.payment_status !== 'reversed' && (
+                    <div className="finance-actions-row">
+                      <input className="finance-inline-input" placeholder="Reason required before reversal" value={reversalReason} onChange={(event) => setReversalReason(event.target.value)} />
+                      <Button variant="secondary" onClick={reverseSelectedPayment} disabled={saving || !canManageFinance}>Reverse payment</Button>
+                    </div>
+                  )}
+                </Card>
+
+                <Card className="finance-panel">
+                  <div className="finance-panel-header">
+                    <div>
+                      <p>Allocation history</p>
+                      <h3>Invoice allocations</h3>
+                    </div>
+                    <Button variant="secondary" onClick={addAllocationDraft} disabled={saving || !canManageFinance || Number(selectedPayment.unallocated_amount ?? 0) <= 0}>Add allocation</Button>
+                  </div>
+                  <div className="finance-event-list">
+                    {selectedPaymentAllocations.length ? selectedPaymentAllocations.map((allocation) => {
+                      const invoice = invoices.find((item) => item.id === allocation.invoice_id)
+                      return (
+                        <article key={allocation.id}>
+                          <strong>{invoice ? getInvoiceDisplay(invoice) : allocation.invoice_id.slice(0, 8)}</strong>
+                          <span>{formatMoney(allocation.allocated_amount, allocation.currency_code)} · {formatLabel(allocation.allocation_status)}</span>
+                          <small>{formatDateTime(allocation.allocated_at)}</small>
+                        </article>
+                      )
+                    }) : <EmptyState title="No allocations yet" description="Unallocated payments can be applied to one or more invoices." />}
+                  </div>
+                  {allocationDrafts.length > 0 && (
+                    <div className="allocation-draft-list">
+                      {allocationDrafts.map((allocation, index) => (
+                        <article key={`existing-allocation-${index}`} className="allocation-draft-row">
+                          <label><span>Invoice</span><select value={allocation.invoice_id} onChange={(event) => updateAllocationDraft(index, 'invoice_id', event.target.value)}><option value="">Choose invoice</option>{payableInvoices.map((invoice) => <option key={invoice.id} value={invoice.id}>{getInvoiceDisplay(invoice)} · {formatMoney(invoice.balance_due, invoice.currency_code)}</option>)}</select></label>
+                          <label><span>Amount</span><input type="number" min="0.01" step="0.01" value={allocation.amount} onChange={(event) => updateAllocationDraft(index, 'amount', event.target.value)} /></label>
+                          <Button variant="ghost" onClick={() => removeAllocationDraft(index)} disabled={saving}>Remove</Button>
+                        </article>
+                      ))}
+                      <div className="finance-actions-row">
+                        <Button variant="secondary" onClick={() => setAllocationDrafts([])} disabled={saving}>Cancel allocations</Button>
+                        <Button onClick={allocateSelectedPayment} disabled={saving || !canManageFinance}>Save allocations</Button>
+                      </div>
+                    </div>
+                  )}
+                </Card>
+
+                <div className="finance-history-grid">
+                  <Card className="finance-panel">
+                    <div className="finance-panel-header"><div><p>Payment history</p><h3>Status changes</h3></div></div>
+                    <div className="finance-event-list">
+                      {selectedPaymentHistory.length ? selectedPaymentHistory.map((event) => (
+                        <article key={event.id}>
+                          <strong>{getEventLabel(event.event_type)}</strong>
+                          <span>{formatLabel(event.from_status)} {'->'} {formatLabel(event.to_status)}</span>
+                          <small>{formatDateTime(event.created_at)}{event.event_reason ? ` · ${event.event_reason}` : ''}</small>
+                        </article>
+                      )) : <EmptyState title="No payment history" description="Payment status changes will appear here." />}
+                    </div>
+                  </Card>
+                  <Card className="finance-panel">
+                    <div className="finance-panel-header"><div><p>Workflow events</p><h3>Finance event trail</h3></div></div>
+                    <div className="finance-event-list">
+                      {selectedPaymentEvents.length ? selectedPaymentEvents.map((event) => (
+                        <article key={event.id}>
+                          <strong>{getEventLabel(event.event_type)}</strong>
+                          <span>{formatLabel(event.event_status)}</span>
+                          <small>{formatDateTime(event.created_at)}{event.error_message ? ` · ${event.error_message}` : ''}</small>
+                        </article>
+                      )) : <EmptyState title="No workflow events" description="Payment workflow markers will appear here." />}
+                    </div>
+                  </Card>
+                  <Card className="finance-panel">
+                    <div className="finance-panel-header"><div><p>Patient history</p><h3>Payment timeline verification</h3></div></div>
+                    <div className="finance-event-list">
+                      {selectedPaymentPatientHistory.length ? selectedPaymentPatientHistory.map((event) => (
+                        <article key={event.id}>
+                          <strong>{event.event_title}</strong>
+                          <span>{event.event_body ?? formatLabel(event.event_type)}</span>
+                          <small>{formatDateTime(event.occurred_at)} · {event.is_patient_visible ? 'Patient visible' : 'Internal only'}</small>
+                        </article>
+                      )) : <EmptyState title="No payment patient history" description="Payment finance events written to patient history will appear here." />}
+                    </div>
+                  </Card>
+                </div>
+              </>
+            )}
+          </div>
+        </div>
+      )}
+
+      {activeSection === 'accounts' && (
+        <div className="finance-grid">
+          <div className="finance-left-column">
+            <Card className="finance-panel">
+              <div className="finance-panel-header">
+                <div>
+                  <p>Financial accounts</p>
+                  <h3>Outstanding balances and credits</h3>
+                </div>
+                <StatusBadge tone="neutral">{financialAccounts.length}</StatusBadge>
+              </div>
+              <div className="account-summary-list">
+                {financialAccounts.length ? financialAccounts.map((account) => {
+                  const accountInvoices = invoices.filter((invoice) => (
+                    (account.patient_id && invoice.patient_id === account.patient_id)
+                    || (account.responsible_party_id && invoice.responsible_party_id === account.responsible_party_id)
+                  ))
+                  const credits = accountCredits.filter((credit) => credit.financial_account_id === account.id && ['available', 'partially_used'].includes(credit.credit_status))
+                  return (
+                    <article key={account.id} className="account-summary-card">
+                      <div>
+                        <strong>{account.account_name}</strong>
+                        <span>{formatLabel(account.account_type)} · {formatLabel(account.account_status)}</span>
+                        <small>{account.patient_id ? formatPatientName(patientById.get(account.patient_id)) : 'No patient'}{account.responsible_party_id ? ` · ${responsiblePartyById.get(account.responsible_party_id)?.full_name ?? 'Responsible party'}` : ''}</small>
+                      </div>
+                      <div className="account-summary-values">
+                        <div><span>Outstanding</span><strong>{formatMoney(accountInvoices.reduce((total, invoice) => total + Number(invoice.balance_due ?? 0), 0), account.currency_code)}</strong></div>
+                        <div><span>Credits</span><strong>{formatMoney(credits.reduce((total, credit) => total + Number(credit.remaining_amount ?? 0), 0), account.currency_code)}</strong></div>
+                        <div><span>Covered patients</span><strong>{new Set(accountInvoices.map((invoice) => invoice.patient_id)).size || (account.patient_id ? 1 : 0)}</strong></div>
+                      </div>
+                    </article>
+                  )
+                }) : <EmptyState title="No financial accounts yet" description="Accounts will be created by finance workflows and future patient billing setup." />}
+              </div>
+            </Card>
+          </div>
+          <div className="finance-detail-column">
+            <Card className="finance-panel">
+              <div className="finance-panel-header">
+                <div>
+                  <p>Account credits</p>
+                  <h3>Unallocated balances</h3>
+                </div>
+                <StatusBadge tone="warning">{accountCredits.filter((credit) => Number(credit.remaining_amount ?? 0) > 0 && ['available', 'partially_used'].includes(credit.credit_status)).length}</StatusBadge>
+              </div>
+              <div className="finance-event-list">
+                {accountCredits.length ? accountCredits.map((credit) => (
+                  <article key={credit.id}>
+                    <strong>{credit.financial_account_id ? financialAccountById.get(credit.financial_account_id)?.account_name ?? 'Account credit' : 'Unlinked credit'}</strong>
+                    <span>{formatMoney(credit.remaining_amount, credit.currency_code)} remaining from {formatMoney(credit.original_amount, credit.currency_code)}</span>
+                    <small>{formatLabel(credit.credit_status)} · {credit.credit_reason} · {formatDateTime(credit.created_at)}</small>
+                  </article>
+                )) : <EmptyState title="No credits" description="Unallocated payment balances will appear here as account credits." />}
+              </div>
+            </Card>
+          </div>
+        </div>
+      )}
+
+      {activeSection === 'receipts' && (
+        <div className="finance-grid">
+          <div className="finance-left-column">
+            <Card className="finance-panel">
+              <div className="finance-panel-header">
+                <div>
+                  <p>Receipts</p>
+                  <h3>Receipt readiness</h3>
+                </div>
+                <StatusBadge tone="neutral">{receipts.length}</StatusBadge>
+              </div>
+              <div className="invoice-record-list">
+                {receipts.length ? receipts.map((receipt) => {
+                  const payment = paymentById.get(receipt.payment_id)
+                  return (
+                    <button key={receipt.id} type="button" onClick={() => payment && setSelectedPaymentId(payment.id)}>
+                      <div>
+                        <strong>{receipt.receipt_number}</strong>
+                        <span>{payment?.payer_name ?? 'Unknown payer'} · {formatLabel(receipt.payment_method ?? payment?.payment_method)}</span>
+                        <small>Issued {formatDateTime(receipt.issued_at)} · Payment {payment ? getPaymentDisplay(payment) : receipt.payment_id.slice(0, 8)}</small>
+                      </div>
+                      <div>
+                        <StatusBadge tone={getStatusTone(receipt.receipt_status)}>{formatLabel(receipt.receipt_status)}</StatusBadge>
+                        <b>{formatMoney(receipt.payment_amount, receipt.currency_code)}</b>
+                      </div>
+                    </button>
+                  )
+                }) : <EmptyState title="No receipts yet" description="Recording a payment creates receipt readiness records. PDF generation is intentionally deferred." />}
+              </div>
+            </Card>
+          </div>
+          <div className="finance-detail-column">
+            <Card className="finance-panel">
+              <div className="finance-panel-header">
+                <div>
+                  <p>Receipt details</p>
+                  <h3>{selectedPaymentReceipt?.receipt_number ?? 'Select a payment'}</h3>
+                </div>
+              </div>
+              {selectedPaymentReceipt && selectedPayment ? (
+                <div className="invoice-overview-grid">
+                  <div><span>Receipt number</span><strong>{selectedPaymentReceipt.receipt_number}</strong></div>
+                  <div><span>Payment</span><strong>{getPaymentDisplay(selectedPayment)}</strong></div>
+                  <div><span>Payer</span><strong>{selectedPayment.payer_name}</strong></div>
+                  <div><span>Method</span><strong>{formatLabel(selectedPaymentReceipt.payment_method ?? selectedPayment.payment_method)}</strong></div>
+                  <div><span>Issue date</span><strong>{formatDateTime(selectedPaymentReceipt.issued_at)}</strong></div>
+                  <div><span>Allocations</span><strong>{selectedPaymentAllocations.length}</strong></div>
+                  <div><span>Amount</span><strong>{formatMoney(selectedPaymentReceipt.payment_amount, selectedPaymentReceipt.currency_code)}</strong></div>
+                  <div><span>Patient Link ready</span><strong>{selectedPaymentReceipt.patient_link_ready ? 'Yes' : 'No'}</strong></div>
+                  <div><span>PDF ready</span><strong>{selectedPaymentReceipt.pdf_generation_ready ? 'Yes' : 'No'}</strong></div>
+                </div>
+              ) : (
+                <EmptyState title="No receipt selected" description="Select a receipt or payment to inspect its receipt readiness details." />
+              )}
+            </Card>
+          </div>
+        </div>
+      )}
     </div>
   )
 }

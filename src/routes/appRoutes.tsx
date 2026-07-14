@@ -16,6 +16,7 @@ import { PracticePage } from '../pages/Practice'
 import { PracticeLocationsPage } from '../pages/PracticeLocations'
 import { PracticeProfilePage } from '../pages/PracticeProfile'
 import { PracticeTherapistsPage } from '../pages/PracticeTherapists'
+import { PracticeWorkflowsPage } from '../pages/PracticeWorkflows'
 import { SettingsPage } from '../pages/Settings'
 import { SessionsPage } from '../pages/Sessions'
 
@@ -25,7 +26,7 @@ export type AppRoute = {
   title: string
   description: string
   accessArea: AccessArea
-  placeholderPattern: 'overview' | 'bookings' | 'sessions' | 'patients' | 'finance' | 'financePriceLists' | 'practice' | 'practiceProfile' | 'practiceLocations' | 'practiceBanking' | 'practiceBilling' | 'practiceBranding' | 'practiceCommunicationTemplates' | 'practiceTherapists' | 'settings'
+  placeholderPattern: 'overview' | 'bookings' | 'sessions' | 'patients' | 'finance' | 'financePriceLists' | 'practice' | 'practiceProfile' | 'practiceLocations' | 'practiceBanking' | 'practiceBilling' | 'practiceBranding' | 'practiceCommunicationTemplates' | 'practiceTherapists' | 'practiceWorkflows' | 'settings'
   showInNav?: boolean
 }
 
@@ -152,6 +153,15 @@ export const appRoutes: AppRoute[] = [
     showInNav: false,
   },
   {
+    path: '/practice/workflows',
+    label: 'Workflows',
+    title: 'Workflow Engine',
+    accessArea: 'settings',
+    description: 'Administer workflow definitions, executions, scheduled jobs, failures, communication requests and staff task readiness.',
+    placeholderPattern: 'practiceWorkflows',
+    showInNav: false,
+  },
+  {
     path: '/settings',
     label: 'Settings',
     title: 'Settings',
@@ -235,6 +245,7 @@ function PlaceholderPage({ route }: { route: AppRoute }) {
       {route.placeholderPattern === 'practiceProfile' && <PracticeProfilePage />}
       {route.placeholderPattern === 'practiceLocations' && <PracticeLocationsPage />}
       {route.placeholderPattern === 'practiceTherapists' && <PracticeTherapistsPage />}
+      {route.placeholderPattern === 'practiceWorkflows' && <PracticeWorkflowsPage />}
       {route.placeholderPattern === 'settings' && <SettingsPage />}
     </RoutedPageFrame>
   )

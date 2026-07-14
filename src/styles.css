@@ -64,9 +64,338 @@
   -webkit-font-smoothing: antialiased;
 }
 
+/* Phase 5F Patient Link external portal */
+.external-patient-link-page {
+  --patient-link-primary: var(--indigo);
+  --patient-link-accent: var(--coral);
+  min-height: 100vh;
+  padding: 24px;
+  background:
+    radial-gradient(circle at top left, rgba(255, 122, 61, 0.12), transparent 34%),
+    linear-gradient(135deg, rgba(39, 21, 111, 0.1), rgba(245, 246, 255, 0.94));
+  color: var(--ink);
+}
+
+.external-patient-link-shell {
+  width: min(1040px, 100%);
+  margin: 0 auto;
+}
+
+.external-patient-link-header {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 20px;
+  padding: 28px;
+  border-radius: 24px;
+  background: linear-gradient(135deg, var(--patient-link-primary), #130a45);
+  color: #fff;
+  box-shadow: 0 18px 50px rgba(20, 12, 64, 0.2);
+}
+
+.external-patient-link-header span,
+.external-patient-link-card > span,
+.external-patient-link-verification > span {
+  display: block;
+  color: var(--muted);
+  font-size: 0.75rem;
+  font-weight: 800;
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
+}
+
+.external-patient-link-header span,
+.external-patient-link-header p {
+  color: rgba(255, 255, 255, 0.78);
+}
+
+.external-patient-link-header h1 {
+  margin: 6px 0;
+  color: #fff;
+  font-size: clamp(1.65rem, 5vw, 3rem);
+  line-height: 1;
+}
+
+.external-patient-link-header p {
+  margin: 0;
+  font-weight: 700;
+}
+
+.external-patient-link-header img {
+  max-width: 170px;
+  max-height: 74px;
+  object-fit: contain;
+}
+
+.external-patient-link-alert {
+  margin: 16px 0 0;
+  padding: 12px 14px;
+  border-radius: 14px;
+  background: #fff2ec;
+  color: var(--ink);
+  border: 1px solid rgba(255, 122, 61, 0.28);
+  font-weight: 700;
+}
+
+.external-patient-link-card {
+  border: 1px solid rgba(39, 21, 111, 0.12);
+  box-shadow: 0 10px 28px rgba(20, 12, 64, 0.08);
+}
+
+.external-patient-link-card h2 {
+  margin: 8px 0;
+  font-size: 1.15rem;
+  line-height: 1.18;
+}
+
+.external-patient-link-card p {
+  margin: 0;
+  color: var(--muted);
+  font-weight: 650;
+  line-height: 1.45;
+}
+
+.external-patient-link-verification {
+  width: min(680px, 100%);
+  margin: 20px auto 0;
+}
+
+.external-patient-link-methods,
+.external-patient-link-verify-form {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: end;
+  gap: 12px;
+  margin-top: 18px;
+}
+
+.external-patient-link-methods label,
+.external-patient-link-verify-form label,
+.external-patient-selector {
+  display: grid;
+  gap: 7px;
+  color: var(--muted);
+  font-size: 0.75rem;
+  font-weight: 800;
+  text-transform: uppercase;
+}
+
+.external-patient-link-methods select,
+.external-patient-link-verify-form input,
+.external-patient-selector select {
+  width: 100%;
+  min-height: 44px;
+  padding: 10px 12px;
+  border: 1px solid rgba(39, 21, 111, 0.18);
+  border-radius: 14px;
+  background: #fff;
+  color: var(--ink);
+  font: inherit;
+  font-size: 0.98rem;
+  font-weight: 750;
+}
+
+.external-patient-link-muted {
+  margin-top: 14px !important;
+  color: var(--muted);
+  font-size: 0.9rem;
+}
+
+.external-patient-link-nav {
+  position: sticky;
+  top: 0;
+  z-index: 5;
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  overflow-x: auto;
+  margin: 14px 0;
+  padding: 10px;
+  border-radius: 18px;
+  background: rgba(255, 255, 255, 0.82);
+  backdrop-filter: blur(14px);
+  border: 1px solid rgba(39, 21, 111, 0.1);
+}
+
+.external-patient-link-nav a,
+.external-patient-link-nav button {
+  flex: 0 0 auto;
+  padding: 10px 13px;
+  border: 0;
+  border-radius: 999px;
+  background: transparent;
+  color: var(--ink);
+  font: inherit;
+  font-size: 0.9rem;
+  font-weight: 850;
+  text-decoration: none;
+  cursor: pointer;
+}
+
+.external-patient-link-nav a.active {
+  background: var(--patient-link-primary);
+  color: #fff;
+}
+
+.external-patient-link-nav button {
+  color: var(--patient-link-accent);
+}
+
+.external-patient-selector {
+  width: min(360px, 100%);
+  margin: 0 0 14px;
+}
+
+.external-patient-link-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 14px;
+}
+
+.external-patient-link-list {
+  display: grid;
+  gap: 12px;
+}
+
+.external-patient-link-appointment {
+  border-left: 5px solid var(--patient-link-accent);
+}
+
+.external-patient-link-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 7px;
+  align-items: center;
+  margin-top: 10px;
+}
+
+.external-patient-link-meta span {
+  padding: 6px 9px;
+  border-radius: 999px;
+  background: rgba(39, 21, 111, 0.08);
+  color: var(--ink);
+  font-size: 0.8rem;
+  font-weight: 800;
+}
+
+.external-patient-link-row {
+  display: flex;
+  justify-content: space-between;
+  gap: 16px;
+  align-items: flex-start;
+}
+
+.external-patient-link-row > div:last-child {
+  display: grid;
+  justify-items: end;
+  gap: 8px;
+  text-align: right;
+}
+
+.external-patient-link-row strong {
+  font-size: 1.1rem;
+  color: var(--ink);
+}
+
+.external-patient-link-lines {
+  display: grid;
+  gap: 8px;
+  margin-top: 14px;
+  padding-top: 14px;
+  border-top: 1px solid rgba(39, 21, 111, 0.1);
+}
+
+.external-patient-link-lines div,
+.external-patient-link-totals {
+  display: flex;
+  justify-content: space-between;
+  gap: 14px;
+  align-items: baseline;
+}
+
+.external-patient-link-lines span,
+.external-patient-link-totals span {
+  color: var(--muted);
+  font-size: 0.9rem;
+  font-weight: 750;
+}
+
+.external-patient-link-lines strong,
+.external-patient-link-totals strong {
+  white-space: nowrap;
+}
+
+.external-patient-link-totals {
+  margin-top: 12px;
+  padding: 10px 12px;
+  border-radius: 14px;
+  background: rgba(255, 122, 61, 0.11);
+}
+
+@media (max-width: 720px) {
+  .external-patient-link-page {
+    padding: 12px;
+  }
+
+  .external-patient-link-header {
+    align-items: flex-start;
+    padding: 22px;
+  }
+
+  .external-patient-link-header img {
+    max-width: 112px;
+  }
+
+  .external-patient-link-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .external-patient-link-methods,
+  .external-patient-link-verify-form {
+    grid-template-columns: 1fr;
+  }
+
+  .external-patient-link-row {
+    flex-direction: column;
+  }
+
+  .external-patient-link-row > div:last-child {
+    justify-items: start;
+    text-align: left;
+  }
+}
+
 .finance-workspace {
   display: grid;
   gap: var(--space-5);
+}
+
+.finance-tabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  background: rgba(255, 255, 255, 0.72);
+  padding: 6px;
+}
+
+.finance-tabs button {
+  border: 0;
+  border-radius: var(--radius-md);
+  background: transparent;
+  color: var(--muted);
+  cursor: pointer;
+  font: inherit;
+  font-size: 0.86rem;
+  font-weight: 900;
+  padding: 9px 13px;
+}
+
+.finance-tabs button.active,
+.finance-tabs button:hover {
+  background: var(--brand-purple);
+  color: #fff;
 }
 
 .finance-grid {
@@ -142,7 +471,9 @@
 .draft-invoice-queue,
 .invoice-record-list,
 .invoice-line-list,
-.finance-event-list {
+.finance-event-list,
+.allocation-draft-list,
+.account-summary-list {
   display: grid;
   gap: 10px;
 }
@@ -150,7 +481,9 @@
 .draft-queue-item,
 .invoice-record-list button,
 .finance-event-list article,
-.invoice-line-editor {
+.invoice-line-editor,
+.allocation-draft-row,
+.account-summary-card {
   border: 1px solid var(--border);
   border-radius: var(--radius-md);
   background: var(--surface);
@@ -222,7 +555,8 @@
 
 .finance-filters label,
 .invoice-edit-grid label,
-.invoice-line-fields label {
+.invoice-line-fields label,
+.allocation-draft-row label {
   display: grid;
   gap: 5px;
   min-width: 0;
@@ -230,7 +564,9 @@
 
 .finance-filters label > span,
 .invoice-edit-grid label > span,
-.invoice-line-fields label > span {
+.invoice-line-fields label > span,
+.allocation-draft-row label > span,
+.account-summary-values span {
   color: var(--muted);
   font-size: 0.72rem;
   font-weight: 900;
@@ -244,7 +580,10 @@
 .invoice-edit-grid select,
 .invoice-edit-grid textarea,
 .invoice-line-fields input,
-.invoice-line-fields textarea {
+.invoice-line-fields textarea,
+.allocation-draft-row input,
+.allocation-draft-row select,
+.finance-inline-input {
   width: 100%;
   border: 1px solid var(--border);
   border-radius: var(--radius-md);
@@ -415,6 +754,60 @@
   color: var(--brand-purple);
 }
 
+.finance-actions-row.compact {
+  justify-content: flex-end;
+}
+
+.allocation-draft-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1.4fr) minmax(140px, 0.6fr) auto;
+  gap: 10px;
+  align-items: end;
+  padding: 10px;
+}
+
+.account-summary-card {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(240px, 0.8fr);
+  gap: 12px;
+  padding: 12px;
+}
+
+.account-summary-card > div:first-child,
+.account-summary-values div {
+  display: grid;
+  gap: 3px;
+}
+
+.account-summary-card strong,
+.account-summary-values strong {
+  color: var(--ink);
+}
+
+.account-summary-card span,
+.account-summary-card small {
+  color: var(--muted);
+  font-size: 0.78rem;
+  font-weight: 700;
+}
+
+.account-summary-values {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.account-summary-values div {
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  background: #fff;
+  padding: 8px;
+}
+
+.finance-inline-input {
+  max-width: 360px;
+}
+
 .finance-history-grid {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -463,6 +856,10 @@
   .invoice-line-fields {
     grid-template-columns: repeat(3, minmax(0, 1fr));
   }
+
+  .account-summary-card {
+    grid-template-columns: 1fr;
+  }
 }
 
 @media (max-width: 720px) {
@@ -473,7 +870,9 @@
   .invoice-overview-grid,
   .totals-grid,
   .invoice-confirm-summary,
-  .invoice-line-fields {
+  .invoice-line-fields,
+  .allocation-draft-row,
+  .account-summary-values {
     grid-template-columns: 1fr;
   }
 
@@ -2678,6 +3077,288 @@ button:disabled {
   font-weight: 700;
   line-height: 1.45;
   white-space: pre-wrap;
+}
+
+.workflow-admin-page {
+  display: grid;
+  gap: var(--space-4);
+}
+
+.workflow-health-grid {
+  display: grid;
+  grid-template-columns: repeat(6, minmax(0, 1fr));
+  gap: var(--space-3);
+}
+
+.workflow-metric-card {
+  min-height: 92px;
+  display: grid;
+  align-content: start;
+  gap: var(--space-2);
+}
+
+.workflow-metric-card span,
+.workflow-panel-header span,
+.workflow-subsection > span,
+.workflow-info-block span,
+.workflow-definition-list small,
+.workflow-version-row small,
+.workflow-table-row small {
+  color: var(--muted);
+  font-size: var(--font-size-small);
+  font-weight: var(--font-weight-strong);
+  text-transform: uppercase;
+}
+
+.workflow-metric-card strong {
+  color: var(--ink);
+  font-size: 1.45rem;
+  line-height: 1;
+}
+
+.workflow-alert {
+  border-width: 1px;
+  display: grid;
+  gap: 4px;
+  padding: var(--space-3);
+}
+
+.workflow-alert strong {
+  color: var(--ink);
+  font-size: 0.9rem;
+}
+
+.workflow-alert span {
+  color: var(--muted);
+  font-size: 0.85rem;
+}
+
+.workflow-alert-error {
+  background: #fff5f2;
+  border-color: rgba(255, 124, 67, 0.34);
+}
+
+.workflow-alert-success {
+  background: #f2fff8;
+  border-color: rgba(33, 159, 94, 0.22);
+}
+
+.workflow-tabs {
+  align-items: center;
+  background: rgba(255, 255, 255, 0.74);
+  border: 1px solid var(--color-border);
+  border-radius: 18px;
+  display: flex;
+  gap: 6px;
+  overflow-x: auto;
+  padding: 6px;
+}
+
+.workflow-tabs button {
+  background: transparent;
+  border: 0;
+  border-radius: 13px;
+  color: var(--muted);
+  cursor: pointer;
+  flex: 0 0 auto;
+  font: inherit;
+  font-size: 0.82rem;
+  font-weight: 900;
+  padding: 9px 13px;
+}
+
+.workflow-tabs button.active {
+  background: var(--color-primary);
+  color: #fff;
+}
+
+.workflow-workspace-grid {
+  display: grid;
+  grid-template-columns: minmax(280px, 0.9fr) minmax(0, 1.5fr);
+  gap: var(--space-4);
+  align-items: start;
+}
+
+.workflow-two-column {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--space-4);
+  align-items: start;
+}
+
+.workflow-list-panel,
+.workflow-detail-card,
+.workflow-draft-card,
+.workflow-detail-column {
+  display: grid;
+  gap: var(--space-4);
+}
+
+.workflow-panel-header {
+  align-items: flex-start;
+  display: flex;
+  justify-content: space-between;
+  gap: var(--space-3);
+}
+
+.workflow-panel-header h3,
+.workflow-panel-header h4 {
+  color: var(--ink);
+  font-size: 1rem;
+  line-height: 1.15;
+  margin: 2px 0 0;
+}
+
+.workflow-header-actions,
+.workflow-version-actions {
+  align-items: center;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  justify-content: flex-end;
+}
+
+.workflow-filter-row {
+  display: grid;
+  grid-template-columns: minmax(180px, 1fr) 150px 150px;
+  gap: var(--space-3);
+}
+
+.workflow-filter-row label,
+.workflow-form-grid label {
+  color: var(--muted);
+  display: grid;
+  gap: 6px;
+  font-size: var(--font-size-small);
+  font-weight: var(--font-weight-strong);
+  text-transform: uppercase;
+}
+
+.workflow-filter-row select,
+.workflow-form-grid input,
+.workflow-form-grid select,
+.workflow-form-grid textarea {
+  background: #fff;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  color: var(--ink);
+  font: inherit;
+  font-size: 0.86rem;
+  font-weight: 750;
+  min-height: 40px;
+  padding: 0 var(--space-3);
+}
+
+.workflow-form-grid textarea {
+  min-height: 82px;
+  padding: var(--space-3);
+  resize: vertical;
+}
+
+.workflow-form-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--space-3);
+}
+
+.workflow-form-wide {
+  grid-column: 1 / -1;
+}
+
+.workflow-definition-list,
+.workflow-version-list,
+.workflow-table-list,
+.workflow-compact-list {
+  display: grid;
+  gap: 9px;
+}
+
+.workflow-definition-list button,
+.workflow-version-row,
+.workflow-table-row {
+  align-items: center;
+  background: #fff;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  color: inherit;
+  display: grid;
+  gap: var(--space-3);
+  grid-template-columns: minmax(0, 1fr) auto;
+  padding: var(--space-3);
+  text-align: left;
+  width: 100%;
+}
+
+.workflow-definition-list button {
+  cursor: pointer;
+}
+
+.workflow-definition-list button.active {
+  background: rgba(42, 27, 134, 0.08);
+  border-color: rgba(42, 27, 134, 0.25);
+}
+
+.workflow-definition-list strong,
+.workflow-version-row strong,
+.workflow-table-row strong,
+.workflow-compact-list strong {
+  color: var(--ink);
+  display: block;
+  font-size: 0.9rem;
+  line-height: 1.18;
+}
+
+.workflow-definition-list span,
+.workflow-version-row span,
+.workflow-table-row span,
+.workflow-compact-list span,
+.workflow-muted,
+.workflow-description {
+  color: var(--muted);
+  display: block;
+  font-size: 0.8rem;
+  line-height: 1.35;
+}
+
+.workflow-definition-badges {
+  align-items: flex-end;
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+}
+
+.workflow-detail-grid,
+.workflow-config-summary {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 9px;
+}
+
+.workflow-info-block {
+  background: rgba(242, 241, 255, 0.72);
+  border: 1px solid rgba(41, 31, 124, 0.08);
+  border-radius: var(--radius-sm);
+  display: grid;
+  gap: 5px;
+  min-width: 0;
+  padding: var(--space-3);
+}
+
+.workflow-info-block strong {
+  color: var(--ink);
+  font-size: 0.82rem;
+  line-height: 1.25;
+  overflow-wrap: anywhere;
+}
+
+.workflow-subsection {
+  display: grid;
+  gap: var(--space-3);
+}
+
+.workflow-compact-list div {
+  border-left: 3px solid var(--coral);
+  padding-left: var(--space-3);
 }
 
 .ui-state-panel,
@@ -8869,6 +9550,20 @@ input[type="checkbox"] {
     grid-template-columns: 1fr;
   }
 
+  .workflow-health-grid {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+
+  .workflow-workspace-grid,
+  .workflow-two-column {
+    grid-template-columns: 1fr;
+  }
+
+  .workflow-detail-grid,
+  .workflow-config-summary {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
   main {
     padding-bottom: 92px;
   }
@@ -9127,6 +9822,11 @@ input[type="checkbox"] {
   .how-to-grid,
   .whats-new-list,
   .action-grid,
+  .workflow-health-grid,
+  .workflow-filter-row,
+  .workflow-form-grid,
+  .workflow-detail-grid,
+  .workflow-config-summary,
   .module-grid {
     grid-template-columns: 1fr;
   }
@@ -9180,8 +9880,19 @@ input[type="checkbox"] {
   .practice-registration-list button,
   .practice-therapist-form,
   .practice-location-form,
+  .workflow-definition-list button,
+  .workflow-version-row,
+  .workflow-table-row,
   .practice-location-cards button {
     grid-template-columns: 1fr;
+  }
+
+  .workflow-panel-header,
+  .workflow-header-actions,
+  .workflow-version-actions,
+  .workflow-definition-badges {
+    align-items: flex-start;
+    justify-content: flex-start;
   }
 
   .patients-action-row {

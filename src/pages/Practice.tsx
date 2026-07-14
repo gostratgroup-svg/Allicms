@@ -49,6 +49,12 @@ const practiceSections: SectionHubItem[] = [
     to: '/practice/communication-templates',
   },
   {
+    title: 'Workflows',
+    description: 'Workflow definitions, execution monitoring, scheduled jobs, failures and readiness records.',
+    status: 'Automation foundation',
+    to: '/practice/workflows',
+  },
+  {
     title: 'Security & Permissions',
     description: 'Practice-level access setup and future permission configuration for tenant administrators.',
     status: 'Access control',

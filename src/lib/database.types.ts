@@ -111,6 +111,38 @@ type ResponsiblePartyRelationship = {
   referencedColumns: ['id']
 }
 
+type PatientLinkRelationship = {
+  foreignKeyName: string
+  columns: ['patient_link_id']
+  isOneToOne: false
+  referencedRelation: 'patient_links'
+  referencedColumns: ['id']
+}
+
+type PatientLinkAccessGrantRelationship = {
+  foreignKeyName: string
+  columns: ['access_grant_id']
+  isOneToOne: false
+  referencedRelation: 'patient_link_access_grants'
+  referencedColumns: ['id']
+}
+
+type PatientLinkSessionRelationship = {
+  foreignKeyName: string
+  columns: ['session_id']
+  isOneToOne: false
+  referencedRelation: 'patient_link_sessions'
+  referencedColumns: ['id']
+}
+
+type PatientLinkCreatedFromChallengeRelationship = {
+  foreignKeyName: string
+  columns: ['created_from_challenge_id']
+  isOneToOne: false
+  referencedRelation: 'patient_link_verification_challenges'
+  referencedColumns: ['id']
+}
+
 type FinancialAccountRelationship = {
   foreignKeyName: string
   columns: ['financial_account_id']
@@ -154,6 +186,14 @@ type CreatedByProfileRelationship = {
 type UpdatedByProfileRelationship = {
   foreignKeyName: string
   columns: ['updated_by_profile_id']
+  isOneToOne: false
+  referencedRelation: 'profiles'
+  referencedColumns: ['id']
+}
+
+type RevokedByProfileRelationship = {
+  foreignKeyName: string
+  columns: ['revoked_by_profile_id']
   isOneToOne: false
   referencedRelation: 'profiles'
   referencedColumns: ['id']
@@ -3208,12 +3248,361 @@ export type Database = {
         },
         [TenantRelationship, PatientRelationship, CreatedByProfileRelationship]
       >
+      patient_link_access_grants: PublicTable<
+        {
+          id: string
+          tenant_id: string
+          patient_link_id: string
+          patient_id: string
+          responsible_party_id: string | null
+          access_type: string
+          access_status: string
+          finance_visible: boolean
+          appointments_visible: boolean
+          documents_visible: boolean
+          contact_destination_hash: string | null
+          authority_confirmed_at: string | null
+          consent_acknowledged_at: string | null
+          last_used_at: string | null
+          revoked_at: string | null
+          revoked_by_profile_id: string | null
+          revocation_reason: string | null
+          metadata: Json
+          created_by_profile_id: string | null
+          updated_by_profile_id: string | null
+          deleted_at: string | null
+          created_at: string
+          updated_at: string
+        },
+        {
+          id?: string
+          tenant_id: string
+          patient_link_id: string
+          patient_id: string
+          responsible_party_id?: string | null
+          access_type: string
+          access_status?: string
+          finance_visible?: boolean
+          appointments_visible?: boolean
+          documents_visible?: boolean
+          contact_destination_hash?: string | null
+          authority_confirmed_at?: string | null
+          consent_acknowledged_at?: string | null
+          last_used_at?: string | null
+          revoked_at?: string | null
+          revoked_by_profile_id?: string | null
+          revocation_reason?: string | null
+          metadata?: Json
+          created_by_profile_id?: string | null
+          updated_by_profile_id?: string | null
+          deleted_at?: string | null
+          created_at?: string
+          updated_at?: string
+        },
+        {
+          id?: string
+          tenant_id?: string
+          patient_link_id?: string
+          patient_id?: string
+          responsible_party_id?: string | null
+          access_type?: string
+          access_status?: string
+          finance_visible?: boolean
+          appointments_visible?: boolean
+          documents_visible?: boolean
+          contact_destination_hash?: string | null
+          authority_confirmed_at?: string | null
+          consent_acknowledged_at?: string | null
+          last_used_at?: string | null
+          revoked_at?: string | null
+          revoked_by_profile_id?: string | null
+          revocation_reason?: string | null
+          metadata?: Json
+          created_by_profile_id?: string | null
+          updated_by_profile_id?: string | null
+          deleted_at?: string | null
+          created_at?: string
+          updated_at?: string
+        },
+        [
+          TenantRelationship,
+          PatientLinkRelationship,
+          PatientRelationship,
+          ResponsiblePartyRelationship,
+          RevokedByProfileRelationship,
+          CreatedByProfileRelationship,
+          UpdatedByProfileRelationship,
+        ]
+      >
+      patient_link_access_logs: PublicTable<
+        {
+          id: string
+          tenant_id: string
+          patient_link_id: string | null
+          access_grant_id: string | null
+          session_id: string | null
+          patient_id: string | null
+          event_type: string
+          event_status: string
+          resource_type: string | null
+          resource_id: string | null
+          ip_address_hash: string | null
+          user_agent_hash: string | null
+          failure_reason: string | null
+          suspicious: boolean
+          metadata: Json
+          occurred_at: string
+          created_at: string
+        },
+        {
+          id?: string
+          tenant_id: string
+          patient_link_id?: string | null
+          access_grant_id?: string | null
+          session_id?: string | null
+          patient_id?: string | null
+          event_type: string
+          event_status?: string
+          resource_type?: string | null
+          resource_id?: string | null
+          ip_address_hash?: string | null
+          user_agent_hash?: string | null
+          failure_reason?: string | null
+          suspicious?: boolean
+          metadata?: Json
+          occurred_at?: string
+          created_at?: string
+        },
+        {
+          id?: string
+          tenant_id?: string
+          patient_link_id?: string | null
+          access_grant_id?: string | null
+          session_id?: string | null
+          patient_id?: string | null
+          event_type?: string
+          event_status?: string
+          resource_type?: string | null
+          resource_id?: string | null
+          ip_address_hash?: string | null
+          user_agent_hash?: string | null
+          failure_reason?: string | null
+          suspicious?: boolean
+          metadata?: Json
+          occurred_at?: string
+          created_at?: string
+        },
+        [TenantRelationship, PatientLinkRelationship, PatientLinkAccessGrantRelationship, PatientLinkSessionRelationship, PatientRelationship]
+      >
+      patient_link_sessions: PublicTable<
+        {
+          id: string
+          tenant_id: string
+          patient_link_id: string
+          access_grant_id: string | null
+          patient_id: string
+          session_token_hash: string
+          session_status: string
+          ip_address: string | null
+          ip_address_hash: string | null
+          user_agent: string | null
+          user_agent_hash: string | null
+          created_from_challenge_id: string | null
+          expires_at: string
+          last_activity_at: string | null
+          revoked_at: string | null
+          revocation_reason: string | null
+          metadata: Json
+          created_at: string
+          updated_at: string
+          deleted_at: string | null
+        },
+        {
+          id?: string
+          tenant_id: string
+          patient_link_id: string
+          access_grant_id?: string | null
+          patient_id: string
+          session_token_hash: string
+          session_status?: string
+          ip_address?: string | null
+          ip_address_hash?: string | null
+          user_agent?: string | null
+          user_agent_hash?: string | null
+          created_from_challenge_id?: string | null
+          expires_at: string
+          last_activity_at?: string | null
+          revoked_at?: string | null
+          revocation_reason?: string | null
+          metadata?: Json
+          created_at?: string
+          updated_at?: string
+          deleted_at?: string | null
+        },
+        {
+          id?: string
+          tenant_id?: string
+          patient_link_id?: string
+          access_grant_id?: string | null
+          patient_id?: string
+          session_token_hash?: string
+          session_status?: string
+          ip_address?: string | null
+          ip_address_hash?: string | null
+          user_agent?: string | null
+          user_agent_hash?: string | null
+          created_from_challenge_id?: string | null
+          expires_at?: string
+          last_activity_at?: string | null
+          revoked_at?: string | null
+          revocation_reason?: string | null
+          metadata?: Json
+          created_at?: string
+          updated_at?: string
+          deleted_at?: string | null
+        },
+        [TenantRelationship, PatientLinkRelationship, PatientLinkAccessGrantRelationship, PatientRelationship, PatientLinkCreatedFromChallengeRelationship]
+      >
+      patient_link_verification_challenges: PublicTable<
+        {
+          id: string
+          tenant_id: string
+          patient_link_id: string
+          access_grant_id: string | null
+          delivery_method: string
+          destination_hash: string | null
+          verification_code_hash: string
+          code_salt: string
+          challenge_status: string
+          attempts_count: number
+          max_attempts: number
+          expires_at: string
+          consumed_at: string | null
+          last_attempt_at: string | null
+          metadata: Json
+          created_by_profile_id: string | null
+          updated_by_profile_id: string | null
+          deleted_at: string | null
+          created_at: string
+          updated_at: string
+        },
+        {
+          id?: string
+          tenant_id: string
+          patient_link_id: string
+          access_grant_id?: string | null
+          delivery_method: string
+          destination_hash?: string | null
+          verification_code_hash: string
+          code_salt?: string
+          challenge_status?: string
+          attempts_count?: number
+          max_attempts?: number
+          expires_at: string
+          consumed_at?: string | null
+          last_attempt_at?: string | null
+          metadata?: Json
+          created_by_profile_id?: string | null
+          updated_by_profile_id?: string | null
+          deleted_at?: string | null
+          created_at?: string
+          updated_at?: string
+        },
+        {
+          id?: string
+          tenant_id?: string
+          patient_link_id?: string
+          access_grant_id?: string | null
+          delivery_method?: string
+          destination_hash?: string | null
+          verification_code_hash?: string
+          code_salt?: string
+          challenge_status?: string
+          attempts_count?: number
+          max_attempts?: number
+          expires_at?: string
+          consumed_at?: string | null
+          last_attempt_at?: string | null
+          metadata?: Json
+          created_by_profile_id?: string | null
+          updated_by_profile_id?: string | null
+          deleted_at?: string | null
+          created_at?: string
+          updated_at?: string
+        },
+        [TenantRelationship, PatientLinkRelationship, PatientLinkAccessGrantRelationship, CreatedByProfileRelationship, UpdatedByProfileRelationship]
+      >
+      patient_link_workflow_events: PublicTable<
+        {
+          id: string
+          tenant_id: string
+          patient_link_id: string | null
+          access_grant_id: string | null
+          patient_id: string | null
+          event_type: string
+          event_status: string
+          idempotency_key: string
+          payload: Json
+          available_at: string
+          processed_at: string | null
+          error_message: string | null
+          metadata: Json
+          created_by_profile_id: string | null
+          updated_by_profile_id: string | null
+          deleted_at: string | null
+          created_at: string
+          updated_at: string
+        },
+        {
+          id?: string
+          tenant_id: string
+          patient_link_id?: string | null
+          access_grant_id?: string | null
+          patient_id?: string | null
+          event_type: string
+          event_status?: string
+          idempotency_key: string
+          payload?: Json
+          available_at?: string
+          processed_at?: string | null
+          error_message?: string | null
+          metadata?: Json
+          created_by_profile_id?: string | null
+          updated_by_profile_id?: string | null
+          deleted_at?: string | null
+          created_at?: string
+          updated_at?: string
+        },
+        {
+          id?: string
+          tenant_id?: string
+          patient_link_id?: string | null
+          access_grant_id?: string | null
+          patient_id?: string | null
+          event_type?: string
+          event_status?: string
+          idempotency_key?: string
+          payload?: Json
+          available_at?: string
+          processed_at?: string | null
+          error_message?: string | null
+          metadata?: Json
+          created_by_profile_id?: string | null
+          updated_by_profile_id?: string | null
+          deleted_at?: string | null
+          created_at?: string
+          updated_at?: string
+        },
+        [TenantRelationship, PatientLinkRelationship, PatientLinkAccessGrantRelationship, PatientRelationship, CreatedByProfileRelationship, UpdatedByProfileRelationship]
+      >
       patient_links: PublicTable<
         {
           id: string
           tenant_id: string
           patient_id: string
           link_token: string
+          public_identifier: string
+          credential_hash: string
           link_status: string
           requires_intake: boolean
           intake_started_at: string | null
@@ -3221,6 +3610,9 @@ export type Database = {
           last_accessed_at: string | null
           expires_at: string | null
           revoked_at: string | null
+          credential_reset_at: string | null
+          suspended_at: string | null
+          replaced_by_patient_link_id: string | null
           metadata: Json
           created_by_profile_id: string | null
           updated_by_profile_id: string | null
@@ -3233,6 +3625,8 @@ export type Database = {
           tenant_id: string
           patient_id: string
           link_token: string
+          public_identifier: string
+          credential_hash: string
           link_status?: string
           requires_intake?: boolean
           intake_started_at?: string | null
@@ -3240,6 +3634,9 @@ export type Database = {
           last_accessed_at?: string | null
           expires_at?: string | null
           revoked_at?: string | null
+          credential_reset_at?: string | null
+          suspended_at?: string | null
+          replaced_by_patient_link_id?: string | null
           metadata?: Json
           created_by_profile_id?: string | null
           updated_by_profile_id?: string | null
@@ -3252,6 +3649,8 @@ export type Database = {
           tenant_id?: string
           patient_id?: string
           link_token?: string
+          public_identifier?: string
+          credential_hash?: string
           link_status?: string
           requires_intake?: boolean
           intake_started_at?: string | null
@@ -3259,6 +3658,9 @@ export type Database = {
           last_accessed_at?: string | null
           expires_at?: string | null
           revoked_at?: string | null
+          credential_reset_at?: string | null
+          suspended_at?: string | null
+          replaced_by_patient_link_id?: string | null
           metadata?: Json
           created_by_profile_id?: string | null
           updated_by_profile_id?: string | null
@@ -3922,6 +4324,843 @@ export type Database = {
           },
         ]
       >
+      communication_requests: PublicTable<
+        {
+          id: string
+          tenant_id: string
+          workflow_execution_id: string | null
+          workflow_step_execution_id: string | null
+          recipient_type: string
+          recipient_patient_id: string | null
+          recipient_responsible_party_id: string | null
+          channel: string
+          template_id: string | null
+          template_key: string | null
+          template_version: string | null
+          approved_merge_fields: Json
+          related_patient_id: string | null
+          related_booking_id: string | null
+          related_session_id: string | null
+          related_invoice_id: string | null
+          related_payment_id: string | null
+          related_receipt_id: string | null
+          related_patient_link_id: string | null
+          scheduled_send_at: string | null
+          status: string
+          idempotency_key: string
+          attempt_count: number
+          locked_at: string | null
+          locked_by: string | null
+          completed_at: string | null
+          failed_at: string | null
+          error_summary: string | null
+          created_at: string
+          updated_at: string
+          deleted_at: string | null
+        },
+        {
+          id?: string
+          tenant_id: string
+          workflow_execution_id?: string | null
+          workflow_step_execution_id?: string | null
+          recipient_type: string
+          recipient_patient_id?: string | null
+          recipient_responsible_party_id?: string | null
+          channel: string
+          template_id?: string | null
+          template_key?: string | null
+          template_version?: string | null
+          approved_merge_fields?: Json
+          related_patient_id?: string | null
+          related_booking_id?: string | null
+          related_session_id?: string | null
+          related_invoice_id?: string | null
+          related_payment_id?: string | null
+          related_receipt_id?: string | null
+          related_patient_link_id?: string | null
+          scheduled_send_at?: string | null
+          status?: string
+          idempotency_key: string
+          attempt_count?: number
+          locked_at?: string | null
+          locked_by?: string | null
+          completed_at?: string | null
+          failed_at?: string | null
+          error_summary?: string | null
+          created_at?: string
+          updated_at?: string
+          deleted_at?: string | null
+        },
+        {
+          id?: string
+          tenant_id?: string
+          workflow_execution_id?: string | null
+          workflow_step_execution_id?: string | null
+          recipient_type?: string
+          recipient_patient_id?: string | null
+          recipient_responsible_party_id?: string | null
+          channel?: string
+          template_id?: string | null
+          template_key?: string | null
+          template_version?: string | null
+          approved_merge_fields?: Json
+          related_patient_id?: string | null
+          related_booking_id?: string | null
+          related_session_id?: string | null
+          related_invoice_id?: string | null
+          related_payment_id?: string | null
+          related_receipt_id?: string | null
+          related_patient_link_id?: string | null
+          scheduled_send_at?: string | null
+          status?: string
+          idempotency_key?: string
+          attempt_count?: number
+          locked_at?: string | null
+          locked_by?: string | null
+          completed_at?: string | null
+          failed_at?: string | null
+          error_summary?: string | null
+          created_at?: string
+          updated_at?: string
+          deleted_at?: string | null
+        },
+        [TenantRelationship]
+      >
+      staff_tasks: PublicTable<
+        {
+          id: string
+          tenant_id: string
+          title: string
+          description: string | null
+          task_type: string
+          related_entity_type: string | null
+          related_entity_id: string | null
+          patient_id: string | null
+          booking_id: string | null
+          session_id: string | null
+          invoice_id: string | null
+          payment_id: string | null
+          patient_link_id: string | null
+          assigned_profile_id: string | null
+          assigned_role: string | null
+          priority: string
+          due_at: string | null
+          status: string
+          source_workflow_execution_id: string | null
+          idempotency_key: string | null
+          completed_at: string | null
+          completed_by_profile_id: string | null
+          created_by_profile_id: string | null
+          updated_by_profile_id: string | null
+          deleted_at: string | null
+          created_at: string
+          updated_at: string
+        },
+        {
+          id?: string
+          tenant_id: string
+          title: string
+          description?: string | null
+          task_type?: string
+          related_entity_type?: string | null
+          related_entity_id?: string | null
+          patient_id?: string | null
+          booking_id?: string | null
+          session_id?: string | null
+          invoice_id?: string | null
+          payment_id?: string | null
+          patient_link_id?: string | null
+          assigned_profile_id?: string | null
+          assigned_role?: string | null
+          priority?: string
+          due_at?: string | null
+          status?: string
+          source_workflow_execution_id?: string | null
+          idempotency_key?: string | null
+          completed_at?: string | null
+          completed_by_profile_id?: string | null
+          created_by_profile_id?: string | null
+          updated_by_profile_id?: string | null
+          deleted_at?: string | null
+          created_at?: string
+          updated_at?: string
+        },
+        {
+          id?: string
+          tenant_id?: string
+          title?: string
+          description?: string | null
+          task_type?: string
+          related_entity_type?: string | null
+          related_entity_id?: string | null
+          patient_id?: string | null
+          booking_id?: string | null
+          session_id?: string | null
+          invoice_id?: string | null
+          payment_id?: string | null
+          patient_link_id?: string | null
+          assigned_profile_id?: string | null
+          assigned_role?: string | null
+          priority?: string
+          due_at?: string | null
+          status?: string
+          source_workflow_execution_id?: string | null
+          idempotency_key?: string | null
+          completed_at?: string | null
+          completed_by_profile_id?: string | null
+          created_by_profile_id?: string | null
+          updated_by_profile_id?: string | null
+          deleted_at?: string | null
+          created_at?: string
+          updated_at?: string
+        },
+        [TenantRelationship]
+      >
+      workflow_action_requests: PublicTable<
+        {
+          id: string
+          tenant_id: string
+          workflow_execution_id: string | null
+          workflow_step_execution_id: string | null
+          action_type: string
+          target_entity_type: string | null
+          target_entity_id: string | null
+          patient_id: string | null
+          responsible_party_id: string | null
+          booking_id: string | null
+          session_id: string | null
+          invoice_id: string | null
+          payment_id: string | null
+          patient_link_id: string | null
+          payload: Json
+          status: string
+          idempotency_key: string
+          available_at: string
+          attempt_count: number
+          locked_at: string | null
+          locked_by: string | null
+          completed_at: string | null
+          failed_at: string | null
+          error_summary: string | null
+          created_at: string
+          updated_at: string
+          deleted_at: string | null
+        },
+        {
+          id?: string
+          tenant_id: string
+          workflow_execution_id?: string | null
+          workflow_step_execution_id?: string | null
+          action_type: string
+          target_entity_type?: string | null
+          target_entity_id?: string | null
+          patient_id?: string | null
+          responsible_party_id?: string | null
+          booking_id?: string | null
+          session_id?: string | null
+          invoice_id?: string | null
+          payment_id?: string | null
+          patient_link_id?: string | null
+          payload?: Json
+          status?: string
+          idempotency_key: string
+          available_at?: string
+          attempt_count?: number
+          locked_at?: string | null
+          locked_by?: string | null
+          completed_at?: string | null
+          failed_at?: string | null
+          error_summary?: string | null
+          created_at?: string
+          updated_at?: string
+          deleted_at?: string | null
+        },
+        {
+          id?: string
+          tenant_id?: string
+          workflow_execution_id?: string | null
+          workflow_step_execution_id?: string | null
+          action_type?: string
+          target_entity_type?: string | null
+          target_entity_id?: string | null
+          patient_id?: string | null
+          responsible_party_id?: string | null
+          booking_id?: string | null
+          session_id?: string | null
+          invoice_id?: string | null
+          payment_id?: string | null
+          patient_link_id?: string | null
+          payload?: Json
+          status?: string
+          idempotency_key?: string
+          available_at?: string
+          attempt_count?: number
+          locked_at?: string | null
+          locked_by?: string | null
+          completed_at?: string | null
+          failed_at?: string | null
+          error_summary?: string | null
+          created_at?: string
+          updated_at?: string
+          deleted_at?: string | null
+        },
+        [TenantRelationship]
+      >
+      workflow_dead_letters: PublicTable<
+        {
+          id: string
+          tenant_id: string
+          outbox_event_id: string | null
+          workflow_execution_id: string | null
+          workflow_step_execution_id: string | null
+          workflow_definition_id: string | null
+          workflow_definition_version_id: string | null
+          failure_class: string
+          error_code: string | null
+          error_summary: string
+          safe_context: Json
+          attempt_count: number
+          first_failed_at: string
+          last_failed_at: string
+          dead_lettered_at: string
+          resolution_status: string
+          resolution_notes: string | null
+          resolved_at: string | null
+          resolved_by_profile_id: string | null
+          retry_count: number
+          created_at: string
+          updated_at: string
+          deleted_at: string | null
+        },
+        {
+          id?: string
+          tenant_id: string
+          outbox_event_id?: string | null
+          workflow_execution_id?: string | null
+          workflow_step_execution_id?: string | null
+          workflow_definition_id?: string | null
+          workflow_definition_version_id?: string | null
+          failure_class?: string
+          error_code?: string | null
+          error_summary: string
+          safe_context?: Json
+          attempt_count?: number
+          first_failed_at?: string
+          last_failed_at?: string
+          dead_lettered_at?: string
+          resolution_status?: string
+          resolution_notes?: string | null
+          resolved_at?: string | null
+          resolved_by_profile_id?: string | null
+          retry_count?: number
+          created_at?: string
+          updated_at?: string
+          deleted_at?: string | null
+        },
+        {
+          id?: string
+          tenant_id?: string
+          outbox_event_id?: string | null
+          workflow_execution_id?: string | null
+          workflow_step_execution_id?: string | null
+          workflow_definition_id?: string | null
+          workflow_definition_version_id?: string | null
+          failure_class?: string
+          error_code?: string | null
+          error_summary?: string
+          safe_context?: Json
+          attempt_count?: number
+          first_failed_at?: string
+          last_failed_at?: string
+          dead_lettered_at?: string
+          resolution_status?: string
+          resolution_notes?: string | null
+          resolved_at?: string | null
+          resolved_by_profile_id?: string | null
+          retry_count?: number
+          created_at?: string
+          updated_at?: string
+          deleted_at?: string | null
+        },
+        [TenantRelationship]
+      >
+      workflow_definition_versions: PublicTable<
+        {
+          id: string
+          tenant_id: string | null
+          workflow_definition_id: string
+          version_number: number
+          trigger_type: string
+          trigger_event_type: string | null
+          trigger_config: Json
+          condition_config: Json
+          action_config: Json
+          timezone_strategy: string
+          status: string
+          validation_metadata: Json
+          effective_from: string | null
+          effective_until: string | null
+          published_at: string | null
+          published_by_profile_id: string | null
+          created_by_profile_id: string | null
+          deleted_at: string | null
+          created_at: string
+          updated_at: string
+        },
+        {
+          id?: string
+          tenant_id?: string | null
+          workflow_definition_id: string
+          version_number: number
+          trigger_type: string
+          trigger_event_type?: string | null
+          trigger_config?: Json
+          condition_config?: Json
+          action_config?: Json
+          timezone_strategy?: string
+          status?: string
+          validation_metadata?: Json
+          effective_from?: string | null
+          effective_until?: string | null
+          published_at?: string | null
+          published_by_profile_id?: string | null
+          created_by_profile_id?: string | null
+          deleted_at?: string | null
+          created_at?: string
+          updated_at?: string
+        },
+        {
+          id?: string
+          tenant_id?: string | null
+          workflow_definition_id?: string
+          version_number?: number
+          trigger_type?: string
+          trigger_event_type?: string | null
+          trigger_config?: Json
+          condition_config?: Json
+          action_config?: Json
+          timezone_strategy?: string
+          status?: string
+          validation_metadata?: Json
+          effective_from?: string | null
+          effective_until?: string | null
+          published_at?: string | null
+          published_by_profile_id?: string | null
+          created_by_profile_id?: string | null
+          deleted_at?: string | null
+          created_at?: string
+          updated_at?: string
+        },
+        []
+      >
+      workflow_definitions: PublicTable<
+        {
+          id: string
+          tenant_id: string | null
+          workflow_key: string
+          name: string
+          description: string | null
+          category: string
+          workflow_owner_type: string
+          status: string
+          active_version_id: string | null
+          is_system_workflow: boolean
+          tenant_disable_allowed: boolean
+          tenant_clone_allowed: boolean
+          metadata: Json
+          created_by_profile_id: string | null
+          updated_by_profile_id: string | null
+          deleted_at: string | null
+          created_at: string
+          updated_at: string
+        },
+        {
+          id?: string
+          tenant_id?: string | null
+          workflow_key: string
+          name: string
+          description?: string | null
+          category?: string
+          workflow_owner_type?: string
+          status?: string
+          active_version_id?: string | null
+          is_system_workflow?: boolean
+          tenant_disable_allowed?: boolean
+          tenant_clone_allowed?: boolean
+          metadata?: Json
+          created_by_profile_id?: string | null
+          updated_by_profile_id?: string | null
+          deleted_at?: string | null
+          created_at?: string
+          updated_at?: string
+        },
+        {
+          id?: string
+          tenant_id?: string | null
+          workflow_key?: string
+          name?: string
+          description?: string | null
+          category?: string
+          workflow_owner_type?: string
+          status?: string
+          active_version_id?: string | null
+          is_system_workflow?: boolean
+          tenant_disable_allowed?: boolean
+          tenant_clone_allowed?: boolean
+          metadata?: Json
+          created_by_profile_id?: string | null
+          updated_by_profile_id?: string | null
+          deleted_at?: string | null
+          created_at?: string
+          updated_at?: string
+        },
+        []
+      >
+      workflow_event_outbox: PublicTable<
+        {
+          id: string
+          tenant_id: string
+          event_type: string
+          event_version: number
+          source_domain: string
+          source_table: string
+          source_event_id: string | null
+          source_record_id: string | null
+          patient_id: string | null
+          responsible_party_id: string | null
+          booking_id: string | null
+          session_id: string | null
+          invoice_id: string | null
+          payment_id: string | null
+          patient_link_id: string | null
+          actor_profile_id: string | null
+          correlation_id: string
+          causation_id: string | null
+          idempotency_key: string
+          payload: Json
+          priority: number
+          available_at: string
+          processing_status: string
+          attempt_count: number
+          max_attempts: number
+          locked_at: string | null
+          locked_by: string | null
+          completed_at: string | null
+          failed_at: string | null
+          last_error_code: string | null
+          last_error_summary: string | null
+          dead_lettered_at: string | null
+          created_at: string
+          updated_at: string
+          deleted_at: string | null
+        },
+        {
+          id?: string
+          tenant_id: string
+          event_type: string
+          event_version?: number
+          source_domain: string
+          source_table: string
+          source_event_id?: string | null
+          source_record_id?: string | null
+          patient_id?: string | null
+          responsible_party_id?: string | null
+          booking_id?: string | null
+          session_id?: string | null
+          invoice_id?: string | null
+          payment_id?: string | null
+          patient_link_id?: string | null
+          actor_profile_id?: string | null
+          correlation_id?: string
+          causation_id?: string | null
+          idempotency_key: string
+          payload?: Json
+          priority?: number
+          available_at?: string
+          processing_status?: string
+          attempt_count?: number
+          max_attempts?: number
+          locked_at?: string | null
+          locked_by?: string | null
+          completed_at?: string | null
+          failed_at?: string | null
+          last_error_code?: string | null
+          last_error_summary?: string | null
+          dead_lettered_at?: string | null
+          created_at?: string
+          updated_at?: string
+          deleted_at?: string | null
+        },
+        {
+          id?: string
+          tenant_id?: string
+          event_type?: string
+          event_version?: number
+          source_domain?: string
+          source_table?: string
+          source_event_id?: string | null
+          source_record_id?: string | null
+          patient_id?: string | null
+          responsible_party_id?: string | null
+          booking_id?: string | null
+          session_id?: string | null
+          invoice_id?: string | null
+          payment_id?: string | null
+          patient_link_id?: string | null
+          actor_profile_id?: string | null
+          correlation_id?: string
+          causation_id?: string | null
+          idempotency_key?: string
+          payload?: Json
+          priority?: number
+          available_at?: string
+          processing_status?: string
+          attempt_count?: number
+          max_attempts?: number
+          locked_at?: string | null
+          locked_by?: string | null
+          completed_at?: string | null
+          failed_at?: string | null
+          last_error_code?: string | null
+          last_error_summary?: string | null
+          dead_lettered_at?: string | null
+          created_at?: string
+          updated_at?: string
+          deleted_at?: string | null
+        },
+        [TenantRelationship]
+      >
+      workflow_executions: PublicTable<
+        {
+          id: string
+          tenant_id: string
+          workflow_definition_id: string
+          workflow_definition_version_id: string
+          triggering_outbox_event_id: string | null
+          trigger_type: string
+          status: string
+          idempotency_key: string
+          correlation_id: string
+          causation_id: string | null
+          started_at: string | null
+          completed_at: string | null
+          cancelled_at: string | null
+          failed_at: string | null
+          current_step_key: string | null
+          attempt_count: number
+          next_retry_at: string | null
+          error_classification: string | null
+          error_summary: string | null
+          cancelled_reason: string | null
+          created_at: string
+          updated_at: string
+          deleted_at: string | null
+        },
+        {
+          id?: string
+          tenant_id: string
+          workflow_definition_id: string
+          workflow_definition_version_id: string
+          triggering_outbox_event_id?: string | null
+          trigger_type: string
+          status?: string
+          idempotency_key: string
+          correlation_id?: string
+          causation_id?: string | null
+          started_at?: string | null
+          completed_at?: string | null
+          cancelled_at?: string | null
+          failed_at?: string | null
+          current_step_key?: string | null
+          attempt_count?: number
+          next_retry_at?: string | null
+          error_classification?: string | null
+          error_summary?: string | null
+          cancelled_reason?: string | null
+          created_at?: string
+          updated_at?: string
+          deleted_at?: string | null
+        },
+        {
+          id?: string
+          tenant_id?: string
+          workflow_definition_id?: string
+          workflow_definition_version_id?: string
+          triggering_outbox_event_id?: string | null
+          trigger_type?: string
+          status?: string
+          idempotency_key?: string
+          correlation_id?: string
+          causation_id?: string | null
+          started_at?: string | null
+          completed_at?: string | null
+          cancelled_at?: string | null
+          failed_at?: string | null
+          current_step_key?: string | null
+          attempt_count?: number
+          next_retry_at?: string | null
+          error_classification?: string | null
+          error_summary?: string | null
+          cancelled_reason?: string | null
+          created_at?: string
+          updated_at?: string
+          deleted_at?: string | null
+        },
+        [TenantRelationship]
+      >
+      workflow_scheduled_jobs: PublicTable<
+        {
+          id: string
+          tenant_id: string
+          workflow_execution_id: string | null
+          workflow_step_execution_id: string | null
+          source_outbox_event_id: string | null
+          target_entity_type: string | null
+          target_entity_id: string | null
+          job_type: string
+          scheduled_for: string
+          timezone: string
+          status: string
+          priority: number
+          attempt_count: number
+          locked_at: string | null
+          locked_by: string | null
+          completed_at: string | null
+          cancelled_at: string | null
+          cancellation_reason: string | null
+          next_retry_at: string | null
+          superseded_by_job_id: string | null
+          idempotency_key: string
+          created_at: string
+          updated_at: string
+          deleted_at: string | null
+        },
+        {
+          id?: string
+          tenant_id: string
+          workflow_execution_id?: string | null
+          workflow_step_execution_id?: string | null
+          source_outbox_event_id?: string | null
+          target_entity_type?: string | null
+          target_entity_id?: string | null
+          job_type: string
+          scheduled_for: string
+          timezone?: string
+          status?: string
+          priority?: number
+          attempt_count?: number
+          locked_at?: string | null
+          locked_by?: string | null
+          completed_at?: string | null
+          cancelled_at?: string | null
+          cancellation_reason?: string | null
+          next_retry_at?: string | null
+          superseded_by_job_id?: string | null
+          idempotency_key: string
+          created_at?: string
+          updated_at?: string
+          deleted_at?: string | null
+        },
+        {
+          id?: string
+          tenant_id?: string
+          workflow_execution_id?: string | null
+          workflow_step_execution_id?: string | null
+          source_outbox_event_id?: string | null
+          target_entity_type?: string | null
+          target_entity_id?: string | null
+          job_type?: string
+          scheduled_for?: string
+          timezone?: string
+          status?: string
+          priority?: number
+          attempt_count?: number
+          locked_at?: string | null
+          locked_by?: string | null
+          completed_at?: string | null
+          cancelled_at?: string | null
+          cancellation_reason?: string | null
+          next_retry_at?: string | null
+          superseded_by_job_id?: string | null
+          idempotency_key?: string
+          created_at?: string
+          updated_at?: string
+          deleted_at?: string | null
+        },
+        [TenantRelationship]
+      >
+      workflow_step_executions: PublicTable<
+        {
+          id: string
+          tenant_id: string
+          workflow_execution_id: string
+          workflow_definition_version_id: string
+          step_key: string
+          step_order: number
+          action_type: string
+          status: string
+          input_summary: Json
+          output_summary: Json
+          attempt_count: number
+          started_at: string | null
+          completed_at: string | null
+          failed_at: string | null
+          next_retry_at: string | null
+          error_classification: string | null
+          error_summary: string | null
+          idempotency_key: string
+          created_at: string
+          updated_at: string
+          deleted_at: string | null
+        },
+        {
+          id?: string
+          tenant_id: string
+          workflow_execution_id: string
+          workflow_definition_version_id: string
+          step_key: string
+          step_order?: number
+          action_type: string
+          status?: string
+          input_summary?: Json
+          output_summary?: Json
+          attempt_count?: number
+          started_at?: string | null
+          completed_at?: string | null
+          failed_at?: string | null
+          next_retry_at?: string | null
+          error_classification?: string | null
+          error_summary?: string | null
+          idempotency_key: string
+          created_at?: string
+          updated_at?: string
+          deleted_at?: string | null
+        },
+        {
+          id?: string
+          tenant_id?: string
+          workflow_execution_id?: string
+          workflow_definition_version_id?: string
+          step_key?: string
+          step_order?: number
+          action_type?: string
+          status?: string
+          input_summary?: Json
+          output_summary?: Json
+          attempt_count?: number
+          started_at?: string | null
+          completed_at?: string | null
+          failed_at?: string | null
+          next_retry_at?: string | null
+          error_classification?: string | null
+          error_summary?: string | null
+          idempotency_key?: string
+          created_at?: string
+          updated_at?: string
+          deleted_at?: string | null
+        },
+        [TenantRelationship]
+      >
       tenants: PublicTable<
         {
           id: string
@@ -3979,6 +5218,95 @@ export type Database = {
     }
     Views: Record<string, never>
     Functions: {
+      activate_workflow_version: {
+        Args: {
+          target_version_id: string
+        }
+        Returns: string
+      }
+      cancel_workflow_execution: {
+        Args: {
+          target_execution_id: string
+          cancellation_reason_input: string
+        }
+        Returns: string
+      }
+      cancel_workflow_scheduled_job: {
+        Args: {
+          target_job_id: string
+          cancellation_reason_input: string
+        }
+        Returns: string
+      }
+      claim_workflow_outbox_events: {
+        Args: {
+          worker_id_input: string
+          batch_size?: number
+        }
+        Returns: Database['public']['Tables']['workflow_event_outbox']['Row'][]
+      }
+      claim_workflow_scheduled_jobs: {
+        Args: {
+          worker_id_input: string
+          batch_size?: number
+        }
+        Returns: Database['public']['Tables']['workflow_scheduled_jobs']['Row'][]
+      }
+      complete_workflow_outbox_event: {
+        Args: {
+          target_outbox_id: string
+          worker_id_input: string
+        }
+        Returns: string
+      }
+      enqueue_workflow_event: {
+        Args: {
+          target_tenant_id: string
+          event_type_input: string
+          source_domain_input: string
+          source_table_input: string
+          source_event_id_input: string | null
+          source_record_id_input: string | null
+          idempotency_key_input: string
+          payload_input?: Json
+          patient_id_input?: string | null
+          responsible_party_id_input?: string | null
+          booking_id_input?: string | null
+          session_id_input?: string | null
+          invoice_id_input?: string | null
+          payment_id_input?: string | null
+          patient_link_id_input?: string | null
+          actor_profile_id_input?: string | null
+          event_version_input?: number
+          priority_input?: number
+          available_at_input?: string
+          correlation_id_input?: string | null
+          causation_id_input?: string | null
+        }
+        Returns: string
+      }
+      fail_workflow_outbox_event: {
+        Args: {
+          target_outbox_id: string
+          worker_id_input: string
+          error_code_input: string
+          error_summary_input: string
+          retryable_input?: boolean
+        }
+        Returns: string
+      }
+      retry_workflow_dead_letter: {
+        Args: {
+          target_dead_letter_id: string
+        }
+        Returns: string
+      }
+      validate_workflow_definition_version: {
+        Args: {
+          target_version_id: string
+        }
+        Returns: Json
+      }
       has_tenant_role: {
         Args: {
           target_tenant_id: string
@@ -4094,6 +5422,112 @@ export type Database = {
           reversed_payment: boolean
           payment_status: string
         }[]
+      }
+      create_or_get_patient_link: {
+        Args: {
+          target_patient_id: string
+        }
+        Returns: {
+          patient_link_id: string
+          public_identifier: string
+          link_status: string
+          created_link: boolean
+        }[]
+      }
+      request_patient_link_verification: {
+        Args: {
+          target_public_identifier: string
+          access_grant_id_input: string | null
+          delivery_method_input: string
+          destination_hash_input: string | null
+          verification_code_input: string
+          expires_in_minutes?: number
+        }
+        Returns: {
+          challenge_id: string
+          expires_at: string
+          challenge_status: string
+        }[]
+      }
+      request_patient_link_public_verification: {
+        Args: {
+          target_public_identifier: string
+          delivery_method_input: string
+          expires_in_minutes?: number
+        }
+        Returns: Json
+      }
+      verify_patient_link: {
+        Args: {
+          target_challenge_id: string
+          verification_code_input: string
+        }
+        Returns: {
+          patient_link_id: string
+          access_grant_id: string | null
+          verified: boolean
+          challenge_status: string
+        }[]
+      }
+      create_patient_link_session: {
+        Args: {
+          target_challenge_id: string
+          session_token_input: string
+          ip_address_input?: string | null
+          user_agent_input?: string | null
+          expires_in_minutes?: number
+        }
+        Returns: {
+          session_id: string
+          expires_at: string
+          session_status: string
+        }[]
+      }
+      revoke_patient_link_session: {
+        Args: {
+          target_session_token: string
+          revocation_reason_input?: string
+        }
+        Returns: {
+          session_id: string
+          revoked: boolean
+          session_status: string
+        }[]
+      }
+      reset_patient_link_credentials: {
+        Args: {
+          target_patient_link_id: string
+        }
+        Returns: {
+          patient_link_id: string
+          public_identifier: string
+          credential_reset_at: string
+          reset_credentials: boolean
+        }[]
+      }
+      get_patient_link_public_context: {
+        Args: {
+          target_public_identifier: string
+        }
+        Returns: Json
+      }
+      get_patient_link_portal_data: {
+        Args: {
+          target_public_identifier: string
+          session_token_input: string
+          selected_public_identifier?: string | null
+        }
+        Returns: Json
+      }
+      log_patient_link_portal_access: {
+        Args: {
+          target_public_identifier: string
+          session_token_input: string
+          event_type_input: string
+          resource_type_input?: string | null
+          resource_id_input?: string | null
+        }
+        Returns: Json
       }
       is_super_admin: {
         Args: Record<PropertyKey, never>
