@@ -64,6 +64,433 @@
   -webkit-font-smoothing: antialiased;
 }
 
+.finance-workspace {
+  display: grid;
+  gap: var(--space-5);
+}
+
+.finance-grid {
+  display: grid;
+  grid-template-columns: minmax(360px, 0.95fr) minmax(0, 1.35fr);
+  gap: var(--space-5);
+  align-items: start;
+}
+
+.finance-left-column,
+.finance-detail-column {
+  display: grid;
+  gap: var(--space-4);
+}
+
+.finance-panel {
+  display: grid;
+  gap: var(--space-4);
+  min-width: 0;
+}
+
+.finance-panel-header,
+.invoice-detail-header,
+.finance-actions-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+}
+
+.finance-panel-header p,
+.invoice-detail-header p {
+  margin: 0 0 2px;
+  color: var(--muted);
+  font-size: 0.72rem;
+  font-weight: 800;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.finance-panel-header h3,
+.invoice-detail-header h3 {
+  margin: 0;
+}
+
+.invoice-detail-header > div:last-child {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  justify-content: flex-end;
+}
+
+.finance-message {
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  padding: 10px 12px;
+  font-size: 0.86rem;
+  font-weight: 800;
+}
+
+.finance-message.success {
+  background: #effaf3;
+  border-color: #bde8c8;
+  color: #146c3f;
+}
+
+.finance-message.error {
+  background: #fff1ef;
+  border-color: #ffc7bd;
+  color: #9f2f1f;
+}
+
+.draft-invoice-queue,
+.invoice-record-list,
+.invoice-line-list,
+.finance-event-list {
+  display: grid;
+  gap: 10px;
+}
+
+.draft-queue-item,
+.invoice-record-list button,
+.finance-event-list article,
+.invoice-line-editor {
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  background: var(--surface);
+}
+
+.draft-queue-item {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 10px;
+  padding: 10px;
+}
+
+.draft-queue-item > button,
+.invoice-record-list button {
+  border: 0;
+  background: transparent;
+  color: inherit;
+  cursor: pointer;
+  font: inherit;
+  text-align: left;
+}
+
+.draft-queue-item > button {
+  display: grid;
+  gap: 3px;
+  min-width: 0;
+  padding: 0;
+}
+
+.draft-queue-item > button:disabled {
+  cursor: not-allowed;
+}
+
+.draft-queue-item > div {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.draft-queue-item strong,
+.invoice-record-list strong,
+.finance-event-list strong {
+  color: var(--ink);
+}
+
+.draft-queue-item span,
+.draft-queue-item small,
+.draft-queue-item em,
+.invoice-record-list span,
+.invoice-record-list small,
+.finance-event-list span,
+.finance-event-list small {
+  color: var(--muted);
+  font-size: 0.78rem;
+  font-weight: 700;
+}
+
+.draft-queue-item em {
+  color: #9f4e20;
+  font-style: normal;
+}
+
+.finance-filters {
+  display: grid;
+  grid-template-columns: minmax(210px, 1.4fr) repeat(4, minmax(130px, 1fr));
+  gap: 10px;
+  align-items: end;
+}
+
+.finance-filters label,
+.invoice-edit-grid label,
+.invoice-line-fields label {
+  display: grid;
+  gap: 5px;
+  min-width: 0;
+}
+
+.finance-filters label > span,
+.invoice-edit-grid label > span,
+.invoice-line-fields label > span {
+  color: var(--muted);
+  font-size: 0.72rem;
+  font-weight: 900;
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
+}
+
+.finance-filters input,
+.finance-filters select,
+.invoice-edit-grid input,
+.invoice-edit-grid select,
+.invoice-edit-grid textarea,
+.invoice-line-fields input,
+.invoice-line-fields textarea {
+  width: 100%;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  background: #fff;
+  color: var(--ink);
+  font: inherit;
+  font-size: 0.86rem;
+  padding: 9px 10px;
+}
+
+.invoice-edit-grid textarea,
+.invoice-line-fields textarea {
+  min-height: 74px;
+  resize: vertical;
+}
+
+.finance-checkbox {
+  align-items: center;
+  display: flex !important;
+  flex-direction: row;
+  gap: 8px !important;
+  min-height: 42px;
+}
+
+.finance-checkbox input {
+  width: 18px;
+  height: 18px;
+  accent-color: var(--brand-orange);
+}
+
+.invoice-record-list button {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 12px;
+  padding: 11px 12px;
+}
+
+.invoice-record-list button.active,
+.invoice-record-list button:hover,
+.draft-queue-item:hover {
+  border-color: var(--brand-purple);
+  background: #f7f5ff;
+}
+
+.invoice-record-list button > div {
+  display: grid;
+  gap: 3px;
+}
+
+.invoice-record-list button > div:last-child {
+  justify-items: end;
+}
+
+.invoice-overview-grid,
+.totals-grid,
+.invoice-confirm-summary {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 9px;
+}
+
+.invoice-overview-grid div,
+.totals-grid div,
+.invoice-confirm-summary div {
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  background: #fff;
+  padding: 10px;
+}
+
+.invoice-overview-grid span,
+.totals-grid span,
+.invoice-confirm-summary span {
+  display: block;
+  color: var(--muted);
+  font-size: 0.72rem;
+  font-weight: 900;
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
+}
+
+.invoice-overview-grid strong,
+.totals-grid strong,
+.invoice-confirm-summary strong {
+  display: block;
+  margin-top: 3px;
+  color: var(--ink);
+  font-size: 0.9rem;
+}
+
+.totals-grid div:nth-last-child(3),
+.totals-grid div:last-child {
+  background: #fff0e8;
+  border-color: #ffd2bc;
+}
+
+.totals-grid div:nth-last-child(3) strong,
+.totals-grid div:last-child strong {
+  color: var(--brand-purple);
+}
+
+.finance-warning-box {
+  display: grid;
+  gap: 3px;
+  border: 1px solid #ffc7bd;
+  border-radius: var(--radius-md);
+  background: #fff4ee;
+  color: #8e321f;
+  padding: 10px 12px;
+}
+
+.finance-warning-box span {
+  font-size: 0.84rem;
+  font-weight: 700;
+}
+
+.finance-trace-note {
+  display: grid;
+  gap: 3px;
+  border: 1px dashed var(--border);
+  border-radius: var(--radius-md);
+  background: #fafaff;
+  padding: 10px 12px;
+}
+
+.finance-trace-note strong {
+  color: var(--ink);
+  font-size: 0.86rem;
+}
+
+.finance-trace-note span {
+  color: var(--muted);
+  font-size: 0.8rem;
+  font-weight: 700;
+}
+
+.invoice-edit-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.wide-field {
+  grid-column: 1 / -1;
+}
+
+.invoice-line-editor {
+  display: grid;
+  gap: 10px;
+  padding: 12px;
+}
+
+.invoice-line-fields {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: 9px;
+}
+
+.invoice-line-actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+.invoice-line-actions strong {
+  margin-right: auto;
+  color: var(--brand-purple);
+}
+
+.finance-history-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--space-4);
+}
+
+.finance-event-list article {
+  display: grid;
+  gap: 3px;
+  padding: 10px 12px;
+}
+
+.invoice-confirm-modal {
+  display: grid;
+  gap: var(--space-4);
+  max-width: 720px;
+}
+
+.invoice-confirm-modal > p {
+  margin: 0;
+  color: var(--muted);
+  font-size: 0.72rem;
+  font-weight: 900;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.invoice-confirm-modal h2 {
+  margin: 0;
+}
+
+@media (max-width: 1180px) {
+  .finance-grid,
+  .finance-history-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .finance-filters,
+  .invoice-edit-grid,
+  .invoice-overview-grid,
+  .totals-grid,
+  .invoice-confirm-summary {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .invoice-line-fields {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 720px) {
+  .draft-queue-item,
+  .invoice-record-list button,
+  .finance-filters,
+  .invoice-edit-grid,
+  .invoice-overview-grid,
+  .totals-grid,
+  .invoice-confirm-summary,
+  .invoice-line-fields {
+    grid-template-columns: 1fr;
+  }
+
+  .draft-queue-item > div,
+  .finance-panel-header,
+  .invoice-detail-header,
+  .finance-actions-row,
+  .invoice-line-actions {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .invoice-record-list button > div:last-child {
+    justify-items: start;
+  }
+}
+
 * {
   box-sizing: border-box;
 }
@@ -1465,6 +1892,488 @@ button:disabled {
   grid-template-columns: minmax(260px, 0.82fr) minmax(0, 1.3fr);
   gap: var(--space-3);
   align-items: start;
+}
+
+.patients-engine-page {
+  display: grid;
+  gap: var(--space-3);
+}
+
+.patients-engine-layout {
+  grid-template-columns: minmax(300px, 0.78fr) minmax(0, 1.45fr);
+}
+
+.patients-filter-row {
+  display: grid;
+  gap: 8px;
+}
+
+.patients-filter-row label {
+  display: grid;
+  gap: 4px;
+}
+
+.patients-filter-row label span {
+  color: var(--muted);
+  font-size: var(--font-size-small);
+  font-weight: var(--font-weight-strong);
+  text-transform: uppercase;
+}
+
+.patients-filter-row select {
+  width: 100%;
+  min-height: 38px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: white;
+  color: var(--ink);
+  font: inherit;
+  padding: 7px 10px;
+}
+
+.patients-form-grid {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.patients-action-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  justify-content: flex-end;
+}
+
+.patients-foundation-card {
+  display: grid;
+  gap: var(--space-3);
+  padding: var(--space-5);
+}
+
+.patients-foundation-card > span {
+  color: var(--muted);
+  font-size: var(--font-size-small);
+  font-weight: var(--font-weight-strong);
+  text-transform: uppercase;
+}
+
+.patients-foundation-grid {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 7px;
+}
+
+.booking-engine-page {
+  display: grid;
+  gap: var(--space-3);
+}
+
+.booking-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-3);
+  align-items: center;
+  justify-content: space-between;
+}
+
+.booking-toolbar-group {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  align-items: center;
+}
+
+.booking-toolbar button,
+.booking-toolbar input {
+  min-height: 34px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.9);
+  color: var(--indigo);
+  font: inherit;
+  font-weight: 900;
+  padding: 6px 10px;
+}
+
+.booking-toolbar button.active {
+  border-color: rgba(252, 132, 76, 0.36);
+  background: rgba(252, 132, 76, 0.14);
+  color: var(--indigo);
+}
+
+.booking-filter-row {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.booking-filter-row label {
+  display: grid;
+  gap: 4px;
+}
+
+.booking-filter-row span {
+  color: var(--muted);
+  font-size: var(--font-size-small);
+  font-weight: var(--font-weight-strong);
+  text-transform: uppercase;
+}
+
+.booking-filter-row select {
+  min-height: 38px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: white;
+  color: var(--ink);
+  font: inherit;
+  padding: 7px 10px;
+}
+
+.booking-workspace-layout {
+  display: grid;
+  grid-template-columns: minmax(320px, 0.95fr) minmax(0, 1.25fr);
+  gap: var(--space-3);
+  align-items: start;
+}
+
+.booking-calendar-card,
+.booking-editor-stack {
+  display: grid;
+  gap: var(--space-3);
+}
+
+.booking-calendar-card {
+  padding: var(--space-5);
+}
+
+.booking-agenda-list {
+  display: grid;
+  gap: 8px;
+}
+
+.booking-agenda-list button {
+  display: grid;
+  grid-template-columns: 78px minmax(0, 1fr) auto;
+  gap: 10px;
+  align-items: center;
+  width: 100%;
+  min-height: 64px;
+  padding: 9px 10px;
+  border: 1px solid var(--line);
+  border-left: 4px solid rgba(252, 132, 76, 0.7);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.92);
+  color: var(--ink);
+  text-align: left;
+}
+
+.booking-agenda-list button:hover,
+.booking-agenda-list button.active {
+  border-color: rgba(34, 22, 114, 0.28);
+  background: rgba(224, 225, 246, 0.66);
+  box-shadow: var(--shadow-card);
+}
+
+.booking-agenda-list strong {
+  display: block;
+  color: var(--ink);
+  font-size: 0.78rem;
+  line-height: 1.2;
+}
+
+.booking-agenda-list span,
+.booking-agenda-time span {
+  display: block;
+  margin-top: 3px;
+  color: var(--muted);
+  font-size: var(--font-size-small);
+  font-weight: 800;
+}
+
+.booking-agenda-time {
+  display: grid;
+  gap: 2px;
+}
+
+.booking-form-grid {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.booking-procedure-list {
+  display: grid;
+  gap: 8px;
+}
+
+.booking-procedure-list article {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 82px 116px auto;
+  gap: 8px;
+  align-items: end;
+  padding: 10px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.82);
+}
+
+.booking-procedure-list label,
+.booking-procedure-list article > div {
+  display: grid;
+  gap: 4px;
+}
+
+.booking-procedure-list label span,
+.booking-procedure-list article > div span {
+  color: var(--muted);
+  font-size: var(--font-size-small);
+  font-weight: var(--font-weight-strong);
+  text-transform: uppercase;
+}
+
+.booking-procedure-list select,
+.booking-procedure-list input {
+  min-height: 36px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: white;
+  color: var(--ink);
+  font: inherit;
+  padding: 7px 10px;
+}
+
+.booking-procedure-list article > div strong {
+  color: var(--indigo);
+  font-size: 0.82rem;
+}
+
+.booking-procedure-list article > button {
+  min-height: 36px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--lilac);
+  color: var(--indigo);
+  font: inherit;
+  font-weight: 900;
+  padding: 7px 10px;
+}
+
+.booking-detail-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.booking-detail-grid > div,
+.booking-detail-note,
+.booking-history-grid > div,
+.booking-history-grid article {
+  display: grid;
+  gap: 4px;
+  padding: 10px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.86);
+}
+
+.booking-detail-grid span,
+.booking-detail-grid small,
+.booking-detail-note p,
+.booking-history-grid span,
+.booking-history-grid p {
+  margin: 0;
+  color: var(--muted);
+  font-size: var(--font-size-small);
+  font-weight: 800;
+  line-height: 1.35;
+}
+
+.booking-detail-grid > div > span {
+  text-transform: uppercase;
+}
+
+.booking-detail-grid strong,
+.booking-detail-note strong,
+.booking-history-grid strong {
+  color: var(--ink);
+  font-size: 0.76rem;
+  line-height: 1.22;
+}
+
+.booking-snapshot-list {
+  display: grid;
+  gap: 7px;
+}
+
+.booking-snapshot-list article {
+  display: flex;
+  gap: 10px;
+  align-items: flex-start;
+  justify-content: space-between;
+  padding: 9px 10px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: rgba(224, 225, 246, 0.36);
+}
+
+.booking-snapshot-list article div {
+  display: grid;
+  gap: 3px;
+}
+
+.booking-snapshot-list span {
+  color: var(--muted);
+  font-size: var(--font-size-small);
+  font-weight: 800;
+}
+
+.booking-detail-note.restricted {
+  border-color: rgba(252, 132, 76, 0.38);
+  background: rgba(252, 132, 76, 0.09);
+}
+
+.booking-history-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.patients-workspace-tabs-card {
+  display: flex;
+  gap: var(--space-4);
+  align-items: flex-start;
+  justify-content: space-between;
+  padding: var(--space-5);
+}
+
+.patients-workspace-tabs-card span {
+  color: var(--muted);
+  font-size: var(--font-size-small);
+  font-weight: var(--font-weight-strong);
+  text-transform: uppercase;
+}
+
+.patients-workspace-tabs-card h3 {
+  margin: 4px 0 0;
+  color: var(--ink);
+  font-size: var(--font-size-card-title);
+}
+
+.patients-workspace-tabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  justify-content: flex-end;
+}
+
+.patients-workspace-tabs button {
+  border: 1px solid transparent;
+  border-radius: 999px;
+  background: var(--surface-soft);
+  color: var(--muted);
+  font-size: 0.68rem;
+  font-weight: 900;
+  padding: 7px 10px;
+  cursor: pointer;
+}
+
+.patients-workspace-tabs button.active {
+  border-color: var(--brand-orange-soft);
+  background: var(--brand-orange-soft);
+  color: var(--brand-blue);
+}
+
+.patients-overview-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.patients-overview-grid > div {
+  display: grid;
+  gap: 3px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: white;
+  padding: 10px;
+}
+
+.patients-overview-grid strong {
+  color: var(--ink);
+  font-size: 0.82rem;
+}
+
+.patients-overview-grid span {
+  color: var(--muted);
+  font-size: 0.66rem;
+  font-weight: 800;
+}
+
+.patients-record-list {
+  display: grid;
+  gap: 7px;
+}
+
+.patients-record-list button {
+  width: 100%;
+  display: grid;
+  gap: 3px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: white;
+  color: var(--ink);
+  padding: 10px;
+  text-align: left;
+  cursor: pointer;
+}
+
+.patients-record-list button.active {
+  border-color: var(--brand-blue);
+  background: var(--surface-soft);
+}
+
+.patients-record-list strong {
+  font-size: 0.78rem;
+}
+
+.patients-record-list span {
+  color: var(--muted);
+  font-size: 0.68rem;
+  font-weight: 800;
+}
+
+.patients-history-list {
+  display: grid;
+  gap: 9px;
+}
+
+.patients-history-list article {
+  display: grid;
+  gap: 5px;
+  border-left: 3px solid var(--brand-orange);
+  background: white;
+  border-radius: 8px;
+  padding: 10px 12px;
+}
+
+.patients-history-list article > div {
+  display: flex;
+  gap: 10px;
+  align-items: baseline;
+  justify-content: space-between;
+}
+
+.patients-history-list strong {
+  color: var(--ink);
+  font-size: 0.78rem;
+}
+
+.patients-history-list span,
+.patients-history-list p {
+  color: var(--muted);
+  font-size: 0.68rem;
+  font-weight: 750;
+}
+
+.patients-history-list p {
+  margin: 0;
+  line-height: 1.45;
 }
 
 .practice-locations-list-card {
@@ -8152,6 +9061,10 @@ input[type="checkbox"] {
     grid-template-columns: 1fr;
   }
 
+  .booking-workspace-layout {
+    grid-template-columns: 1fr;
+  }
+
   .billing-practice-editor {
     grid-template-columns: 1fr;
   }
@@ -8248,6 +9161,14 @@ input[type="checkbox"] {
   }
 
   .practice-locations-layout,
+  .patients-engine-layout,
+  .booking-filter-row,
+  .booking-form-grid,
+  .booking-detail-grid,
+  .booking-history-grid,
+  .booking-agenda-list button,
+  .booking-procedure-list article,
+  .patients-form-grid,
   .practice-billing-form,
   .finance-price-list-form,
   .finance-procedure-form,
@@ -8260,6 +9181,23 @@ input[type="checkbox"] {
   .practice-therapist-form,
   .practice-location-form,
   .practice-location-cards button {
+    grid-template-columns: 1fr;
+  }
+
+  .patients-action-row {
+    justify-content: flex-start;
+  }
+
+  .patients-workspace-tabs-card,
+  .patients-history-list article > div {
+    flex-direction: column;
+  }
+
+  .patients-workspace-tabs {
+    justify-content: flex-start;
+  }
+
+  .patients-overview-grid {
     grid-template-columns: 1fr;
   }
 

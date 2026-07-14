@@ -17,6 +17,7 @@ import { PracticeLocationsPage } from '../pages/PracticeLocations'
 import { PracticeProfilePage } from '../pages/PracticeProfile'
 import { PracticeTherapistsPage } from '../pages/PracticeTherapists'
 import { SettingsPage } from '../pages/Settings'
+import { SessionsPage } from '../pages/Sessions'
 
 export type AppRoute = {
   path: string
@@ -24,7 +25,7 @@ export type AppRoute = {
   title: string
   description: string
   accessArea: AccessArea
-  placeholderPattern: 'overview' | 'bookings' | 'patients' | 'finance' | 'financePriceLists' | 'practice' | 'practiceProfile' | 'practiceLocations' | 'practiceBanking' | 'practiceBilling' | 'practiceBranding' | 'practiceCommunicationTemplates' | 'practiceTherapists' | 'settings'
+  placeholderPattern: 'overview' | 'bookings' | 'sessions' | 'patients' | 'finance' | 'financePriceLists' | 'practice' | 'practiceProfile' | 'practiceLocations' | 'practiceBanking' | 'practiceBilling' | 'practiceBranding' | 'practiceCommunicationTemplates' | 'practiceTherapists' | 'settings'
   showInNav?: boolean
 }
 
@@ -44,6 +45,15 @@ export const appRoutes: AppRoute[] = [
     accessArea: 'bookings',
     description: 'Calendar, new booking, location calendar, therapist calendar and booking queue structure.',
     placeholderPattern: 'bookings',
+  },
+  {
+    path: '/bookings/sessions',
+    label: 'Sessions',
+    title: 'Sessions',
+    accessArea: 'bookings',
+    description: 'Create, view, start, complete and reopen sessions from eligible bookings.',
+    placeholderPattern: 'sessions',
+    showInNav: false,
   },
   {
     path: '/patients',
@@ -213,6 +223,7 @@ function PlaceholderPage({ route }: { route: AppRoute }) {
     <RoutedPageFrame route={route}>
       {route.placeholderPattern === 'overview' && <OverviewPage />}
       {route.placeholderPattern === 'bookings' && <BookingsPage />}
+      {route.placeholderPattern === 'sessions' && <SessionsPage />}
       {route.placeholderPattern === 'patients' && <PatientsPage />}
       {route.placeholderPattern === 'finance' && <FinancePage />}
       {route.placeholderPattern === 'financePriceLists' && <FinancePriceListsPage />}
@@ -255,6 +266,14 @@ function getRouteBreadcrumbs(route: AppRoute): BreadcrumbItem[] {
     return [
       { label: 'Workspace', to: '/overview' },
       { label: 'Finance', to: '/finance' },
+      { label: route.label },
+    ]
+  }
+
+  if (route.path.startsWith('/bookings/') && route.path !== '/bookings') {
+    return [
+      { label: 'Workspace', to: '/overview' },
+      { label: 'Bookings', to: '/bookings' },
       { label: route.label },
     ]
   }
