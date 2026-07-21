@@ -165,7 +165,7 @@ begin
   end if;
 
   generated_code := lpad((floor(random() * 1000000))::integer::text, 6, '0');
-  salt_value := encode(gen_random_bytes(16), 'hex');
+  salt_value := encode(extensions.gen_random_bytes(16), 'hex');
 
   insert into public.patient_link_verification_challenges (
     tenant_id,

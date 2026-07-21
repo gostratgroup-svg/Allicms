@@ -4,6 +4,7 @@ import { useAuthorization } from '../auth/permissions'
 import { ErrorState, LoadingState } from '../components/UiState'
 import { Button, Card, StatusBadge } from '../components/ui'
 import { isSupabaseConfigured, supabase } from '../lib/supabase'
+import { formatFileSize, uploadDocumentFile } from '../lib/storageDocuments'
 import type { Database, Json } from '../lib/database.types'
 
 type PracticeBrandingRow = Database['public']['Tables']['practice_branding']['Row']
@@ -105,6 +106,7 @@ export function PracticeBrandingPage() {
   const [loadError, setLoadError] = useState('')
   const [saveError, setSaveError] = useState('')
   const [successMessage, setSuccessMessage] = useState('')
+  const [logoFile, setLogoFile] = useState<File | null>(null)
 
   const hasExistingBranding = Boolean(branding?.id)
   const isReadOnly = !canEditBranding || saving
@@ -198,32 +200,55 @@ export function PracticeBrandingPage() {
     setSaveError('')
     setSuccessMessage('')
 
-    const payload = toBrandingPayload(formState, branding)
+    try {
+      let payload = toBrandingPayload(formState, branding)
 
-    const result = branding?.id
-      ? await supabase
-          .from('practice_branding')
-          .update(payload satisfies PracticeBrandingUpdate)
-          .eq('id', branding.id)
-          .eq('tenant_id', activeTenant.id)
-          .select()
-          .single()
-      : await supabase
-          .from('practice_branding')
-          .insert({ ...payload, tenant_id: activeTenant.id })
-          .select()
-          .single()
+      if (logoFile) {
+        const uploadedLogo = await uploadDocumentFile(supabase, {
+          tenantId: activeTenant.id,
+          bucketId: 'practice-assets',
+          patientId: null,
+          practiceBrandingId: branding?.id ?? null,
+          documentCategory: 'practice_logo',
+          file: logoFile,
+          sharingScope: 'practice',
+          metadata: {
+            source: 'practice_branding',
+            display_name: formState.patient_facing_display_name.trim(),
+          },
+        })
+        payload = {
+          ...payload,
+          logo_url: uploadedLogo.object_path,
+        }
+      }
 
-    if (result.error) {
-      setSaveError(result.error.message)
+      const result = branding?.id
+        ? await supabase
+            .from('practice_branding')
+            .update(payload satisfies PracticeBrandingUpdate)
+            .eq('id', branding.id)
+            .eq('tenant_id', activeTenant.id)
+            .select()
+            .single()
+        : await supabase
+            .from('practice_branding')
+            .insert({ ...payload, tenant_id: activeTenant.id })
+            .select()
+            .single()
+
+      if (result.error) throw result.error
+
+      const savedBranding = result.data as PracticeBrandingRow
+      setBranding(savedBranding)
+      setFormState(formFromBranding(savedBranding))
+      setLogoFile(null)
+      setSuccessMessage(logoFile ? 'Practice branding saved and logo uploaded.' : hasExistingBranding ? 'Practice branding updated.' : 'Practice branding created.')
+    } catch (error) {
+      setSaveError(error instanceof Error ? error.message : 'Practice branding could not be saved.')
       setSaving(false)
       return
     }
-
-    const savedBranding = result.data as PracticeBrandingRow
-    setBranding(savedBranding)
-    setFormState(formFromBranding(savedBranding))
-    setSuccessMessage(hasExistingBranding ? 'Practice branding updated.' : 'Practice branding created.')
     setSaving(false)
   }
 
@@ -249,7 +274,7 @@ export function PracticeBrandingPage() {
           <h3>{previewDisplayName}</h3>
           <p>
             Configure tenant branding defaults for future patient-facing views, documents and communication.
-            This step stores logo paths only and does not upload files.
+            Store tenant branding defaults for future patient-facing views, documents and communication.
           </p>
         </div>
         <div className="practice-profile-summary-actions">
@@ -289,6 +314,20 @@ export function PracticeBrandingPage() {
             <label>
               <span>Logo URL / path</span>
               <input value={formState.logo_url} disabled={isReadOnly} onChange={(event) => updateField('logo_url', event.target.value)} />
+            </label>
+            <label>
+              <span>Upload logo</span>
+              <input
+                type="file"
+                accept="image/png,image/jpeg"
+                disabled={isReadOnly}
+                onChange={(event) => {
+                  const file = event.target.files?.[0] ?? null
+                  setLogoFile(file)
+                  setSaveError('')
+                  setSuccessMessage(file ? `${file.name} selected (${formatFileSize(file.size)}). Save branding to upload.` : '')
+                }}
+              />
             </label>
             <label>
               <span>Primary colour</span>

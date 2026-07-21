@@ -898,7 +898,7 @@ export function SessionsPage() {
         actual_end_at_input: fromDateTimeLocal(completionForm.actual_end_at),
         attendance_outcome_input: completionForm.attendance_outcome,
         session_outcome_input: completionForm.session_outcome,
-        operational_summary_input: completionForm.operational_summary.trim() || null,
+        operational_summary_input: completionForm.operational_summary.trim() || undefined,
       })
 
       if (result.error) throw new Error(result.error.message)

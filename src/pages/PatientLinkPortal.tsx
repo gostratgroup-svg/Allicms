@@ -244,7 +244,7 @@ export function PatientLinkPortal() {
     const { data, error: portalError } = await supabase.rpc('get_patient_link_portal_data', {
       target_public_identifier: publicIdentifier,
       session_token_input: token,
-      selected_public_identifier: selected || null,
+      selected_public_identifier: selected || undefined,
     })
 
     const nextData = parseJsonObject<PatientLinkPortalData>(data)
@@ -320,8 +320,8 @@ export function PatientLinkPortal() {
       target_public_identifier: publicIdentifier,
       session_token_input: sessionToken,
       event_type_input: eventType,
-      resource_type_input: resourceType ?? null,
-      resource_id_input: resourceId ?? null,
+      resource_type_input: resourceType ?? undefined,
+      resource_id_input: resourceId ?? undefined,
     })
   }
 

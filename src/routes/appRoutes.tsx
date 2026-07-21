@@ -4,6 +4,7 @@ import { useAuthorization, type AccessArea } from '../auth/permissions'
 import { PageHeader, type BreadcrumbItem } from '../components/PageHeader'
 import { AccessDeniedState } from '../components/UiState'
 import { BookingsPage } from '../pages/Bookings'
+import { ClinicalPage } from '../pages/Clinical'
 import { FinancePage } from '../pages/Finance'
 import { FinancePriceListsPage } from '../pages/FinancePriceLists'
 import { OverviewPage } from '../pages/Overview'
@@ -11,6 +12,7 @@ import { PatientsPage } from '../pages/Patients'
 import { PracticeBankingPage } from '../pages/PracticeBanking'
 import { PracticeBillingPage } from '../pages/PracticeBilling'
 import { PracticeBrandingPage } from '../pages/PracticeBranding'
+import { ClinicalTemplatesPage } from '../pages/ClinicalTemplates'
 import { PracticeCommunicationTemplatesPage } from '../pages/PracticeCommunicationTemplates'
 import { PracticePage } from '../pages/Practice'
 import { PracticeLocationsPage } from '../pages/PracticeLocations'
@@ -26,7 +28,7 @@ export type AppRoute = {
   title: string
   description: string
   accessArea: AccessArea
-  placeholderPattern: 'overview' | 'bookings' | 'sessions' | 'patients' | 'finance' | 'financePriceLists' | 'practice' | 'practiceProfile' | 'practiceLocations' | 'practiceBanking' | 'practiceBilling' | 'practiceBranding' | 'practiceCommunicationTemplates' | 'practiceTherapists' | 'practiceWorkflows' | 'settings'
+  placeholderPattern: 'overview' | 'bookings' | 'sessions' | 'patients' | 'clinical' | 'finance' | 'financePriceLists' | 'practice' | 'practiceProfile' | 'practiceLocations' | 'practiceBanking' | 'practiceBilling' | 'practiceBranding' | 'clinicalTemplates' | 'practiceCommunicationTemplates' | 'practiceTherapists' | 'practiceWorkflows' | 'settings'
   showInNav?: boolean
 }
 
@@ -63,6 +65,15 @@ export const appRoutes: AppRoute[] = [
     accessArea: 'patients',
     description: 'Patient database, onboarding, history, Patient Link and document structure.',
     placeholderPattern: 'patients',
+  },
+  {
+    path: '/patients/clinical',
+    label: 'Clinical Workspace',
+    title: 'Clinical Workspace',
+    accessArea: 'clinical',
+    description: 'Clinical encounters, notes, treatment plans, outcomes, diagnoses, attachments and Patient Link publication controls.',
+    placeholderPattern: 'clinical',
+    showInNav: false,
   },
   {
     path: '/finance',
@@ -141,6 +152,15 @@ export const appRoutes: AppRoute[] = [
     accessArea: 'settings',
     description: 'Create and maintain tenant branding configuration.',
     placeholderPattern: 'practiceBranding',
+    showInNav: false,
+  },
+  {
+    path: '/practice/clinical-templates',
+    label: 'Clinical Templates',
+    title: 'Clinical Templates',
+    accessArea: 'clinical',
+    description: 'Manage tenant clinical documentation templates, draft versions, validation, assignments and publication readiness.',
+    placeholderPattern: 'clinicalTemplates',
     showInNav: false,
   },
   {
@@ -235,12 +255,14 @@ function PlaceholderPage({ route }: { route: AppRoute }) {
       {route.placeholderPattern === 'bookings' && <BookingsPage />}
       {route.placeholderPattern === 'sessions' && <SessionsPage />}
       {route.placeholderPattern === 'patients' && <PatientsPage />}
+      {route.placeholderPattern === 'clinical' && <ClinicalPage />}
       {route.placeholderPattern === 'finance' && <FinancePage />}
       {route.placeholderPattern === 'financePriceLists' && <FinancePriceListsPage />}
       {route.placeholderPattern === 'practice' && <PracticePage />}
       {route.placeholderPattern === 'practiceBanking' && <PracticeBankingPage />}
       {route.placeholderPattern === 'practiceBilling' && <PracticeBillingPage />}
       {route.placeholderPattern === 'practiceBranding' && <PracticeBrandingPage />}
+      {route.placeholderPattern === 'clinicalTemplates' && <ClinicalTemplatesPage />}
       {route.placeholderPattern === 'practiceCommunicationTemplates' && <PracticeCommunicationTemplatesPage />}
       {route.placeholderPattern === 'practiceProfile' && <PracticeProfilePage />}
       {route.placeholderPattern === 'practiceLocations' && <PracticeLocationsPage />}
@@ -285,6 +307,14 @@ function getRouteBreadcrumbs(route: AppRoute): BreadcrumbItem[] {
     return [
       { label: 'Workspace', to: '/overview' },
       { label: 'Bookings', to: '/bookings' },
+      { label: route.label },
+    ]
+  }
+
+  if (route.path.startsWith('/patients/') && route.path !== '/patients') {
+    return [
+      { label: 'Workspace', to: '/overview' },
+      { label: 'Patients', to: '/patients' },
       { label: route.label },
     ]
   }

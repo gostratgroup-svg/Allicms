@@ -20,7 +20,7 @@ alter table public.patient_links
 update public.patient_links
 set
   public_identifier = coalesce(public_identifier, link_token),
-  credential_hash = coalesce(credential_hash, encode(digest(link_token, 'sha256'), 'hex'))
+  credential_hash = coalesce(credential_hash, encode(extensions.digest(link_token, 'sha256'), 'hex'))
 where public_identifier is null
    or credential_hash is null;
 
@@ -89,7 +89,7 @@ create table public.patient_link_verification_challenges (
   delivery_method text not null,
   destination_hash text,
   verification_code_hash text not null,
-  code_salt text not null default encode(gen_random_bytes(16), 'hex'),
+  code_salt text not null default encode(extensions.gen_random_bytes(16), 'hex'),
   challenge_status text not null default 'pending',
   attempts_count integer not null default 0,
   max_attempts integer not null default 5,
@@ -532,7 +532,7 @@ language sql
 immutable
 set search_path = public
 as $$
-  select encode(digest(coalesce(salt_input, '') || coalesce(secret_input, ''), 'sha256'), 'hex');
+  select encode(extensions.digest(coalesce(salt_input, '') || coalesce(secret_input, ''), 'sha256'), 'hex');
 $$;
 
 create or replace function public.create_or_get_patient_link(target_patient_id uuid)
@@ -583,8 +583,8 @@ begin
     return;
   end if;
 
-  generated_identifier := encode(gen_random_bytes(24), 'hex');
-  generated_credential := encode(gen_random_bytes(32), 'hex');
+  generated_identifier := encode(extensions.gen_random_bytes(24), 'hex');
+  generated_credential := encode(extensions.gen_random_bytes(32), 'hex');
 
   insert into public.patient_links (
     tenant_id,
@@ -676,7 +676,7 @@ begin
     raise exception 'Verification code is required';
   end if;
 
-  salt_value := encode(gen_random_bytes(16), 'hex');
+  salt_value := encode(extensions.gen_random_bytes(16), 'hex');
 
   insert into public.patient_link_verification_challenges (
     tenant_id,
@@ -1040,7 +1040,7 @@ begin
     raise exception 'Not allowed to reset this Patient Link';
   end if;
 
-  generated_credential := encode(gen_random_bytes(32), 'hex');
+  generated_credential := encode(extensions.gen_random_bytes(32), 'hex');
 
   update public.patient_links
   set credential_hash = public.hash_patient_link_secret(generated_credential),

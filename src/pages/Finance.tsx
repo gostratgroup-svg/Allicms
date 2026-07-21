@@ -6,6 +6,8 @@ import { PageHeader } from '../components/PageHeader'
 import { EmptyState, ErrorState, LoadingState } from '../components/UiState'
 import { Button, Card, SearchBar, StatusBadge } from '../components/ui'
 import type { Database, Json } from '../lib/database.types'
+import { buildFinancialPdfFile } from '../lib/financePdf'
+import { createSignedDocumentUrl, uploadDocumentFile } from '../lib/storageDocuments'
 import { supabase } from '../lib/supabase'
 
 type InvoiceRow = Database['public']['Tables']['invoices']['Row']
@@ -36,6 +38,7 @@ type ReceiptRow = Database['public']['Tables']['receipts']['Row']
 type PaymentStatusHistoryRow = Database['public']['Tables']['payment_status_history']['Row']
 type PaymentWorkflowEventRow = Database['public']['Tables']['payment_workflow_events']['Row']
 type PatientHistoryEventRow = Database['public']['Tables']['patient_history_events']['Row']
+type DocumentFileRow = Database['public']['Tables']['document_files']['Row']
 
 type FinanceSection = 'invoices' | 'payments' | 'accounts' | 'receipts'
 
@@ -235,6 +238,16 @@ function getMetadataText(metadata: Json, key: string) {
   return typeof value === 'string' ? value : ''
 }
 
+function getMetadataId(metadata: Json, key: string) {
+  return getMetadataText(metadata, key)
+}
+
+function getLatestDocument(documents: DocumentFileRow[], predicate: (document: DocumentFileRow) => boolean) {
+  return documents
+    .filter((document) => document.document_status === 'available' && predicate(document))
+    .sort((a, b) => b.created_at.localeCompare(a.created_at))[0] ?? null
+}
+
 function parseAddress(value: string): Json {
   const trimmed = value.trim()
   if (!trimmed) return {}
@@ -266,6 +279,10 @@ function getInvoiceDisplay(invoice: InvoiceRow) {
 
 function getPaymentDisplay(payment: PaymentRow) {
   return payment.payment_reference || payment.external_transaction_reference || `Payment ${payment.id.slice(0, 8)}`
+}
+
+function getSafePdfFilename(value: string) {
+  return `${value.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, '') || 'allidesk-document'}.pdf`
 }
 
 function getEmptyPaymentForm(invoice?: InvoiceRow | null, patient?: PatientRow | null, responsibleParty?: ResponsiblePartyRow | null): PaymentForm {
@@ -493,6 +510,7 @@ export function FinancePage() {
   const [paymentAllocations, setPaymentAllocations] = useState<PaymentAllocationRow[]>([])
   const [accountCredits, setAccountCredits] = useState<AccountCreditRow[]>([])
   const [receipts, setReceipts] = useState<ReceiptRow[]>([])
+  const [documentFiles, setDocumentFiles] = useState<DocumentFileRow[]>([])
   const [paymentStatusHistory, setPaymentStatusHistory] = useState<PaymentStatusHistoryRow[]>([])
   const [paymentWorkflowEvents, setPaymentWorkflowEvents] = useState<PaymentWorkflowEventRow[]>([])
   const [patientHistoryEvents, setPatientHistoryEvents] = useState<PatientHistoryEventRow[]>([])
@@ -515,6 +533,7 @@ export function FinancePage() {
   const [showPaymentForm, setShowPaymentForm] = useState(false)
   const [reversalReason, setReversalReason] = useState('')
   const [confirmReviewOpen, setConfirmReviewOpen] = useState(false)
+  const [documentActionId, setDocumentActionId] = useState('')
 
   const patientById = useMemo(() => new Map(patients.map((patient) => [patient.id, patient])), [patients])
   const responsiblePartyById = useMemo(() => new Map(responsibleParties.map((party) => [party.id, party])), [responsibleParties])
@@ -647,6 +666,20 @@ export function FinancePage() {
     () => selectedPayment ? paymentWorkflowEvents.filter((event) => event.payment_id === selectedPayment.id) : [],
     [paymentWorkflowEvents, selectedPayment],
   )
+  const selectedInvoicePdf = useMemo(
+    () => selectedInvoice ? getLatestDocument(documentFiles, (document) => document.document_category === 'invoice_pdf' && document.invoice_id === selectedInvoice.id) : null,
+    [documentFiles, selectedInvoice],
+  )
+  const selectedReceiptPdf = useMemo(
+    () => selectedPayment && selectedPaymentReceipt
+      ? getLatestDocument(documentFiles, (document) => (
+          document.document_category === 'receipt_pdf'
+          && document.payment_id === selectedPayment.id
+          && getMetadataId(document.metadata, 'receipt_id') === selectedPaymentReceipt.id
+        ))
+      : null,
+    [documentFiles, selectedPayment, selectedPaymentReceipt],
+  )
   const selectedInvoicePatientHistory = useMemo(
     () => selectedInvoice ? patientHistoryEvents.filter((event) => event.patient_id === selectedInvoice.patient_id && event.source_id === selectedInvoice.id) : [],
     [patientHistoryEvents, selectedInvoice],
@@ -695,6 +728,7 @@ export function FinancePage() {
         allocationResult,
         creditResult,
         receiptResult,
+        documentResult,
         paymentHistoryResult,
         paymentWorkflowResult,
         patientHistoryResult,
@@ -712,6 +746,7 @@ export function FinancePage() {
         supabase.from('payment_allocations').select('*').eq('tenant_id', tenantId).is('deleted_at', null).order('allocated_at', { ascending: false }),
         supabase.from('account_credits').select('*').eq('tenant_id', tenantId).is('deleted_at', null).order('created_at', { ascending: false }),
         supabase.from('receipts').select('*').eq('tenant_id', tenantId).is('deleted_at', null).order('issued_at', { ascending: false }),
+        supabase.from('document_files').select('*').eq('tenant_id', tenantId).in('document_category', ['invoice_pdf', 'receipt_pdf', 'statement_pdf']).is('deleted_at', null).order('created_at', { ascending: false }),
         supabase.from('payment_status_history').select('*').eq('tenant_id', tenantId).is('deleted_at', null).order('created_at', { ascending: false }),
         supabase.from('payment_workflow_events').select('*').eq('tenant_id', tenantId).is('deleted_at', null).order('created_at', { ascending: false }),
         supabase.from('patient_history_events').select('*').eq('tenant_id', tenantId).is('deleted_at', null).in('source_table', ['invoices', 'payments', 'payment_allocations', 'receipts']).order('occurred_at', { ascending: false }),
@@ -730,6 +765,7 @@ export function FinancePage() {
       if (allocationResult.error) throw allocationResult.error
       if (creditResult.error) throw creditResult.error
       if (receiptResult.error) throw receiptResult.error
+      if (documentResult.error) throw documentResult.error
       if (paymentHistoryResult.error) throw paymentHistoryResult.error
       if (paymentWorkflowResult.error) throw paymentWorkflowResult.error
       if (patientHistoryResult.error) throw patientHistoryResult.error
@@ -747,6 +783,7 @@ export function FinancePage() {
       setPaymentAllocations(allocationResult.data ?? [])
       setAccountCredits(creditResult.data ?? [])
       setReceipts(receiptResult.data ?? [])
+      setDocumentFiles(documentResult.data ?? [])
       setPaymentStatusHistory(paymentHistoryResult.data ?? [])
       setPaymentWorkflowEvents(paymentWorkflowResult.data ?? [])
       setPatientHistoryEvents(patientHistoryResult.data ?? [])
@@ -905,6 +942,331 @@ export function FinancePage() {
       .is('deleted_at', null)
     if (result.error) throw result.error
     return new Map((result.data ?? []).map((invoice) => [invoice.id, invoice]))
+  }
+
+  const openGeneratedDocument = async (documentFile: DocumentFileRow | null) => {
+    if (!supabase || !documentFile) return
+    setActionError('')
+    const targetWindow = window.open('', '_blank')
+    try {
+      const url = await createSignedDocumentUrl(supabase, documentFile.bucket_id, documentFile.object_path)
+      if (targetWindow) targetWindow.location.href = url
+      else window.location.href = url
+    } catch (error) {
+      targetWindow?.close()
+      setActionError(getFriendlyFinanceError(error, 'Generated document could not be opened.'))
+    }
+  }
+
+  const uploadGeneratedPdf = async (
+    file: File,
+    documentCategory: 'invoice_pdf' | 'receipt_pdf' | 'statement_pdf',
+    context: {
+      patientId?: string | null
+      invoiceId?: string | null
+      paymentId?: string | null
+      metadata: Json
+    },
+  ) => {
+    if (!supabase || !activeTenant?.id) throw new Error('Generated document storage is not ready.')
+    return uploadDocumentFile(supabase, {
+      tenantId: activeTenant.id,
+      bucketId: 'generated-documents',
+      documentCategory,
+      file,
+      patientId: context.patientId ?? null,
+      invoiceId: context.invoiceId ?? null,
+      paymentId: context.paymentId ?? null,
+      sharingScope: 'internal',
+      metadata: context.metadata,
+    })
+  }
+
+  const generateInvoicePdf = async () => {
+    if (!selectedInvoiceDetail || !selectedInvoice || !canManageFinance || saving || documentActionId) return
+    if (!['issued', 'awaiting_payment', 'partially_paid', 'paid', 'overdue'].includes(selectedInvoice.invoice_status)) {
+      setActionError('Issue the invoice before generating the official invoice PDF.')
+      return
+    }
+    setDocumentActionId(`invoice:${selectedInvoice.id}`)
+    setActionError('')
+    setSuccessMessage('')
+    try {
+      const freshInvoice = await loadFreshInvoice(selectedInvoice.id)
+      if (freshInvoice.updated_at !== selectedInvoice.updated_at || freshInvoice.invoice_status !== selectedInvoice.invoice_status) {
+        await refreshSelectedInvoice(selectedInvoice.id)
+        throw new Error('This invoice changed before PDF generation. The latest invoice has been loaded; please review and generate again.')
+      }
+      const detail = selectedInvoiceDetail
+      const invoiceName = getInvoiceDisplay(freshInvoice)
+      const file = buildFinancialPdfFile({
+        title: 'Invoice',
+        subtitle: detail.issuerSnapshot?.practice_trading_name || detail.issuerSnapshot?.practice_legal_name || activeTenant?.practice_name || 'AlliDesk practice',
+        documentNumber: invoiceName,
+        generatedAt: formatDateTime(new Date().toISOString()),
+        sections: [
+          {
+            title: 'To',
+            rows: [
+              ['Responsible party', detail.partySnapshot?.responsible_party_name || detail.partySnapshot?.patient_full_name || 'Not set'],
+              ['Billing email', detail.partySnapshot?.billing_email ?? 'Not set'],
+              ['Billing phone', detail.partySnapshot?.billing_phone ?? 'Not set'],
+              ['Billing address', formatJsonAddress(detail.partySnapshot?.billing_address ?? {}) || 'Not set'],
+              ['Patient', detail.partySnapshot?.patient_full_name ?? formatPatientName(selectedPatient)],
+              ['Patient number', detail.partySnapshot?.patient_number ?? 'Not set'],
+              ['DOB', formatDate(detail.partySnapshot?.patient_date_of_birth)],
+              ['ICD-10', detail.partySnapshot?.patient_icd10_code ?? 'Not set'],
+            ],
+          },
+          {
+            title: 'From',
+            rows: [
+              ['Practice', detail.issuerSnapshot?.practice_trading_name || detail.issuerSnapshot?.practice_legal_name || 'Not set'],
+              ['Address', formatJsonAddress(detail.issuerSnapshot?.practice_address ?? {}) || formatJsonAddress(detail.issuerSnapshot?.location_address ?? {}) || 'Not set'],
+              ['Email', detail.issuerSnapshot?.practice_email ?? 'Not set'],
+              ['Phone', detail.issuerSnapshot?.practice_phone ?? 'Not set'],
+              ['Therapist', detail.issuerSnapshot?.therapist_name ?? selectedTherapist?.display_name ?? 'Not set'],
+              ['Practice number', detail.issuerSnapshot?.therapist_practice_number ?? 'Not set'],
+              ['Banking', [detail.issuerSnapshot?.bank_account_holder, detail.issuerSnapshot?.bank_name, detail.issuerSnapshot?.bank_account_number, detail.issuerSnapshot?.bank_branch_code].filter(Boolean).join(' | ') || 'Not set'],
+            ],
+          },
+          {
+            title: 'Invoice dates',
+            rows: [
+              ['Invoice date', formatDate(freshInvoice.invoice_date)],
+              ['Due date', formatDate(freshInvoice.due_date)],
+              ['Status', formatLabel(freshInvoice.invoice_status)],
+              ['Payment status', formatLabel(freshInvoice.payment_status)],
+            ],
+          },
+        ],
+        table: {
+          headers: ['Date', 'Code', 'Description', 'ICD-10', 'Price'],
+          rows: detail.lines.map((line) => ({
+            columns: [
+              formatDate(line.service_date),
+              line.procedure_code ?? 'Not set',
+              line.description || line.procedure_name,
+              line.icd10_code ?? detail.partySnapshot?.patient_icd10_code ?? 'Not set',
+              formatMoney(line.line_total, line.currency_code),
+            ],
+          })),
+        },
+        totals: [
+          ['Subtotal', formatMoney(freshInvoice.subtotal_amount, freshInvoice.currency_code)],
+          ['Tax', formatMoney(freshInvoice.tax_total, freshInvoice.currency_code)],
+          ['Total', formatMoney(freshInvoice.total_amount, freshInvoice.currency_code)],
+          ['Paid', formatMoney(freshInvoice.amount_paid, freshInvoice.currency_code)],
+          ['Balance', formatMoney(freshInvoice.balance_due, freshInvoice.currency_code)],
+        ],
+        footer: detail.issuerSnapshot?.invoice_footer ?? detail.issuerSnapshot?.payment_instructions ?? 'Generated by AlliDesk.',
+      }, getSafePdfFilename(`invoice-${invoiceName}`))
+      await uploadGeneratedPdf(file, 'invoice_pdf', {
+        patientId: freshInvoice.patient_id,
+        invoiceId: freshInvoice.id,
+        metadata: {
+          document_type: 'invoice_pdf',
+          invoice_id: freshInvoice.id,
+          invoice_number: freshInvoice.invoice_number,
+          generated_from: 'finance_workspace',
+        },
+      })
+      await refreshFinanceState(freshInvoice.id)
+      setSuccessMessage(`Invoice PDF generated for ${invoiceName}.`)
+    } catch (error) {
+      setActionError(getFriendlyFinanceError(error, 'Invoice PDF could not be generated.'))
+    } finally {
+      setDocumentActionId('')
+    }
+  }
+
+  const ensureReceiptForPayment = async (payment: PaymentRow) => {
+    const existingReceipt = receiptByPaymentId.get(payment.id)
+    if (existingReceipt) return existingReceipt
+    if (!supabase) throw new Error('Receipt generation is not ready.')
+    const result = await supabase.rpc('create_receipt_for_payment', { target_payment_id: payment.id })
+    if (result.error) throw result.error
+    const receiptId = result.data
+    await refreshWorkspace()
+    const receiptResult = await supabase
+      .from('receipts')
+      .select('*')
+      .eq('id', receiptId)
+      .eq('payment_id', payment.id)
+      .single()
+    if (receiptResult.error) throw receiptResult.error
+    return receiptResult.data
+  }
+
+  const generateReceiptPdf = async (payment = selectedPayment) => {
+    if (!payment || !canManageFinance || saving || documentActionId) return
+    if (payment.payment_status === 'reversed') {
+      setActionError('Reversed payments cannot generate active receipt PDFs.')
+      return
+    }
+    setDocumentActionId(`receipt:${payment.id}`)
+    setActionError('')
+    setSuccessMessage('')
+    try {
+      const freshPayment = await loadFreshPayment(payment.id)
+      const receipt = await ensureReceiptForPayment(freshPayment)
+      const allocations = allocationsByPaymentId.get(freshPayment.id) ?? []
+      const file = buildFinancialPdfFile({
+        title: 'Receipt',
+        subtitle: receipt.receipt_number,
+        documentNumber: getPaymentDisplay(freshPayment),
+        generatedAt: formatDateTime(new Date().toISOString()),
+        sections: [
+          {
+            title: 'Payment received',
+            rows: [
+              ['Payer', freshPayment.payer_name],
+              ['Patient', formatPatientName(freshPayment.patient_id ? patientById.get(freshPayment.patient_id) : null)],
+              ['Responsible party', freshPayment.responsible_party_id ? responsiblePartyById.get(freshPayment.responsible_party_id)?.full_name ?? 'Not set' : 'Not set'],
+              ['Payment date', formatDate(freshPayment.payment_date)],
+              ['Method', formatLabel(freshPayment.payment_method)],
+              ['Reference', freshPayment.payment_reference ?? freshPayment.external_transaction_reference ?? 'Not set'],
+              ['Status', formatLabel(freshPayment.payment_status)],
+            ],
+          },
+        ],
+        table: {
+          headers: ['Date', 'Code', 'Description', 'Invoice', 'Amount'],
+          rows: allocations.length ? allocations.map((allocation) => {
+            const invoice = invoices.find((item) => item.id === allocation.invoice_id)
+            return {
+              columns: [
+                formatDate(allocation.allocated_at),
+                'Payment',
+                `Allocated to ${invoice ? getInvoiceDisplay(invoice) : allocation.invoice_id.slice(0, 8)}`,
+                invoice ? getInvoiceDisplay(invoice) : allocation.invoice_id.slice(0, 8),
+                formatMoney(allocation.allocated_amount, allocation.currency_code),
+              ],
+            }
+          }) : [{
+            columns: [
+              formatDate(freshPayment.payment_date),
+              'Payment',
+              'Unallocated payment received',
+              'Not allocated',
+              formatMoney(freshPayment.unallocated_amount, freshPayment.currency_code),
+            ],
+          }],
+        },
+        totals: [
+          ['Payment', formatMoney(freshPayment.amount, freshPayment.currency_code)],
+          ['Allocated', formatMoney(freshPayment.allocated_amount, freshPayment.currency_code)],
+          ['Unallocated', formatMoney(freshPayment.unallocated_amount, freshPayment.currency_code)],
+        ],
+        footer: 'Receipt generated by AlliDesk from the recorded payment and allocation history.',
+      }, getSafePdfFilename(`receipt-${receipt.receipt_number}`))
+      await uploadGeneratedPdf(file, 'receipt_pdf', {
+        patientId: freshPayment.patient_id,
+        paymentId: freshPayment.id,
+        metadata: {
+          document_type: 'receipt_pdf',
+          payment_id: freshPayment.id,
+          receipt_id: receipt.id,
+          receipt_number: receipt.receipt_number,
+          generated_from: 'finance_workspace',
+        },
+      })
+      await refreshFinanceState()
+      setSelectedPaymentId(freshPayment.id)
+      setSuccessMessage(`Receipt PDF generated for ${receipt.receipt_number}.`)
+    } catch (error) {
+      setActionError(getFriendlyFinanceError(error, 'Receipt PDF could not be generated.'))
+    } finally {
+      setDocumentActionId('')
+    }
+  }
+
+  const generateStatementPdf = async (account: FinancialAccountRow) => {
+    if (!canManageFinance || saving || documentActionId) return
+    setDocumentActionId(`statement:${account.id}`)
+    setActionError('')
+    setSuccessMessage('')
+    try {
+      const accountInvoices = invoices
+        .filter((invoice) => (
+          ((account.patient_id && invoice.patient_id === account.patient_id)
+          || (account.responsible_party_id && invoice.responsible_party_id === account.responsible_party_id))
+          && !['draft', 'review_required', 'ready_to_confirm', 'cancelled', 'voided'].includes(invoice.invoice_status)
+        ))
+        .sort((a, b) => a.invoice_date.localeCompare(b.invoice_date))
+      const accountPayments = payments
+        .filter((payment) => payment.financial_account_id === account.id && payment.payment_status !== 'reversed')
+        .sort((a, b) => a.payment_date.localeCompare(b.payment_date))
+      const patient = account.patient_id ? patientById.get(account.patient_id) ?? null : null
+      const party = account.responsible_party_id ? responsiblePartyById.get(account.responsible_party_id) ?? null : null
+      const outstanding = accountInvoices.reduce((total, invoice) => total + Number(invoice.balance_due ?? 0), 0)
+      const paid = accountInvoices.reduce((total, invoice) => total + Number(invoice.amount_paid ?? 0), 0)
+      const total = accountInvoices.reduce((runningTotal, invoice) => runningTotal + Number(invoice.total_amount ?? 0), 0)
+      const file = buildFinancialPdfFile({
+        title: 'Patient Statement',
+        subtitle: account.account_name,
+        documentNumber: `Statement ${new Date().toISOString().slice(0, 10)}`,
+        generatedAt: formatDateTime(new Date().toISOString()),
+        sections: [
+          {
+            title: 'Account',
+            rows: [
+              ['Account', account.account_name],
+              ['Responsible party', party?.full_name ?? 'Not set'],
+              ['Patient', formatPatientName(patient)],
+              ['Currency', account.currency_code],
+              ['Status', formatLabel(account.account_status)],
+            ],
+          },
+          {
+            title: 'Payment summary',
+            rows: [
+              ['Invoices included', String(accountInvoices.length)],
+              ['Payments recorded', String(accountPayments.length)],
+              ['Total invoiced', formatMoney(total, account.currency_code)],
+              ['Total paid', formatMoney(paid, account.currency_code)],
+              ['Outstanding balance', formatMoney(outstanding, account.currency_code)],
+            ],
+          },
+        ],
+        table: {
+          headers: ['Date', 'Code', 'Description', 'Status', 'Balance'],
+          rows: accountInvoices.length ? accountInvoices.map((invoice) => ({
+            columns: [
+              formatDate(invoice.invoice_date),
+              invoice.invoice_number ?? invoice.draft_reference,
+              `Invoice total ${formatMoney(invoice.total_amount, invoice.currency_code)} | paid ${formatMoney(invoice.amount_paid, invoice.currency_code)}`,
+              formatLabel(invoice.payment_status),
+              formatMoney(invoice.balance_due, invoice.currency_code),
+            ],
+          })) : [{
+            columns: [formatDate(new Date().toISOString()), 'None', 'No issued invoices are currently linked to this account.', 'Clear', formatMoney(0, account.currency_code)],
+          }],
+        },
+        totals: [
+          ['Total', formatMoney(total, account.currency_code)],
+          ['Paid', formatMoney(paid, account.currency_code)],
+          ['Outstanding', formatMoney(outstanding, account.currency_code)],
+        ],
+        footer: 'Statement generated by AlliDesk from live invoice and payment balances.',
+      }, getSafePdfFilename(`statement-${account.account_name}-${new Date().toISOString().slice(0, 10)}`))
+      await uploadGeneratedPdf(file, 'statement_pdf', {
+        patientId: account.patient_id,
+        metadata: {
+          document_type: 'statement_pdf',
+          financial_account_id: account.id,
+          responsible_party_id: account.responsible_party_id,
+          statement_date: new Date().toISOString(),
+          generated_from: 'finance_workspace',
+        },
+      })
+      await refreshWorkspace()
+      setSuccessMessage(`Statement PDF generated for ${account.account_name}.`)
+    } catch (error) {
+      setActionError(getFriendlyFinanceError(error, 'Statement PDF could not be generated.'))
+    } finally {
+      setDocumentActionId('')
+    }
   }
 
   const validateAccountContext = (accountId: string, patientId: string, responsiblePartyId: string) => {
@@ -1399,21 +1761,21 @@ export function FinancePage() {
 
       const result = await supabase.rpc('record_payment', {
         target_tenant_id: activeTenant.id,
-        financial_account_id_input: paymentForm.financial_account_id || null,
-        patient_id_input: paymentForm.patient_id || null,
-        responsible_party_id_input: paymentForm.responsible_party_id || null,
-        primary_invoice_id_input: paymentForm.primary_invoice_id || null,
+        financial_account_id_input: (paymentForm.financial_account_id || null) as unknown as string,
+        patient_id_input: (paymentForm.patient_id || null) as unknown as string,
+        responsible_party_id_input: (paymentForm.responsible_party_id || null) as unknown as string,
+        primary_invoice_id_input: (paymentForm.primary_invoice_id || null) as unknown as string,
         payer_name_input: paymentForm.payer_name.trim(),
         payment_date_input: paymentForm.payment_date,
         amount_input: amount,
         currency_code_input: currencyCode,
         payment_method_input: paymentForm.payment_method,
-        payment_reference_input: paymentForm.payment_reference.trim() || null,
-        external_transaction_reference_input: paymentForm.external_transaction_reference.trim() || null,
-        bank_account_id_input: null,
-        therapist_profile_id_input: null,
-        practice_location_id_input: null,
-        notes_input: paymentForm.notes.trim() || null,
+        payment_reference_input: paymentForm.payment_reference.trim() || undefined,
+        external_transaction_reference_input: paymentForm.external_transaction_reference.trim() || undefined,
+        bank_account_id_input: undefined,
+        therapist_profile_id_input: undefined,
+        practice_location_id_input: undefined,
+        notes_input: paymentForm.notes.trim() || undefined,
         allocations_input: validation.allocations as Json,
       })
       if (result.error) throw result.error
@@ -1740,6 +2102,10 @@ export function FinancePage() {
                 <div className="finance-actions-row">
                   <Button variant="secondary" onClick={issueSelectedInvoice} disabled={saving || !canManageFinance || !issueableStatuses.includes(selectedInvoice.invoice_status)}>Issue invoice</Button>
                   <Button variant="secondary" onClick={() => openPaymentFormForInvoice(selectedInvoice)} disabled={saving || !canManageFinance || !payableInvoiceStatuses.includes(selectedInvoice.invoice_status) || Number(selectedInvoice.balance_due ?? 0) <= 0}>Record payment</Button>
+                  <Button variant="secondary" onClick={generateInvoicePdf} disabled={saving || Boolean(documentActionId) || !canManageFinance || !['issued', 'awaiting_payment', 'partially_paid', 'paid', 'overdue'].includes(selectedInvoice.invoice_status)}>
+                    {documentActionId === `invoice:${selectedInvoice.id}` ? 'Generating...' : 'Generate invoice PDF'}
+                  </Button>
+                  <Button variant="ghost" onClick={() => openGeneratedDocument(selectedInvoicePdf)} disabled={!selectedInvoicePdf}>View PDF</Button>
                 </div>
               </Card>
 
@@ -1929,7 +2295,7 @@ export function FinancePage() {
                         <span>{selectedInvoice.reconciliation_reason ?? 'Review the reopened session before confirming this invoice.'}</span>
                       </div>
                     )}
-                    <p className="quiet">Confirmation allocates the official invoice number. PDF delivery, Patient Link rendering, payment capture and statements remain deferred.</p>
+                    <p className="quiet">Confirmation allocates the official invoice number. Issue the invoice before generating the PDF or recording payment.</p>
                     <div className="finance-actions-row">
                       <Button variant="secondary" onClick={() => setConfirmReviewOpen(false)} disabled={saving}>Cancel</Button>
                       <Button onClick={confirmInvoice} disabled={saving || Boolean(confirmationBlocker) || selectedInvoice.reconciliation_required}>Confirm invoice</Button>
@@ -2078,6 +2444,10 @@ export function FinancePage() {
                     <div className="finance-actions-row">
                       <input className="finance-inline-input" placeholder="Reason required before reversal" value={reversalReason} onChange={(event) => setReversalReason(event.target.value)} />
                       <Button variant="secondary" onClick={reverseSelectedPayment} disabled={saving || !canManageFinance}>Reverse payment</Button>
+                      <Button variant="secondary" onClick={() => generateReceiptPdf(selectedPayment)} disabled={saving || Boolean(documentActionId) || !canManageFinance}>
+                        {documentActionId === `receipt:${selectedPayment.id}` ? 'Generating...' : 'Generate receipt PDF'}
+                      </Button>
+                      <Button variant="ghost" onClick={() => openGeneratedDocument(selectedReceiptPdf)} disabled={!selectedReceiptPdf}>View PDF</Button>
                     </div>
                   )}
                 </Card>
@@ -2181,6 +2551,10 @@ export function FinancePage() {
                     || (account.responsible_party_id && invoice.responsible_party_id === account.responsible_party_id)
                   ))
                   const credits = accountCredits.filter((credit) => credit.financial_account_id === account.id && ['available', 'partially_used'].includes(credit.credit_status))
+                  const latestStatementPdf = getLatestDocument(documentFiles, (document) => (
+                    document.document_category === 'statement_pdf'
+                    && getMetadataId(document.metadata, 'financial_account_id') === account.id
+                  ))
                   return (
                     <article key={account.id} className="account-summary-card">
                       <div>
@@ -2192,6 +2566,12 @@ export function FinancePage() {
                         <div><span>Outstanding</span><strong>{formatMoney(accountInvoices.reduce((total, invoice) => total + Number(invoice.balance_due ?? 0), 0), account.currency_code)}</strong></div>
                         <div><span>Credits</span><strong>{formatMoney(credits.reduce((total, credit) => total + Number(credit.remaining_amount ?? 0), 0), account.currency_code)}</strong></div>
                         <div><span>Covered patients</span><strong>{new Set(accountInvoices.map((invoice) => invoice.patient_id)).size || (account.patient_id ? 1 : 0)}</strong></div>
+                      </div>
+                      <div className="finance-actions-row compact">
+                        <Button variant="secondary" onClick={() => generateStatementPdf(account)} disabled={saving || Boolean(documentActionId) || !canManageFinance}>
+                          {documentActionId === `statement:${account.id}` ? 'Generating...' : 'Generate statement PDF'}
+                        </Button>
+                        <Button variant="ghost" onClick={() => openGeneratedDocument(latestStatementPdf)} disabled={!latestStatementPdf}>View PDF</Button>
                       </div>
                     </article>
                   )
@@ -2249,7 +2629,7 @@ export function FinancePage() {
                       </div>
                     </button>
                   )
-                }) : <EmptyState title="No receipts yet" description="Recording a payment creates receipt readiness records. PDF generation is intentionally deferred." />}
+                }) : <EmptyState title="No receipts yet" description="Recording a payment creates receipt readiness records. Receipt PDFs can be generated once a receipt exists." />}
               </div>
             </Card>
           </div>
@@ -2262,17 +2642,25 @@ export function FinancePage() {
                 </div>
               </div>
               {selectedPaymentReceipt && selectedPayment ? (
-                <div className="invoice-overview-grid">
-                  <div><span>Receipt number</span><strong>{selectedPaymentReceipt.receipt_number}</strong></div>
-                  <div><span>Payment</span><strong>{getPaymentDisplay(selectedPayment)}</strong></div>
-                  <div><span>Payer</span><strong>{selectedPayment.payer_name}</strong></div>
-                  <div><span>Method</span><strong>{formatLabel(selectedPaymentReceipt.payment_method ?? selectedPayment.payment_method)}</strong></div>
-                  <div><span>Issue date</span><strong>{formatDateTime(selectedPaymentReceipt.issued_at)}</strong></div>
-                  <div><span>Allocations</span><strong>{selectedPaymentAllocations.length}</strong></div>
-                  <div><span>Amount</span><strong>{formatMoney(selectedPaymentReceipt.payment_amount, selectedPaymentReceipt.currency_code)}</strong></div>
-                  <div><span>Patient Link ready</span><strong>{selectedPaymentReceipt.patient_link_ready ? 'Yes' : 'No'}</strong></div>
-                  <div><span>PDF ready</span><strong>{selectedPaymentReceipt.pdf_generation_ready ? 'Yes' : 'No'}</strong></div>
-                </div>
+                <>
+                  <div className="invoice-overview-grid">
+                    <div><span>Receipt number</span><strong>{selectedPaymentReceipt.receipt_number}</strong></div>
+                    <div><span>Payment</span><strong>{getPaymentDisplay(selectedPayment)}</strong></div>
+                    <div><span>Payer</span><strong>{selectedPayment.payer_name}</strong></div>
+                    <div><span>Method</span><strong>{formatLabel(selectedPaymentReceipt.payment_method ?? selectedPayment.payment_method)}</strong></div>
+                    <div><span>Issue date</span><strong>{formatDateTime(selectedPaymentReceipt.issued_at)}</strong></div>
+                    <div><span>Allocations</span><strong>{selectedPaymentAllocations.length}</strong></div>
+                    <div><span>Amount</span><strong>{formatMoney(selectedPaymentReceipt.payment_amount, selectedPaymentReceipt.currency_code)}</strong></div>
+                    <div><span>Patient Link ready</span><strong>{selectedPaymentReceipt.patient_link_ready ? 'Yes' : 'No'}</strong></div>
+                    <div><span>PDF ready</span><strong>{selectedPaymentReceipt.pdf_generation_ready ? 'Yes' : 'No'}</strong></div>
+                  </div>
+                  <div className="finance-actions-row">
+                    <Button variant="secondary" onClick={() => generateReceiptPdf(selectedPayment)} disabled={saving || Boolean(documentActionId) || !canManageFinance || selectedPayment.payment_status === 'reversed'}>
+                      {documentActionId === `receipt:${selectedPayment.id}` ? 'Generating...' : 'Generate receipt PDF'}
+                    </Button>
+                    <Button variant="ghost" onClick={() => openGeneratedDocument(selectedReceiptPdf)} disabled={!selectedReceiptPdf}>View PDF</Button>
+                  </div>
+                </>
               ) : (
                 <EmptyState title="No receipt selected" description="Select a receipt or payment to inspect its receipt readiness details." />
               )}

@@ -1,7 +1,7 @@
 import { type Dispatch, type PointerEvent, type SetStateAction, useEffect, useMemo, useRef, useState } from 'react'
 import { NavLink, useLocation } from 'react-router-dom'
 import { useAuth, type ActiveRole, type Profile } from './auth/AuthContext'
-import { useAuthorization, type AccessArea, type Permission } from './auth/permissions'
+import { useAuthorization } from './auth/permissions'
 import { isSupabaseConfigured, testSupabaseConnection, type SupabaseConnectionTestResult } from './lib/supabase'
 import { AppShell, MainContent, Sidebar, Topbar } from './layout/AppShell'
 import { NotificationMenu } from './components/NotificationMenu'
@@ -11,7 +11,6 @@ import { AppRoutes, appRoutes, getRouteForPath } from './routes/appRoutes'
 type View = 'overview' | 'sessions' | 'patients' | 'finances' | 'settings'
 type Role = 'Admin' | 'Reception' | 'Therapist' | 'Super Admin'
 type SuperAdminModule = 'dashboard' | 'tenants' | 'subscriptions' | 'support' | 'health' | 'configuration'
-type PermissionPreviewArea = { area: AccessArea; label: string }
 type SessionSlot = { date: string; time: string; patientName?: string }
 type CalendarSession = {
   id: string
@@ -136,28 +135,6 @@ const superAdminNavItems: Array<{ id: SuperAdminModule; label: string; detail: s
   { id: 'health', label: 'System Health', detail: 'Operational status', icon: 'platform-health' },
   { id: 'configuration', label: 'Platform Configuration', detail: 'Global AlliDesk settings', icon: 'platform-config' },
 ]
-
-const permissionPreviewAreas: PermissionPreviewArea[] = [
-  { area: 'patients', label: 'Patients' },
-  { area: 'bookings', label: 'Bookings' },
-  { area: 'clinical', label: 'Clinical' },
-  { area: 'finance', label: 'Finance' },
-  { area: 'reports', label: 'Reports' },
-  { area: 'settings', label: 'Settings' },
-]
-
-const keyPermissionLabels: Partial<Record<Permission, string>> = {
-  'platform.tenants.manage': 'Manage tenants',
-  'platform.subscriptions.manage': 'Manage subscriptions',
-  'platform.support.manage': 'Support centre',
-  'tenant.users.manage': 'Manage users',
-  'tenant.practice.configure': 'Practice setup',
-  'tenant.patients.manage': 'Manage patients',
-  'tenant.bookings.manage': 'Manage bookings',
-  'tenant.clinical.manage': 'Clinical notes',
-  'tenant.finance.manage': 'Manage finance',
-  'tenant.reports.manage': 'Reports',
-}
 
 function NavIcon({ icon }: { icon: string }) {
   const commonProps = {
@@ -1581,7 +1558,6 @@ function App() {
   const identityDisplayName = getIdentityDisplayName(profile, user?.email)
   const identityContextLabel = isResolvedSuperAdmin ? 'AlliDesk Platform' : tenantDisplayName
   const canSwitchTenant = !isResolvedSuperAdmin && tenantMemberships.length > 1
-  const previewPermissions = authorization.permissions.slice(0, 6)
   const activeRoute = getRouteForPath(location.pathname)
   const visibleAppRoutes = appRoutes.filter((item) => item.showInNav !== false && authorization.canAccess(item.accessArea))
 
@@ -2018,26 +1994,6 @@ function App() {
   return (
     <AppShell topNotice={topNotice} sidebar={sidebar} topbar={topbar} modals={modals}>
       <MainContent>
-        <section className="permission-preview-panel" aria-label="Permission foundation preview">
-          <div>
-            <p>Permission foundation preview</p>
-            <strong>{resolvedRoleLabel}</strong>
-            <span>This preview is not enforcing access yet.</span>
-          </div>
-          <div className="permission-preview-list" aria-label="Key permissions">
-            {previewPermissions.map((permission) => (
-              <span key={permission}>{keyPermissionLabels[permission] ?? permission}</span>
-            ))}
-          </div>
-          <div className="permission-access-grid" aria-label="Future area access preview">
-            {permissionPreviewAreas.map((item) => (
-              <span className={authorization.canAccess(item.area) ? 'allowed' : 'blocked'} key={item.area}>
-                {item.label}
-              </span>
-            ))}
-          </div>
-        </section>
-
         {role === 'Super Admin' && <SuperAdminWorkspace activeModule={activeSuperAdminModule} />}
         {role !== 'Super Admin' && <AppRoutes />}
       </MainContent>
@@ -6754,6 +6710,8 @@ function Settings({
 function SuperAdminWorkspace({ activeModule }: { activeModule: SuperAdminModule }) {
   const [selectedTenantName, setSelectedTenantName] = useState('Kids Therapy Centre')
   const [isCreateTenantOpen, setIsCreateTenantOpen] = useState(false)
+  const [isSupportTicketOpen, setIsSupportTicketOpen] = useState(false)
+  const [selectedSupportTicketNumber, setSelectedSupportTicketNumber] = useState('')
   const [profileTenantName, setProfileTenantName] = useState('')
   const [tenantSearch, setTenantSearch] = useState('')
   const [supabaseConnection, setSupabaseConnection] = useState<SupabaseConnectionTestResult>({
@@ -6786,11 +6744,25 @@ function SuperAdminWorkspace({ activeModule }: { activeModule: SuperAdminModule 
       .toLowerCase()
       .includes(searchValue)
   })
-  const supportTickets = [
-    { number: 'SUP-1042', tenant: 'Kids Therapy Centre', priority: 'Medium', category: 'Email', status: 'In Progress', assigned: 'AlliDesk Support', logged: '2026-07-05', updated: '2026-07-06' },
-    { number: 'SUP-1041', tenant: 'Northside Speech Clinic', priority: 'High', category: 'Subscription', status: 'Waiting for Tenant', assigned: 'Billing Ops', logged: '2026-07-04', updated: '2026-07-05' },
-    { number: 'SYS-884', tenant: 'System Monitoring', priority: 'Low', category: 'Queue Processing', status: 'Resolved', assigned: 'Platform Ops', logged: '2026-07-04', updated: '2026-07-04' },
-  ]
+  const [supportTickets, setSupportTickets] = useState<PlatformSupportTicket[]>([
+    { number: 'SUP-1042', tenant: 'Kids Therapy Centre', priority: 'Medium', category: 'Email', status: 'In Progress', assigned: 'AlliDesk Support', logged: '2026-07-05', updated: '2026-07-06', subject: 'Email delivery failed', summary: 'Practice reported that appointment reminder emails did not send for two test bookings.' },
+    { number: 'SUP-1041', tenant: 'Northside Speech Clinic', priority: 'High', category: 'Subscription', status: 'Waiting for Tenant', assigned: 'Billing Ops', logged: '2026-07-04', updated: '2026-07-05', subject: 'Subscription renewal question', summary: 'Tenant admin asked for clarification on trial billing and first debit date.' },
+    { number: 'SYS-884', tenant: 'System Monitoring', priority: 'Low', category: 'Queue Processing', status: 'Resolved', assigned: 'Platform Ops', logged: '2026-07-04', updated: '2026-07-04', subject: 'Queue latency spike', summary: 'Monitoring flagged delayed background jobs. No patient or tenant operational data exposed.' },
+  ])
+  const selectedSupportTicket = supportTickets.find((ticket) => ticket.number === selectedSupportTicketNumber) ?? null
+  const openSupportTicket = (ticketNumber?: string) => {
+    setSelectedSupportTicketNumber(ticketNumber ?? '')
+    setIsSupportTicketOpen(true)
+  }
+  const saveSupportTicket = (ticket: PlatformSupportTicket) => {
+    setSupportTickets((tickets) => {
+      const exists = tickets.some((item) => item.number === ticket.number)
+      if (exists) return tickets.map((item) => (item.number === ticket.number ? ticket : item))
+      return [ticket, ...tickets]
+    })
+    setSelectedSupportTicketNumber('')
+    setIsSupportTicketOpen(false)
+  }
   const serviceStatuses = [
     ['Database', 'Operational', '99.99%', '118ms'],
     ['Authentication', 'Operational', '99.98%', '94ms'],
@@ -6857,11 +6829,11 @@ function SuperAdminWorkspace({ activeModule }: { activeModule: SuperAdminModule 
                   <p>Support Centre</p>
                   <h2>Open support tickets</h2>
                 </div>
-                <button type="button" className="compact-action-button">Add ticket</button>
+                <button type="button" className="compact-action-button" onClick={() => openSupportTicket()}>Add ticket</button>
               </div>
               <div className="dashboard-support-list">
                 {supportTickets.map((ticket) => (
-                  <article key={`dashboard-${ticket.number}`}>
+                  <button type="button" key={`dashboard-${ticket.number}`} onClick={() => openSupportTicket(ticket.number)}>
                     <div>
                       <strong>{ticket.number}</strong>
                       <span>{ticket.tenant} · {ticket.category}</span>
@@ -6869,24 +6841,18 @@ function SuperAdminWorkspace({ activeModule }: { activeModule: SuperAdminModule 
                     <Status label={ticket.priority} />
                     <Status label={ticket.status} />
                     <small>Updated {ticket.updated}</small>
-                  </article>
+                  </button>
                 ))}
               </div>
             </section>
-            <section className="panel">
-              <div className="panel-heading">
-                <div>
-                  <p>Dashboard rules</p>
-                  <h2>Privacy boundary</h2>
-                </div>
-              </div>
-              <div className="privacy-rule-list">
-                <span>Aggregated platform metrics only.</span>
-                <span>No patient names or identifiers.</span>
-                <span>No appointments or clinical notes.</span>
-                <span>No tenant financial transaction browsing.</span>
-              </div>
-            </section>
+            {isSupportTicketOpen && (
+              <SupportTicketModal
+                ticket={selectedSupportTicket}
+                tenants={platformTenants}
+                onClose={() => setIsSupportTicketOpen(false)}
+                onSave={saveSupportTicket}
+              />
+            )}
           </>
         )}
 
@@ -6991,11 +6957,11 @@ function SuperAdminWorkspace({ activeModule }: { activeModule: SuperAdminModule 
                 <p>Support Centre</p>
                 <h2>Tenant communication hub</h2>
               </div>
-              <button type="button" className="compact-action-button">Add ticket</button>
+              <button type="button" className="compact-action-button" onClick={() => openSupportTicket()}>Add ticket</button>
             </div>
             <div className="support-ticket-list">
               {supportTickets.map((ticket) => (
-                <article key={ticket.number}>
+                <button type="button" key={ticket.number} onClick={() => openSupportTicket(ticket.number)}>
                   <strong>{ticket.number}</strong>
                   <span>{ticket.tenant}</span>
                   <Status label={ticket.priority} />
@@ -7003,7 +6969,7 @@ function SuperAdminWorkspace({ activeModule }: { activeModule: SuperAdminModule 
                   <Status label={ticket.status} />
                   <span>{ticket.assigned}</span>
                   <small>Logged {ticket.logged} · Updated {ticket.updated}</small>
-                </article>
+                </button>
               ))}
             </div>
             <div className="support-boundary-grid">
@@ -7017,6 +6983,14 @@ function SuperAdminWorkspace({ activeModule }: { activeModule: SuperAdminModule 
               </article>
             </div>
           </section>
+        )}
+        {isSupportTicketOpen && activeModule === 'support' && (
+          <SupportTicketModal
+            ticket={selectedSupportTicket}
+            tenants={platformTenants}
+            onClose={() => setIsSupportTicketOpen(false)}
+            onSave={saveSupportTicket}
+          />
         )}
 
         {activeModule === 'health' && (
@@ -7112,6 +7086,19 @@ type PlatformTenantRecord = {
   storage: string
   created: string
   activity: string
+}
+
+type PlatformSupportTicket = {
+  number: string
+  tenant: string
+  priority: string
+  category: string
+  status: string
+  assigned: string
+  logged: string
+  updated: string
+  subject: string
+  summary: string
 }
 
 function TenantProfileModal({ tenantRecord, onClose }: { tenantRecord: PlatformTenantRecord; onClose: () => void }) {
@@ -7411,6 +7398,132 @@ function CreateTenantModal({ onClose, onCreate }: { onClose: () => void; onCreat
         <div className="modal-footer">
           <button type="button" className="secondary-button" onClick={onClose}>Cancel</button>
           <button type="button" onClick={createTenant}>Save Tenant</button>
+        </div>
+      </section>
+    </div>
+  )
+}
+
+function SupportTicketModal({
+  ticket,
+  tenants,
+  onClose,
+  onSave,
+}: {
+  ticket: PlatformSupportTicket | null
+  tenants: PlatformTenantRecord[]
+  onClose: () => void
+  onSave: (ticket: PlatformSupportTicket) => void
+}) {
+  const ticketNumber = ticket?.number ?? `SUP-${Math.floor(Date.now() / 1000).toString().slice(-4)}`
+  const [draftTicket, setDraftTicket] = useState<PlatformSupportTicket>({
+    number: ticketNumber,
+    tenant: ticket?.tenant ?? tenants[0]?.businessName ?? 'System Monitoring',
+    priority: ticket?.priority ?? 'Medium',
+    category: ticket?.category ?? 'Technical',
+    status: ticket?.status ?? 'New',
+    assigned: ticket?.assigned ?? 'AlliDesk Support',
+    logged: ticket?.logged ?? appTodayIso,
+    updated: appTodayIso,
+    subject: ticket?.subject ?? '',
+    summary: ticket?.summary ?? '',
+  })
+  const [validationError, setValidationError] = useState('')
+  const updateDraftTicket = (field: keyof PlatformSupportTicket, value: string) => {
+    setDraftTicket((current) => ({ ...current, [field]: value, updated: appTodayIso }))
+  }
+  const saveTicket = () => {
+    if (!draftTicket.subject.trim()) {
+      setValidationError('Add a short ticket subject before saving.')
+      return
+    }
+    if (!draftTicket.summary.trim()) {
+      setValidationError('Add the support detail before saving.')
+      return
+    }
+    onSave({
+      ...draftTicket,
+      subject: draftTicket.subject.trim(),
+      summary: draftTicket.summary.trim(),
+    })
+  }
+
+  return (
+    <div className="modal-backdrop" role="presentation">
+      <section className="modal-window support-ticket-modal" aria-label={ticket ? `${ticket.number} support ticket` : 'Add support ticket'}>
+        <div className="modal-header">
+          <div>
+            <p>Support Centre</p>
+            <h2>{ticket ? draftTicket.number : 'Add Ticket'}</h2>
+          </div>
+          <button type="button" className="modal-close" onClick={onClose} aria-label="Close support ticket">
+            x
+          </button>
+        </div>
+        <div className="modal-body">
+          <section className="create-tenant-section">
+            <h3>Ticket details</h3>
+            <div className="create-tenant-form-grid support-ticket-form-grid">
+              <label>
+                <span>Ticket Number</span>
+                <input value={draftTicket.number} readOnly />
+              </label>
+              <label>
+                <span>Tenant</span>
+                <select value={draftTicket.tenant} onChange={(event) => updateDraftTicket('tenant', event.target.value)}>
+                  <option>System Monitoring</option>
+                  {tenants.map((tenantRecord) => (
+                    <option key={tenantRecord.businessName}>{tenantRecord.businessName}</option>
+                  ))}
+                </select>
+              </label>
+              <label>
+                <span>Priority</span>
+                <select value={draftTicket.priority} onChange={(event) => updateDraftTicket('priority', event.target.value)}>
+                  {['Low', 'Medium', 'High', 'Critical'].map((priority) => <option key={priority}>{priority}</option>)}
+                </select>
+              </label>
+              <label>
+                <span>Category</span>
+                <select value={draftTicket.category} onChange={(event) => updateDraftTicket('category', event.target.value)}>
+                  {['Technical', 'Billing', 'Subscription', 'Feature Request', 'Bug Report', 'AI', 'Email', 'SMS', 'Training', 'Queue Processing'].map((category) => <option key={category}>{category}</option>)}
+                </select>
+              </label>
+              <label>
+                <span>Status</span>
+                <select value={draftTicket.status} onChange={(event) => updateDraftTicket('status', event.target.value)}>
+                  {['New', 'Open', 'Waiting for Tenant', 'Waiting for AlliDesk', 'In Progress', 'Resolved', 'Closed'].map((status) => <option key={status}>{status}</option>)}
+                </select>
+              </label>
+              <label>
+                <span>Assigned To</span>
+                <input value={draftTicket.assigned} onChange={(event) => updateDraftTicket('assigned', event.target.value)} />
+              </label>
+              <label className="wide-field">
+                <span>Subject *</span>
+                <input value={draftTicket.subject} onChange={(event) => updateDraftTicket('subject', event.target.value)} />
+              </label>
+              <label className="wide-field">
+                <span>Support Detail *</span>
+                <textarea value={draftTicket.summary} onChange={(event) => updateDraftTicket('summary', event.target.value)} />
+              </label>
+            </div>
+            {validationError && <p className="form-error">{validationError}</p>}
+          </section>
+          <section className="support-boundary-grid">
+            <article>
+              <strong>Allowed support context</strong>
+              <span>System logs, error messages, API failures and service status.</span>
+            </article>
+            <article>
+              <strong>Privacy boundary</strong>
+              <span>No patient records, clinical notes, documents, calendar entries or tenant operational records.</span>
+            </article>
+          </section>
+        </div>
+        <div className="modal-footer">
+          <button type="button" className="secondary-button" onClick={onClose}>Cancel</button>
+          <button type="button" onClick={saveTicket}>Save Ticket</button>
         </div>
       </section>
     </div>

@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
+import { Link } from 'react-router-dom'
 import { useAuth } from '../auth/AuthContext'
 import { useAuthorization } from '../auth/permissions'
 import { EmptyState, ErrorState, LoadingState } from '../components/UiState'
@@ -390,6 +391,7 @@ export function PatientsPage() {
   const canEditPatients = authorization.hasPermission('tenant.patients.manage')
   const canEditFinanceContact = authorization.hasPermission('tenant.patients.manage', 'tenant.finance.manage')
   const canEditMedical = authorization.hasPermission('tenant.clinical.manage')
+  const canViewClinical = authorization.hasPermission('tenant.clinical.view') && !authorization.isSuperAdmin
   const canReadCareDetails = authorization.hasRole('admin', 'receptionist', 'therapist')
   const [patients, setPatients] = useState<PatientRow[]>([])
   const [responsibleParties, setResponsibleParties] = useState<ResponsiblePartyRow[]>([])
@@ -1404,6 +1406,11 @@ export function PatientsPage() {
                   <span>Patient workspace</span>
                   <h3>{selectedPatient ? formatPatientName(selectedPatient) : 'Patient details'}</h3>
                 </div>
+                {canViewClinical && (
+                  <Link className="ui-button ui-button-secondary patients-clinical-link" to={`/patients/clinical?patient=${selectedPatientId}`}>
+                    Clinical Workspace
+                  </Link>
+                )}
                 <div className="patients-workspace-tabs">
                   {patientWorkspaceSections.map((section) => (
                     <button

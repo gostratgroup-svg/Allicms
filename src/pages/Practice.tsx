@@ -31,6 +31,12 @@ const practiceSections: SectionHubItem[] = [
     to: '/practice/branding',
   },
   {
+    title: 'Clinical Templates',
+    description: 'Documentation template drafts, sections, fields, validation, version history and publication controls.',
+    status: 'Clinical configuration',
+    to: '/practice/clinical-templates',
+  },
+  {
     title: 'Banking Details',
     description: 'Practice bank accounts and future therapist or location banking configuration.',
     status: 'Bank accounts',

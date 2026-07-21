@@ -45,7 +45,6 @@ export default function Login() {
       <section className="login-panel" aria-label="AlliDesk sign in">
         <div className="login-brand">
           <img src="/assets/Allidesk_Main_Logo%20copy.png" alt="AlliDesk" />
-          <span>Practice workspace</span>
         </div>
 
         <div className="login-copy">
