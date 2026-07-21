@@ -4066,6 +4066,18 @@ button:disabled {
   font-size: 0.68rem;
 }
 
+.health-last-checked {
+  display: block;
+  margin-top: 3px;
+  color: var(--muted);
+  font-size: 0.68rem;
+  font-weight: 800;
+}
+
+.support-ticket-heading {
+  justify-content: flex-end;
+}
+
 .session-row span,
 .patient-card span,
 .allocation-list small,
@@ -7149,7 +7161,7 @@ button:disabled {
 .subscription-plan-head,
 .subscription-plan-list article {
   display: grid;
-  grid-template-columns: minmax(130px, 0.9fr) minmax(220px, 1.4fr) minmax(120px, 0.8fr) minmax(130px, 0.8fr) 90px;
+  grid-template-columns: minmax(130px, 0.9fr) minmax(220px, 1.4fr) minmax(120px, 0.8fr) minmax(130px, 0.8fr) 90px 42px;
   align-items: center;
   gap: 10px;
   min-height: 38px;
@@ -7186,6 +7198,18 @@ button:disabled {
   font-weight: 800;
 }
 
+.subscription-plan-list input {
+  width: 100%;
+  min-height: 30px;
+  padding: 0 8px;
+  font-size: 0.74rem;
+  font-weight: 800;
+}
+
+.subscription-edit-icon {
+  justify-self: end;
+}
+
 .subscription-plan-list article.hidden-plan > strong::after {
   content: "Hidden";
   display: inline-block;
@@ -7211,7 +7235,7 @@ button:disabled {
 .support-ticket-list button {
   width: 100%;
   display: grid;
-  grid-template-columns: 86px minmax(150px, 1fr) auto 110px auto minmax(120px, 0.8fr) minmax(170px, 1fr);
+  grid-template-columns: minmax(180px, 1.4fr) minmax(150px, 1fr) auto 110px auto minmax(120px, 0.8fr) minmax(170px, 1fr);
   align-items: center;
   gap: 8px;
   padding: 10px;
@@ -7220,6 +7244,25 @@ button:disabled {
   background: #fbfbfe;
   color: inherit;
   text-align: left;
+}
+
+.support-ticket-title {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+}
+
+.support-ticket-title strong {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.support-ticket-title small,
+.support-ticket-modal-number {
+  color: var(--muted);
+  font-size: 0.68rem;
+  font-weight: 800;
 }
 
 .support-ticket-list button:hover,

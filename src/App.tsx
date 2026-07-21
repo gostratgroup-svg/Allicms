@@ -1886,12 +1886,6 @@ function App() {
           ))
         )}
       </nav>
-      {role === 'Super Admin' && (
-        <div className="sidebar-platform-note">
-          <strong>POPIA foundation</strong>
-          <span>Super Admin manages the platform, not tenant customer or patient data.</span>
-        </div>
-      )}
     </Sidebar>
   )
 
@@ -6708,6 +6702,7 @@ function Settings({
 }
 
 function SuperAdminWorkspace({ activeModule }: { activeModule: SuperAdminModule }) {
+  const { session } = useAuth()
   const [selectedTenantName, setSelectedTenantName] = useState('Kids Therapy Centre')
   const [isCreateTenantOpen, setIsCreateTenantOpen] = useState(false)
   const [isSupportTicketOpen, setIsSupportTicketOpen] = useState(false)
@@ -6720,14 +6715,8 @@ function SuperAdminWorkspace({ activeModule }: { activeModule: SuperAdminModule 
     status: isSupabaseConfigured ? 'error' : 'not_configured',
     message: isSupabaseConfigured ? 'Checking Supabase connection...' : 'Supabase env variables are not configured.',
   })
-  const platformMetrics = [
-    { label: 'Total Tenants', value: '28', detail: 'platform workspaces' },
-    { label: 'Active Tenants', value: '24', detail: 'currently subscribed' },
-    { label: 'Trial Tenants', value: '3', detail: 'onboarding pilots' },
-    { label: 'Expiring Subscriptions', value: '5', detail: 'next 60 days' },
-    { label: 'Active Users', value: '186', detail: 'count only' },
-    { label: 'System Status', value: 'Operational', detail: 'all core services' },
-  ]
+  const [lastHealthCheckedAt, setLastHealthCheckedAt] = useState('')
+  const [isCheckingHealth, setIsCheckingHealth] = useState(false)
   const [platformTenants, setPlatformTenants] = useState([
     { businessName: 'Kids Therapy Centre', tradingName: 'Kids Therapy Centre', companyReg: '2021/018884/07', vat: 'Not registered', contact: 'Practice Admin', email: 'admin@kidstherapy.example', phone: '+27 21 555 0100', country: 'South Africa', timezone: 'Africa/Johannesburg', plan: 'Growth practice', status: 'Active', billingCycle: 'Monthly', renewal: '2026-07-31', trial: 'Completed', users: '42', storage: '18.4 GB', created: '2026-01-12', activity: 'Today' },
     { businessName: 'Smith Occupational Therapy', tradingName: 'Smith OT', companyReg: '2019/442019/07', vat: 'Not registered', contact: 'Tenant Admin', email: 'admin@smithot.example', phone: '+27 11 555 0134', country: 'South Africa', timezone: 'Africa/Johannesburg', plan: 'Solo practice', status: 'Active', billingCycle: 'Annual', renewal: '2026-09-01', trial: 'Completed', users: '3', storage: '2.1 GB', created: '2026-02-18', activity: 'Yesterday' },
@@ -6763,24 +6752,29 @@ function SuperAdminWorkspace({ activeModule }: { activeModule: SuperAdminModule 
     setSelectedSupportTicketNumber('')
     setIsSupportTicketOpen(false)
   }
-  const serviceStatuses = [
-    ['Database', 'Operational', '99.99%', '118ms'],
-    ['Authentication', 'Operational', '99.98%', '94ms'],
-    ['Email', 'Performance Degraded', '99.40%', '426ms'],
-    ['SMS', 'Operational', '99.92%', '210ms'],
-    ['AI Services', 'Operational', '99.70%', '860ms'],
-    ['Storage', 'Operational', '99.99%', '132ms'],
-    ['Queue Processing', 'Operational', '99.95%', '54 jobs'],
-    ['Notifications', 'Operational', '99.96%', '84ms'],
-    ['Scheduled Jobs', 'Operational', '99.97%', '0 failed'],
-  ]
+  const refreshSystemHealth = () => {
+    setIsCheckingHealth(true)
+    testSupabaseConnection()
+      .then((result) => {
+        setSupabaseConnection(result)
+        setLastHealthCheckedAt(new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }))
+      })
+      .finally(() => setIsCheckingHealth(false))
+  }
   useEffect(() => {
     let isMounted = true
     testSupabaseConnection().then((result) => {
-      if (isMounted) setSupabaseConnection(result)
+      if (isMounted) {
+        setSupabaseConnection(result)
+        setLastHealthCheckedAt(new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }))
+      }
     })
+    const intervalId = window.setInterval(() => {
+      if (isMounted) refreshSystemHealth()
+    }, 60000)
     return () => {
       isMounted = false
+      window.clearInterval(intervalId)
     }
   }, [])
   const supabaseServiceStatus = supabaseConnection.ok
@@ -6788,9 +6782,33 @@ function SuperAdminWorkspace({ activeModule }: { activeModule: SuperAdminModule 
     : supabaseConnection.configured
       ? 'Service Unavailable'
       : 'Not Configured'
+  const platformMetrics = [
+    { label: 'Total Tenants', value: '28', detail: 'platform workspaces' },
+    { label: 'Active Tenants', value: '24', detail: 'currently subscribed' },
+    { label: 'Trial Tenants', value: '3', detail: 'onboarding pilots' },
+    { label: 'Expiring Subscriptions', value: '5', detail: 'next 60 days' },
+    { label: 'Active Users', value: '186', detail: 'count only' },
+    { label: 'System Status', value: supabaseServiceStatus, detail: 'Supabase connection' },
+  ]
   const platformServiceStatuses = [
-    ...serviceStatuses,
-    ['Supabase', supabaseServiceStatus, supabaseConnection.status.replaceAll('_', ' '), supabaseConnection.message],
+    {
+      service: 'Supabase connection',
+      status: supabaseServiceStatus,
+      detail: supabaseConnection.message,
+      meta: supabaseConnection.status.replaceAll('_', ' '),
+    },
+    {
+      service: 'Authentication session',
+      status: session ? 'Operational' : 'Service Unavailable',
+      detail: session?.user.email ? `Signed in as ${session.user.email}` : 'No active authenticated session detected.',
+      meta: 'Current browser session',
+    },
+    {
+      service: 'Frontend app',
+      status: 'Operational',
+      detail: 'AlliDesk app shell loaded successfully.',
+      meta: 'Current deployment',
+    },
   ]
   const [subscriptionPlans, setSubscriptionPlans] = useState([
     { name: 'Free', description: 'Internal testing and assisted setup', users: 'Internal only', price: 'R 0', isActive: true, isPublic: false },
@@ -6800,10 +6818,19 @@ function SuperAdminWorkspace({ activeModule }: { activeModule: SuperAdminModule 
     { name: 'Business', description: 'Multi-disciplinary Practice', users: '16-50 Users', price: 'R 3 499', isActive: true, isPublic: true },
     { name: 'Enterprise', description: 'Large Healthcare Group', users: '50+ Users', price: 'Custom', isActive: true, isPublic: true },
   ])
+  const [editingSubscriptionPlanName, setEditingSubscriptionPlanName] = useState('')
   const toggleSubscriptionPlan = (planName: string) => {
     setSubscriptionPlans((plans) =>
       plans.map((plan) => (plan.name === planName ? { ...plan, isActive: !plan.isActive } : plan)),
     )
+  }
+  const updateSubscriptionPlan = (planName: string, field: 'users' | 'price', value: string) => {
+    setSubscriptionPlans((plans) =>
+      plans.map((plan) => (plan.name === planName ? { ...plan, [field]: value } : plan)),
+    )
+  }
+  const toggleSubscriptionPlanEdit = (planName: string) => {
+    setEditingSubscriptionPlanName((current) => (current === planName ? '' : planName))
   }
   return (
     <div className="super-admin-shell">
@@ -6835,8 +6862,8 @@ function SuperAdminWorkspace({ activeModule }: { activeModule: SuperAdminModule 
                 {supportTickets.map((ticket) => (
                   <button type="button" key={`dashboard-${ticket.number}`} onClick={() => openSupportTicket(ticket.number)}>
                     <div>
-                      <strong>{ticket.number}</strong>
-                      <span>{ticket.tenant} · {ticket.category}</span>
+                      <strong>{ticket.subject}</strong>
+                      <span>{ticket.number} · {ticket.tenant} · {ticket.category}</span>
                     </div>
                     <Status label={ticket.priority} />
                     <Status label={ticket.status} />
@@ -6933,17 +6960,35 @@ function SuperAdminWorkspace({ activeModule }: { activeModule: SuperAdminModule 
                 <span>Users</span>
                 <span>Price p.month</span>
                 <span>Active</span>
+                <span>Edit</span>
               </div>
               {subscriptionPlans.map((plan) => (
                 <article className={plan.isPublic ? '' : 'hidden-plan'} key={plan.name}>
                   <strong>{plan.name}</strong>
                   <span>{plan.description}</span>
-                  <span>{plan.users}</span>
-                  <span>{plan.price}</span>
+                  {editingSubscriptionPlanName === plan.name ? (
+                    <input value={plan.users} aria-label={`${plan.name} users`} onChange={(event) => updateSubscriptionPlan(plan.name, 'users', event.target.value)} />
+                  ) : (
+                    <span>{plan.users}</span>
+                  )}
+                  {editingSubscriptionPlanName === plan.name ? (
+                    <input value={plan.price} aria-label={`${plan.name} price per month`} onChange={(event) => updateSubscriptionPlan(plan.name, 'price', event.target.value)} />
+                  ) : (
+                    <span>{plan.price}</span>
+                  )}
                   <label className="settings-active-tick subscription-active-tick" title={plan.isActive ? 'Active subscription option' : 'Inactive subscription option'}>
                     <input type="checkbox" checked={plan.isActive} onChange={() => toggleSubscriptionPlan(plan.name)} />
                     <span>{plan.isPublic ? 'Active' : 'Hidden'}</span>
                   </label>
+                  <button
+                    type="button"
+                    className={`icon-button subscription-edit-icon ${editingSubscriptionPlanName === plan.name ? 'active' : ''}`}
+                    aria-label={editingSubscriptionPlanName === plan.name ? `Save ${plan.name} subscription option` : `Edit ${plan.name} subscription option`}
+                    title={editingSubscriptionPlanName === plan.name ? 'Save subscription option' : 'Edit subscription option'}
+                    onClick={() => toggleSubscriptionPlanEdit(plan.name)}
+                  >
+                    <PencilIcon />
+                  </button>
                 </article>
               ))}
             </div>
@@ -6952,17 +6997,16 @@ function SuperAdminWorkspace({ activeModule }: { activeModule: SuperAdminModule 
 
         {activeModule === 'support' && (
           <section className="panel span-3">
-            <div className="panel-heading">
-              <div>
-                <p>Support Centre</p>
-                <h2>Tenant communication hub</h2>
-              </div>
+            <div className="panel-heading support-ticket-heading">
               <button type="button" className="compact-action-button" onClick={() => openSupportTicket()}>Add ticket</button>
             </div>
             <div className="support-ticket-list">
               {supportTickets.map((ticket) => (
                 <button type="button" key={ticket.number} onClick={() => openSupportTicket(ticket.number)}>
-                  <strong>{ticket.number}</strong>
+                  <div className="support-ticket-title">
+                    <strong>{ticket.subject}</strong>
+                    <small>{ticket.number}</small>
+                  </div>
                   <span>{ticket.tenant}</span>
                   <Status label={ticket.priority} />
                   <span>{ticket.category}</span>
@@ -6971,16 +7015,6 @@ function SuperAdminWorkspace({ activeModule }: { activeModule: SuperAdminModule 
                   <small>Logged {ticket.logged} · Updated {ticket.updated}</small>
                 </button>
               ))}
-            </div>
-            <div className="support-boundary-grid">
-              <article>
-                <strong>Support staff can see</strong>
-                <span>System logs, error messages, API failures and service status.</span>
-              </article>
-              <article>
-                <strong>Support staff cannot see</strong>
-                <span>Patient records, clinical notes, documents or calendar entries.</span>
-              </article>
             </div>
           </section>
         )}
@@ -6994,41 +7028,30 @@ function SuperAdminWorkspace({ activeModule }: { activeModule: SuperAdminModule 
         )}
 
         {activeModule === 'health' && (
-          <>
-            <section className="panel span-3">
-              <div className="panel-heading">
-                <div>
-                  <p>System Health</p>
-                  <h2>Live operational dashboard</h2>
-                </div>
+          <section className="panel span-3">
+            <div className="panel-heading">
+              <div>
+                <p>System Health</p>
+                <h2>Essential live checks</h2>
+                <span className="health-last-checked">Last checked {lastHealthCheckedAt || 'pending'}</span>
               </div>
-              <div className="system-health-grid">
-                {platformServiceStatuses.map(([service, status, uptime, response]) => (
-                  <article key={service}>
-                    <div>
-                      <strong>{service}</strong>
-                      <span>{uptime} uptime · {response}</span>
-                    </div>
-                    <Status label={status} />
-                  </article>
-                ))}
-              </div>
-            </section>
-            <section className="panel span-3">
-              <div className="super-admin-stat-row">
-                {[
-                  ['Current Uptime', '99.96%'],
-                  ['Response Time', '142ms'],
-                  ['Failed Jobs', '2'],
-                  ['Queue Size', '54'],
-                  ['Error Rate', '0.04%'],
-                  ['Active Sessions', '73'],
-                ].map(([label, value]) => (
-                  <Metric key={label} label={label} value={value} detail="platform statistic" />
-                ))}
-              </div>
-            </section>
-          </>
+              <button type="button" className="compact-action-button" onClick={refreshSystemHealth} disabled={isCheckingHealth}>
+                {isCheckingHealth ? 'Checking' : 'Refresh'}
+              </button>
+            </div>
+            <div className="system-health-grid">
+              {platformServiceStatuses.map((healthCheck) => (
+                <article key={healthCheck.service}>
+                  <div>
+                    <strong>{healthCheck.service}</strong>
+                    <span>{healthCheck.meta} · {healthCheck.detail}</span>
+                  </div>
+                  <Status label={healthCheck.status} />
+                </article>
+              ))}
+            </div>
+            <p className="settings-footnote">Only currently connected MVP checks are shown here. Email, SMS, payment gateways, workflow workers and AI are post-MVP services and are not reported as live health checks.</p>
+          </section>
         )}
 
         {activeModule === 'configuration' && (
@@ -7415,6 +7438,7 @@ function SupportTicketModal({
   onClose: () => void
   onSave: (ticket: PlatformSupportTicket) => void
 }) {
+  const isExistingTicket = Boolean(ticket)
   const ticketNumber = ticket?.number ?? `SUP-${Math.floor(Date.now() / 1000).toString().slice(-4)}`
   const [draftTicket, setDraftTicket] = useState<PlatformSupportTicket>({
     number: ticketNumber,
@@ -7454,7 +7478,8 @@ function SupportTicketModal({
         <div className="modal-header">
           <div>
             <p>Support Centre</p>
-            <h2>{ticket ? draftTicket.number : 'Add Ticket'}</h2>
+            <h2>{isExistingTicket ? draftTicket.subject : 'Add Ticket'}</h2>
+            {isExistingTicket && <span className="support-ticket-modal-number">{draftTicket.number}</span>}
           </div>
           <button type="button" className="modal-close" onClick={onClose} aria-label="Close support ticket">
             x
@@ -7470,7 +7495,7 @@ function SupportTicketModal({
               </label>
               <label>
                 <span>Tenant</span>
-                <select value={draftTicket.tenant} onChange={(event) => updateDraftTicket('tenant', event.target.value)}>
+                <select value={draftTicket.tenant} disabled={isExistingTicket} onChange={(event) => updateDraftTicket('tenant', event.target.value)}>
                   <option>System Monitoring</option>
                   {tenants.map((tenantRecord) => (
                     <option key={tenantRecord.businessName}>{tenantRecord.businessName}</option>
@@ -7479,13 +7504,13 @@ function SupportTicketModal({
               </label>
               <label>
                 <span>Priority</span>
-                <select value={draftTicket.priority} onChange={(event) => updateDraftTicket('priority', event.target.value)}>
+                <select value={draftTicket.priority} disabled={isExistingTicket} onChange={(event) => updateDraftTicket('priority', event.target.value)}>
                   {['Low', 'Medium', 'High', 'Critical'].map((priority) => <option key={priority}>{priority}</option>)}
                 </select>
               </label>
               <label>
                 <span>Category</span>
-                <select value={draftTicket.category} onChange={(event) => updateDraftTicket('category', event.target.value)}>
+                <select value={draftTicket.category} disabled={isExistingTicket} onChange={(event) => updateDraftTicket('category', event.target.value)}>
                   {['Technical', 'Billing', 'Subscription', 'Feature Request', 'Bug Report', 'AI', 'Email', 'SMS', 'Training', 'Queue Processing'].map((category) => <option key={category}>{category}</option>)}
                 </select>
               </label>
@@ -7497,33 +7522,23 @@ function SupportTicketModal({
               </label>
               <label>
                 <span>Assigned To</span>
-                <input value={draftTicket.assigned} onChange={(event) => updateDraftTicket('assigned', event.target.value)} />
+                <input value={draftTicket.assigned} readOnly={isExistingTicket} onChange={(event) => updateDraftTicket('assigned', event.target.value)} />
               </label>
               <label className="wide-field">
                 <span>Subject *</span>
-                <input value={draftTicket.subject} onChange={(event) => updateDraftTicket('subject', event.target.value)} />
+                <input value={draftTicket.subject} readOnly={isExistingTicket} onChange={(event) => updateDraftTicket('subject', event.target.value)} />
               </label>
               <label className="wide-field">
                 <span>Support Detail *</span>
-                <textarea value={draftTicket.summary} onChange={(event) => updateDraftTicket('summary', event.target.value)} />
+                <textarea value={draftTicket.summary} readOnly={isExistingTicket} onChange={(event) => updateDraftTicket('summary', event.target.value)} />
               </label>
             </div>
             {validationError && <p className="form-error">{validationError}</p>}
           </section>
-          <section className="support-boundary-grid">
-            <article>
-              <strong>Allowed support context</strong>
-              <span>System logs, error messages, API failures and service status.</span>
-            </article>
-            <article>
-              <strong>Privacy boundary</strong>
-              <span>No patient records, clinical notes, documents, calendar entries or tenant operational records.</span>
-            </article>
-          </section>
         </div>
         <div className="modal-footer">
           <button type="button" className="secondary-button" onClick={onClose}>Cancel</button>
-          <button type="button" onClick={saveTicket}>Save Ticket</button>
+          <button type="button" onClick={saveTicket}>{isExistingTicket ? 'Update Status' : 'Save Ticket'}</button>
         </div>
       </section>
     </div>
