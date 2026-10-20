@@ -1,8 +1,11 @@
 import { useEffect, useMemo, useState } from 'react'
 import { useAuth } from '../auth/AuthContext'
 import { useAuthorization } from '../auth/permissions'
+import { EditableField } from '../components/EditableField'
+import { EditSaveControls } from '../components/EditSaveControls'
 import { EmptyState, ErrorState, LoadingState } from '../components/UiState'
 import { Button, Card, StatusBadge } from '../components/ui'
+import { showErrorNotice, showSuccessNotice } from '../lib/appNotice'
 import { isSupabaseConfigured, supabase } from '../lib/supabase'
 import type { Database } from '../lib/database.types'
 
@@ -170,9 +173,11 @@ export function PracticeTherapistsPage() {
   const [loading, setLoading] = useState(true)
   const [savingTherapist, setSavingTherapist] = useState(false)
   const [savingRegistration, setSavingRegistration] = useState(false)
+  const [isCreatingTherapist, setIsCreatingTherapist] = useState(false)
+  const [isCreatingRegistration, setIsCreatingRegistration] = useState(false)
+  const [isTherapistEditing, setIsTherapistEditing] = useState(true)
+  const [isRegistrationEditing, setIsRegistrationEditing] = useState(true)
   const [loadError, setLoadError] = useState('')
-  const [saveError, setSaveError] = useState('')
-  const [successMessage, setSuccessMessage] = useState('')
 
   const selectedTherapist = useMemo(
     () => therapists.find((therapist) => therapist.id === selectedTherapistId) ?? null,
@@ -186,8 +191,14 @@ export function PracticeTherapistsPage() {
     () => registrations.filter((registration) => registration.therapist_profile_id === selectedTherapistId),
     [registrations, selectedTherapistId],
   )
-  const isTherapistReadOnly = !canEditTherapists || savingTherapist
-  const isRegistrationReadOnly = !canEditTherapists || savingRegistration || !selectedTherapistId
+  const showTherapistFields = isCreatingTherapist || isTherapistEditing
+  const showRegistrationFields = isCreatingRegistration || isRegistrationEditing
+  const isTherapistReadOnly = !canEditTherapists || savingTherapist || (!isCreatingTherapist && !isTherapistEditing)
+  const isRegistrationReadOnly = !canEditTherapists || savingRegistration || !selectedTherapistId || (!isCreatingRegistration && !isRegistrationEditing)
+  const linkedUserLabel = useMemo(() => {
+    if (!therapistForm.user_id) return 'No linked user'
+    return tenantUserOptions.find((option) => option.profile_id === therapistForm.user_id)?.label ?? therapistForm.user_id
+  }, [tenantUserOptions, therapistForm.user_id])
 
   useEffect(() => {
     if (!activeTenant?.id) {
@@ -209,8 +220,6 @@ export function PracticeTherapistsPage() {
     async function loadTherapistData() {
       setLoading(true)
       setLoadError('')
-      setSaveError('')
-      setSuccessMessage('')
 
       const therapistResult = await supabaseClient
         .from('therapist_profiles')
@@ -310,6 +319,10 @@ export function PracticeTherapistsPage() {
       setSelectedRegistrationId(null)
       setTherapistForm(emptyTherapistForm)
       setRegistrationForm(emptyRegistrationForm)
+      setIsCreatingTherapist(false)
+      setIsCreatingRegistration(false)
+      setIsTherapistEditing(false)
+      setIsRegistrationEditing(false)
       setLoading(false)
     }
 
@@ -322,14 +335,10 @@ export function PracticeTherapistsPage() {
 
   const updateTherapistField = <Field extends keyof TherapistProfileFormState>(field: Field, value: TherapistProfileFormState[Field]) => {
     setTherapistForm((currentFormState) => ({ ...currentFormState, [field]: value }))
-    setSaveError('')
-    setSuccessMessage('')
   }
 
   const updateRegistrationField = <Field extends keyof RegistrationFormState>(field: Field, value: RegistrationFormState[Field]) => {
     setRegistrationForm((currentFormState) => ({ ...currentFormState, [field]: value }))
-    setSaveError('')
-    setSuccessMessage('')
   }
 
   const startCreateTherapist = () => {
@@ -337,44 +346,46 @@ export function PracticeTherapistsPage() {
     setSelectedRegistrationId(null)
     setTherapistForm(emptyTherapistForm)
     setRegistrationForm(emptyRegistrationForm)
-    setSaveError('')
-    setSuccessMessage('')
+    setIsCreatingTherapist(true)
+    setIsCreatingRegistration(false)
+    setIsTherapistEditing(true)
+    setIsRegistrationEditing(false)
   }
 
-  const startEditTherapist = (therapist: TherapistProfileRow) => {
+  const viewTherapist = (therapist: TherapistProfileRow) => {
     setSelectedTherapistId(therapist.id)
     setSelectedRegistrationId(null)
     setTherapistForm(formFromTherapist(therapist))
     setRegistrationForm(emptyRegistrationForm)
-    setSaveError('')
-    setSuccessMessage('')
+    setIsCreatingTherapist(false)
+    setIsCreatingRegistration(false)
+    setIsTherapistEditing(false)
+    setIsRegistrationEditing(false)
   }
 
   const startCreateRegistration = () => {
     setSelectedRegistrationId(null)
     setRegistrationForm(emptyRegistrationForm)
-    setSaveError('')
-    setSuccessMessage('')
+    setIsCreatingRegistration(true)
+    setIsRegistrationEditing(true)
   }
 
-  const startEditRegistration = (registration: ProfessionalRegistrationRow) => {
+  const viewRegistration = (registration: ProfessionalRegistrationRow) => {
     setSelectedRegistrationId(registration.id)
     setRegistrationForm(formFromRegistration(registration))
-    setSaveError('')
-    setSuccessMessage('')
+    setIsCreatingRegistration(false)
+    setIsRegistrationEditing(false)
   }
 
   const saveTherapist = async () => {
     if (!activeTenant?.id || !supabase || !canEditTherapists) return
 
     if (!therapistForm.display_name.trim()) {
-      setSaveError('Display name is required.')
+      showErrorNotice('Display name is required.')
       return
     }
 
     setSavingTherapist(true)
-    setSaveError('')
-    setSuccessMessage('')
 
     const payload = toTherapistPayload(therapistForm)
 
@@ -393,7 +404,7 @@ export function PracticeTherapistsPage() {
           .single()
 
     if (result.error) {
-      setSaveError(result.error.message)
+      showErrorNotice(result.error.message)
       setSavingTherapist(false)
       return
     }
@@ -408,7 +419,9 @@ export function PracticeTherapistsPage() {
     })
     setSelectedTherapistId(savedTherapist.id)
     setTherapistForm(formFromTherapist(savedTherapist))
-    setSuccessMessage(selectedTherapist?.id ? 'Therapist profile updated.' : 'Therapist profile created.')
+    showSuccessNotice(selectedTherapist?.id ? 'Therapist profile updated.' : 'Therapist profile created.')
+    setIsCreatingTherapist(false)
+    setIsTherapistEditing(false)
     setSavingTherapist(false)
   }
 
@@ -433,18 +446,16 @@ export function PracticeTherapistsPage() {
     if (!activeTenant?.id || !supabase || !canEditTherapists || !selectedTherapistId) return
 
     if (!registrationForm.registration_body.trim() || !registrationForm.registration_number.trim()) {
-      setSaveError('Registration body and registration number are required.')
+      showErrorNotice('Registration body and registration number are required.')
       return
     }
 
     setSavingRegistration(true)
-    setSaveError('')
-    setSuccessMessage('')
 
     if (registrationForm.is_primary) {
       const clearResult = await clearOtherPrimaryRegistrations(selectedTherapistId, selectedRegistration?.id)
       if (clearResult.error) {
-        setSaveError(`Could not clear the previous primary registration: ${clearResult.error.message}`)
+        showErrorNotice(`Could not clear the previous primary registration: ${clearResult.error.message}`)
         setSavingRegistration(false)
         return
       }
@@ -467,7 +478,7 @@ export function PracticeTherapistsPage() {
           .single()
 
     if (result.error) {
-      setSaveError(result.error.message)
+      showErrorNotice(result.error.message)
       setSavingRegistration(false)
       return
     }
@@ -495,7 +506,9 @@ export function PracticeTherapistsPage() {
     })
     setSelectedRegistrationId(savedRegistration.id)
     setRegistrationForm(formFromRegistration(savedRegistration))
-    setSuccessMessage(selectedRegistration?.id ? 'Professional registration updated.' : 'Professional registration created.')
+    showSuccessNotice(selectedRegistration?.id ? 'Professional registration updated.' : 'Professional registration created.')
+    setIsCreatingRegistration(false)
+    setIsRegistrationEditing(false)
     setSavingRegistration(false)
   }
 
@@ -515,22 +528,7 @@ export function PracticeTherapistsPage() {
 
   return (
     <div className="practice-therapists-page">
-      <Card className="practice-profile-summary">
-        <div>
-          <span>Therapist profiles</span>
-          <h3>{activeTenant?.practice_name ?? 'Practice therapists'}</h3>
-          <p>
-            Manage therapist professional profiles and basic professional registrations. Booking provider,
-            therapist banking and calendar workflows are intentionally not connected yet.
-          </p>
-        </div>
-        <div className="practice-profile-summary-actions">
-          <StatusBadge tone="info">{therapists.length} therapists</StatusBadge>
-          {!canEditTherapists && <StatusBadge tone="warning">Read only</StatusBadge>}
-        </div>
-      </Card>
-
-      <div className="practice-locations-layout">
+      <div className={`practice-locations-layout${!isCreatingTherapist && !selectedTherapist ? ' is-list-only' : ''}`}>
         <Card className="practice-locations-list-card">
           <div className="practice-locations-list-header">
             <div>
@@ -539,7 +537,7 @@ export function PracticeTherapistsPage() {
             </div>
             {canEditTherapists && (
               <Button variant="secondary" onClick={startCreateTherapist}>
-                New Therapist
+                Add Therapist
               </Button>
             )}
           </div>
@@ -552,7 +550,7 @@ export function PracticeTherapistsPage() {
                 <button
                   className={selectedTherapistId === therapist.id ? 'active' : ''}
                   type="button"
-                  onClick={() => startEditTherapist(therapist)}
+                  onClick={() => viewTherapist(therapist)}
                   key={therapist.id}
                 >
                   <div>
@@ -570,14 +568,24 @@ export function PracticeTherapistsPage() {
           )}
         </Card>
 
-        <div className="practice-therapist-editor-stack">
+        {(isCreatingTherapist || selectedTherapist) && <div className="practice-therapist-editor-stack">
           <Card className="practice-profile-form-card">
             <div className="practice-profile-form-header">
               <div>
-                <span>{selectedTherapist ? 'Edit therapist' : 'Create therapist'}</span>
+                <span>{selectedTherapist ? (isTherapistEditing ? 'Edit therapist' : 'Saved therapist') : 'Create therapist'}</span>
                 <h3>{selectedTherapist ? therapistForm.display_name : 'New therapist profile'}</h3>
               </div>
-              {canEditTherapists && (
+              {canEditTherapists && selectedTherapist && (
+                <EditSaveControls
+                  isEditing={isTherapistEditing}
+                  isSaving={savingTherapist}
+                  onEdit={() => setIsTherapistEditing(true)}
+                  onSave={saveTherapist}
+                  editLabel="Edit therapist profile"
+                  saveLabel="Save therapist profile"
+                />
+              )}
+              {canEditTherapists && !selectedTherapist && (
                 <Button disabled={savingTherapist} onClick={saveTherapist}>
                   {savingTherapist ? 'Saving' : 'Save Therapist'}
                 </Button>
@@ -585,62 +593,50 @@ export function PracticeTherapistsPage() {
             </div>
 
             <div className="settings-form-grid practice-therapist-form">
-              <label>
-                <span>Display name</span>
+              <EditableField label="Display name" isEditing={showTherapistFields} value={therapistForm.display_name}>
                 <input value={therapistForm.display_name} disabled={isTherapistReadOnly} onChange={(event) => updateTherapistField('display_name', event.target.value)} />
-              </label>
-              <label>
-                <span>Linked user / profile</span>
+              </EditableField>
+              <EditableField label="Linked user / profile" isEditing={showTherapistFields} value={linkedUserLabel}>
                 <select value={therapistForm.user_id} disabled={isTherapistReadOnly || tenantUserOptions.length === 0} onChange={(event) => updateTherapistField('user_id', event.target.value)}>
                   <option value="">{tenantUserOptions.length ? 'No linked user' : 'No tenant users available'}</option>
                   {tenantUserOptions.map((option) => (
                     <option value={option.profile_id} key={option.profile_id}>{option.label}</option>
                   ))}
                 </select>
-              </label>
-              <label>
-                <span>Profession</span>
+              </EditableField>
+              <EditableField label="Profession" isEditing={showTherapistFields} value={therapistForm.profession}>
                 <input value={therapistForm.profession} disabled={isTherapistReadOnly} onChange={(event) => updateTherapistField('profession', event.target.value)} />
-              </label>
-              <label>
-                <span>Qualifications</span>
+              </EditableField>
+              <EditableField label="Qualifications" isEditing={showTherapistFields} value={therapistForm.qualifications}>
                 <input value={therapistForm.qualifications} disabled={isTherapistReadOnly} onChange={(event) => updateTherapistField('qualifications', event.target.value)} />
-              </label>
-              <label>
-                <span>Default appointment duration</span>
+              </EditableField>
+              <EditableField label="Default appointment duration" isEditing={showTherapistFields} value={therapistForm.default_appointment_duration_minutes ? `${therapistForm.default_appointment_duration_minutes} minutes` : ''}>
                 <input type="number" min="1" value={therapistForm.default_appointment_duration_minutes} disabled={isTherapistReadOnly} onChange={(event) => updateTherapistField('default_appointment_duration_minutes', event.target.value)} />
-              </label>
-              <label>
-                <span>Default billing rate</span>
+              </EditableField>
+              <EditableField label="Default billing rate" isEditing={showTherapistFields} value={therapistForm.default_billing_rate ? formatMoney(Number(therapistForm.default_billing_rate)) : ''}>
                 <input type="number" min="0" step="0.01" value={therapistForm.default_billing_rate} disabled={isTherapistReadOnly} onChange={(event) => updateTherapistField('default_billing_rate', event.target.value)} />
-              </label>
-              <label>
-                <span>Practice number</span>
+              </EditableField>
+              <EditableField label="Practice number" isEditing={showTherapistFields} value={therapistForm.practice_number}>
                 <input value={therapistForm.practice_number} disabled={isTherapistReadOnly} onChange={(event) => updateTherapistField('practice_number', event.target.value)} />
-              </label>
-              <label>
-                <span>Status</span>
+              </EditableField>
+              <EditableField label="Status" isEditing={showTherapistFields} value={therapistForm.is_active ? 'Active' : 'Inactive'}>
                 <select value={therapistForm.is_active ? 'active' : 'inactive'} disabled={isTherapistReadOnly} onChange={(event) => updateTherapistField('is_active', event.target.value === 'active')}>
                   <option value="active">Active</option>
                   <option value="inactive">Inactive</option>
                 </select>
-              </label>
-              <label>
-                <span>Billing name</span>
+              </EditableField>
+              <EditableField label="Billing name" isEditing={showTherapistFields} value={therapistForm.billing_name}>
                 <input value={therapistForm.billing_name} disabled={isTherapistReadOnly} onChange={(event) => updateTherapistField('billing_name', event.target.value)} />
-              </label>
-              <label>
-                <span>Billing email</span>
+              </EditableField>
+              <EditableField label="Billing email" isEditing={showTherapistFields} value={therapistForm.billing_email}>
                 <input type="email" value={therapistForm.billing_email} disabled={isTherapistReadOnly} onChange={(event) => updateTherapistField('billing_email', event.target.value)} />
-              </label>
-              <label>
-                <span>Billing phone</span>
+              </EditableField>
+              <EditableField label="Billing phone" isEditing={showTherapistFields} value={therapistForm.billing_phone}>
                 <input value={therapistForm.billing_phone} disabled={isTherapistReadOnly} onChange={(event) => updateTherapistField('billing_phone', event.target.value)} />
-              </label>
-              <label className="wide-field">
-                <span>Bio</span>
+              </EditableField>
+              <EditableField className="wide-field" label="Bio" isEditing={showTherapistFields} value={therapistForm.bio}>
                 <textarea value={therapistForm.bio} disabled={isTherapistReadOnly} onChange={(event) => updateTherapistField('bio', event.target.value)} />
-              </label>
+              </EditableField>
             </div>
           </Card>
 
@@ -652,7 +648,7 @@ export function PracticeTherapistsPage() {
               </div>
               {canEditTherapists && selectedTherapistId && (
                 <Button variant="secondary" onClick={startCreateRegistration}>
-                  New Registration
+                  Add Registration
                 </Button>
               )}
             </div>
@@ -667,7 +663,7 @@ export function PracticeTherapistsPage() {
                       <button
                         className={selectedRegistrationId === registration.id ? 'active' : ''}
                         type="button"
-                        onClick={() => startEditRegistration(registration)}
+                        onClick={() => viewRegistration(registration)}
                         key={registration.id}
                       >
                         <strong>{registration.registration_body} · {registration.registration_number}</strong>
@@ -683,49 +679,58 @@ export function PracticeTherapistsPage() {
                   )}
                 </div>
 
-                <div className="settings-form-grid practice-registration-form">
-                  <label>
-                    <span>Registration body</span>
+                {(isCreatingRegistration || selectedRegistration) && <div className="practice-registration-editor-header">
+                  <span>{selectedRegistration ? (isRegistrationEditing ? 'Edit registration' : 'Saved registration') : 'New registration'}</span>
+                  {canEditTherapists && selectedRegistration && (
+                    <EditSaveControls
+                      isEditing={isRegistrationEditing}
+                      isSaving={savingRegistration}
+                      onEdit={() => setIsRegistrationEditing(true)}
+                      onSave={saveRegistration}
+                      editLabel="Edit professional registration"
+                      saveLabel="Save professional registration"
+                    />
+                  )}
+                </div>}
+
+                {(isCreatingRegistration || selectedRegistration) && <div className="settings-form-grid practice-registration-form">
+                  <EditableField label="Registration body" isEditing={showRegistrationFields} value={registrationForm.registration_body}>
                     <select value={registrationForm.registration_body} disabled={isRegistrationReadOnly} onChange={(event) => updateRegistrationField('registration_body', event.target.value)}>
                       {registrationBodyOptions.map((body) => <option value={body} key={body}>{body}</option>)}
                     </select>
-                  </label>
-                  <label>
-                    <span>Registration number</span>
+                  </EditableField>
+                  <EditableField label="Registration number" isEditing={showRegistrationFields} value={registrationForm.registration_number}>
                     <input value={registrationForm.registration_number} disabled={isRegistrationReadOnly} onChange={(event) => updateRegistrationField('registration_number', event.target.value)} />
-                  </label>
-                  <label>
-                    <span>Registration type</span>
+                  </EditableField>
+                  <EditableField label="Registration type" isEditing={showRegistrationFields} value={registrationForm.registration_type}>
                     <input value={registrationForm.registration_type} disabled={isRegistrationReadOnly} onChange={(event) => updateRegistrationField('registration_type', event.target.value)} />
-                  </label>
-                  <label>
-                    <span>Country</span>
+                  </EditableField>
+                  <EditableField label="Country" isEditing={showRegistrationFields} value={registrationForm.country}>
                     <select value={registrationForm.country} disabled={isRegistrationReadOnly} onChange={(event) => updateRegistrationField('country', event.target.value)}>
                       {countryOptions.map((country) => <option value={country} key={country}>{country}</option>)}
                     </select>
-                  </label>
-                  <label>
-                    <span>Valid from</span>
+                  </EditableField>
+                  <EditableField label="Valid from" isEditing={showRegistrationFields} value={registrationForm.valid_from}>
                     <input type="date" value={registrationForm.valid_from} disabled={isRegistrationReadOnly} onChange={(event) => updateRegistrationField('valid_from', event.target.value)} />
-                  </label>
-                  <label>
-                    <span>Valid until</span>
+                  </EditableField>
+                  <EditableField label="Valid until" isEditing={showRegistrationFields} value={registrationForm.valid_until}>
                     <input type="date" value={registrationForm.valid_until} disabled={isRegistrationReadOnly} onChange={(event) => updateRegistrationField('valid_until', event.target.value)} />
-                  </label>
-                  <label>
-                    <span>Status</span>
+                  </EditableField>
+                  <EditableField label="Status" isEditing={showRegistrationFields} value={registrationForm.is_active ? 'Active' : 'Inactive'}>
                     <select value={registrationForm.is_active ? 'active' : 'inactive'} disabled={isRegistrationReadOnly} onChange={(event) => updateRegistrationField('is_active', event.target.value === 'active')}>
                       <option value="active">Active</option>
                       <option value="inactive">Inactive</option>
                     </select>
-                  </label>
-                  <label className="practice-number-toggle">
-                    <input type="checkbox" checked={registrationForm.is_primary} disabled={isRegistrationReadOnly} onChange={(event) => updateRegistrationField('is_primary', event.target.checked)} />
-                    <span>Primary registration</span>
-                  </label>
-                </div>
+                  </EditableField>
+                  <EditableField label="Primary registration" isEditing={showRegistrationFields} value={registrationForm.is_primary ? 'Yes' : 'No'}>
+                    <div className="practice-number-toggle">
+                      <input type="checkbox" checked={registrationForm.is_primary} disabled={isRegistrationReadOnly} onChange={(event) => updateRegistrationField('is_primary', event.target.checked)} />
+                      <span>Primary registration</span>
+                    </div>
+                  </EditableField>
+                </div>}
 
-                {canEditTherapists && (
+                {canEditTherapists && isCreatingRegistration && !selectedRegistration && (
                   <div className="practice-registration-actions">
                     <Button disabled={savingRegistration || !selectedTherapistId} onClick={saveRegistration}>
                       {savingRegistration ? 'Saving' : selectedRegistration ? 'Save Registration' : 'Add Registration'}
@@ -738,12 +743,7 @@ export function PracticeTherapistsPage() {
             )}
           </Card>
 
-          {(saveError || successMessage) && (
-            <div className={`practice-profile-message ${saveError ? 'error' : 'success'}`}>
-              {saveError || successMessage}
-            </div>
-          )}
-        </div>
+        </div>}
       </div>
     </div>
   )

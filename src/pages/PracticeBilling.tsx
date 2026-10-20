@@ -1,8 +1,11 @@
 import { useEffect, useMemo, useState } from 'react'
 import { useAuth } from '../auth/AuthContext'
 import { useAuthorization } from '../auth/permissions'
+import { EditableField } from '../components/EditableField'
+import { EditSaveControls } from '../components/EditSaveControls'
 import { ErrorState, LoadingState } from '../components/UiState'
-import { Button, Card, StatusBadge } from '../components/ui'
+import { Button, Card } from '../components/ui'
+import { showErrorNotice, showSuccessNotice } from '../lib/appNotice'
 import { isSupabaseConfigured, supabase } from '../lib/supabase'
 import type { Database, Json } from '../lib/database.types'
 
@@ -109,12 +112,12 @@ export function PracticeBillingPage() {
   const [formState, setFormState] = useState<BillingSettingsFormState>(emptyBillingSettingsForm)
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
+  const [isEditing, setIsEditing] = useState(false)
   const [loadError, setLoadError] = useState('')
-  const [saveError, setSaveError] = useState('')
-  const [successMessage, setSuccessMessage] = useState('')
 
   const hasExistingSettings = Boolean(billingSettings?.id)
-  const isReadOnly = !canEditBilling || saving
+  const showEditableFields = !hasExistingSettings || isEditing
+  const isReadOnly = !canEditBilling || saving || (hasExistingSettings && !isEditing)
 
   const defaultBankAccountLabel = useMemo(() => {
     const selectedBankAccount = bankAccounts.find((account) => account.id === formState.default_bank_account_id)
@@ -141,8 +144,6 @@ export function PracticeBillingPage() {
     async function loadBillingConfiguration() {
       setLoading(true)
       setLoadError('')
-      setSaveError('')
-      setSuccessMessage('')
 
       const [settingsResult, bankAccountsResult] = await Promise.all([
         supabaseClient
@@ -215,6 +216,7 @@ export function PracticeBillingPage() {
       setBillingSettings(nextSettings)
       setBankAccounts((bankAccountsResult.data ?? []) as BankAccountRow[])
       setFormState(formFromBillingSettings(nextSettings))
+      setIsEditing(!nextSettings)
       setLoading(false)
     }
 
@@ -227,8 +229,6 @@ export function PracticeBillingPage() {
 
   const updateField = <Field extends keyof BillingSettingsFormState>(field: Field, value: BillingSettingsFormState[Field]) => {
     setFormState((currentFormState) => ({ ...currentFormState, [field]: value }))
-    setSaveError('')
-    setSuccessMessage('')
   }
 
   const saveBillingSettings = async () => {
@@ -236,13 +236,11 @@ export function PracticeBillingPage() {
 
     const validationError = validateBillingSettings(formState)
     if (validationError) {
-      setSaveError(validationError)
+      showErrorNotice(validationError)
       return
     }
 
     setSaving(true)
-    setSaveError('')
-    setSuccessMessage('')
 
     const payload = toBillingSettingsPayload(formState, billingSettings)
 
@@ -261,7 +259,7 @@ export function PracticeBillingPage() {
           .single()
 
     if (result.error) {
-      setSaveError(result.error.message)
+      showErrorNotice(result.error.message)
       setSaving(false)
       return
     }
@@ -269,7 +267,8 @@ export function PracticeBillingPage() {
     const savedSettings = result.data as BillingSettingsRow
     setBillingSettings(savedSettings)
     setFormState(formFromBillingSettings(savedSettings))
-    setSuccessMessage(hasExistingSettings ? 'Billing configuration updated.' : 'Billing configuration created.')
+    showSuccessNotice(hasExistingSettings ? 'Billing configuration updated.' : 'Billing configuration created.')
+    setIsEditing(false)
     setSaving(false)
   }
 
@@ -289,23 +288,6 @@ export function PracticeBillingPage() {
 
   return (
     <div className="practice-billing-page">
-      <Card className="practice-profile-summary">
-        <div>
-          <span>Billing defaults</span>
-          <h3>{activeTenant?.practice_name ?? 'Billing configuration'}</h3>
-          <p>
-            Configure the tenant billing defaults that future invoice and statement workflows will use.
-            This step does not create invoices, statements or live numbering yet.
-          </p>
-        </div>
-        <div className="practice-profile-summary-actions">
-          <StatusBadge tone={hasExistingSettings ? 'success' : 'info'}>
-            {hasExistingSettings ? 'Configured' : 'Not created'}
-          </StatusBadge>
-          {!canEditBilling && <StatusBadge tone="warning">Read only</StatusBadge>}
-        </div>
-      </Card>
-
       {!hasExistingSettings && (
         <Card className="practice-profile-notice">
           <strong>Billing configuration not created yet.</strong>
@@ -316,10 +298,20 @@ export function PracticeBillingPage() {
       <Card className="practice-profile-form-card">
         <div className="practice-profile-form-header">
           <div>
-            <span>{hasExistingSettings ? 'Edit billing defaults' : 'Create billing defaults'}</span>
+            <span>{hasExistingSettings ? (isEditing ? 'Edit billing defaults' : 'Saved billing defaults') : 'Create billing defaults'}</span>
             <h3>Invoice and statement setup</h3>
           </div>
-          {canEditBilling && (
+          {canEditBilling && hasExistingSettings && (
+            <EditSaveControls
+              isEditing={isEditing}
+              isSaving={saving}
+              onEdit={() => setIsEditing(true)}
+              onSave={saveBillingSettings}
+              editLabel="Edit billing configuration"
+              saveLabel="Save billing configuration"
+            />
+          )}
+          {canEditBilling && !hasExistingSettings && (
             <Button disabled={saving} onClick={saveBillingSettings}>
               {saving ? 'Saving' : 'Save Billing'}
             </Button>
@@ -327,38 +319,39 @@ export function PracticeBillingPage() {
         </div>
 
         <div className="settings-form-grid practice-billing-form">
-          <label>
-            <span>Invoice prefix</span>
+          <EditableField label="Invoice prefix" isEditing={showEditableFields} value={formState.invoice_prefix}>
             <input value={formState.invoice_prefix} disabled={isReadOnly} onChange={(event) => updateField('invoice_prefix', event.target.value)} />
-          </label>
-          <label>
-            <span>Next invoice number</span>
+          </EditableField>
+          <EditableField label="Next invoice number" isEditing={showEditableFields} value={formState.next_invoice_number}>
             <input type="number" min="1" value={formState.next_invoice_number} disabled={isReadOnly} onChange={(event) => updateField('next_invoice_number', event.target.value)} />
-          </label>
-          <label>
-            <span>Statement prefix</span>
+          </EditableField>
+          <EditableField label="Statement prefix" isEditing={showEditableFields} value={formState.statement_prefix}>
             <input value={formState.statement_prefix} disabled={isReadOnly} onChange={(event) => updateField('statement_prefix', event.target.value)} />
-          </label>
-          <label>
-            <span>Next statement number</span>
+          </EditableField>
+          <EditableField label="Next statement number" isEditing={showEditableFields} value={formState.next_statement_number}>
             <input type="number" min="1" value={formState.next_statement_number} disabled={isReadOnly} onChange={(event) => updateField('next_statement_number', event.target.value)} />
-          </label>
-          <label>
-            <span>Payment terms days</span>
+          </EditableField>
+          <EditableField label="Payment terms days" isEditing={showEditableFields} value={formState.payment_terms_days}>
             <input type="number" min="1" value={formState.payment_terms_days} disabled={isReadOnly} onChange={(event) => updateField('payment_terms_days', event.target.value)} />
-          </label>
-          <label>
-            <span>Default bank account</span>
+          </EditableField>
+          <EditableField label="Default bank account" isEditing={showEditableFields} value={defaultBankAccountLabel}>
             <select value={formState.default_bank_account_id} disabled={isReadOnly || bankAccounts.length === 0} onChange={(event) => updateField('default_bank_account_id', event.target.value)}>
               <option value="">{bankAccounts.length ? 'No default account' : 'No active accounts available'}</option>
               {bankAccounts.map((account) => (
                 <option value={account.id} key={account.id}>{formatBankAccount(account)}</option>
               ))}
             </select>
-          </label>
+          </EditableField>
+          {!showEditableFields && (
+            <>
+              <EditableField label="Therapist billing overrides" isEditing={false} value={formState.allow_therapist_billing ? 'Allowed' : 'Not allowed'}>{null}</EditableField>
+              <EditableField label="Therapist bank account overrides" isEditing={false} value={formState.allow_therapist_bank_accounts ? 'Allowed' : 'Not allowed'}>{null}</EditableField>
+              <EditableField label="Therapist practice number overrides" isEditing={false} value={formState.allow_therapist_practice_number_overrides ? 'Allowed' : 'Not allowed'}>{null}</EditableField>
+            </>
+          )}
         </div>
 
-        <div className="practice-billing-toggle-grid">
+        {showEditableFields && <div className="practice-billing-toggle-grid">
           <label className="practice-number-toggle">
             <input type="checkbox" checked={formState.allow_therapist_billing} disabled={isReadOnly} onChange={(event) => updateField('allow_therapist_billing', event.target.checked)} />
             <span>Allow therapist billing overrides</span>
@@ -371,18 +364,13 @@ export function PracticeBillingPage() {
             <input type="checkbox" checked={formState.allow_therapist_practice_number_overrides} disabled={isReadOnly} onChange={(event) => updateField('allow_therapist_practice_number_overrides', event.target.checked)} />
             <span>Allow therapist practice number overrides</span>
           </label>
-        </div>
+        </div>}
 
         <Card className="practice-billing-bank-preview">
           <span>Selected bank account</span>
           <strong>{defaultBankAccountLabel}</strong>
         </Card>
 
-        {(saveError || successMessage) && (
-          <div className={`practice-profile-message ${saveError ? 'error' : 'success'}`}>
-            {saveError || successMessage}
-          </div>
-        )}
       </Card>
     </div>
   )

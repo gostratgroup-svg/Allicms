@@ -8,7 +8,7 @@ export type BreadcrumbItem = {
 
 type PageHeaderProps = {
   title: string
-  description: string
+  description?: string
   breadcrumbs?: BreadcrumbItem[]
   actions?: ReactNode
 }
@@ -31,7 +31,7 @@ export function PageHeader({ title, description, breadcrumbs = [], actions }: Pa
       <div className="page-header-main">
         <div>
           <h2>{title}</h2>
-          <p>{description}</p>
+          {description && <p>{description}</p>}
         </div>
         {actions && <div className="page-header-actions">{actions}</div>}
       </div>

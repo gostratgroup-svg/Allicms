@@ -78,6 +78,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [activeRole, setActiveRole] = useState<ActiveRole>(null)
   const [identityLoading, setIdentityLoading] = useState(false)
   const [identityError, setIdentityError] = useState('')
+  const userId = user?.id ?? null
 
   const resetIdentity = () => {
     setProfile(null)
@@ -121,7 +122,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, [])
 
   useEffect(() => {
-    if (!supabase || !user) {
+    if (!supabase || !userId) {
       resetIdentity()
       return undefined
     }
@@ -140,7 +141,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       const { data: profileRow, error: profileError } = await supabaseClient
         .from('profiles')
         .select('id, first_name, last_name, email, phone, is_super_admin, created_at, updated_at, deleted_at')
-        .eq('id', user.id)
+        .eq('id', userId)
         .is('deleted_at', null)
         .maybeSingle()
 
@@ -191,7 +192,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
             deleted_at
           )
         `)
-        .eq('profile_id', user.id)
+        .eq('profile_id', userId)
         .eq('is_active', true)
         .is('deleted_at', null)
 
@@ -226,7 +227,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     return () => {
       isMounted = false
     }
-  }, [user])
+  }, [userId])
 
   const value = useMemo<AuthContextValue>(() => ({
     user,

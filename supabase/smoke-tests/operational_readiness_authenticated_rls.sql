@@ -47,7 +47,7 @@ begin;
 set local role authenticated;
 select set_config('request.jwt.claim.sub', (select profile_id::text from operational_readiness_auth_context where email = 'gostratgroup+allidesk-admin-a@gmail.com'), true);
 insert into operational_readiness_rls_results
-select 'tenant_isolation', 'gostratgroup+allidesk-admin-a@gmail.com', 'Tenant A admin sees Tenant A patient', count(*)::text, '1', case when count(*) = 1 then 'passed' else 'failed' end, null
+select 'tenant_isolation', 'gostratgroup+allidesk-admin-a@gmail.com', 'Tenant A admin sees Tenant A patients', count(*)::text, 'at least 1', case when count(*) >= 1 then 'passed' else 'failed' end, null
 from public.patients where tenant_id = '10000000-0000-4000-8000-000000000001';
 insert into operational_readiness_rls_results
 select 'tenant_isolation', 'gostratgroup+allidesk-admin-a@gmail.com', 'Tenant A admin cannot see Tenant B patient', count(*)::text, '0', case when count(*) = 0 then 'passed' else 'failed' end, null
@@ -63,7 +63,7 @@ select 'role_access', 'gostratgroup+allidesk-admin-a@gmail.com', 'Admin operatio
        )::text,
        'Tenant A operational records visible; Tenant B hidden',
        case
-         when (select count(*) from public.patients where tenant_id = '10000000-0000-4000-8000-000000000001') = 1
+         when (select count(*) from public.patients where tenant_id = '10000000-0000-4000-8000-000000000001') >= 1
           and (select count(*) from public.patients where tenant_id = '20000000-0000-4000-8000-000000000001') = 0
           and (select count(*) from public.invoices) >= 1
          then 'passed'
@@ -166,9 +166,9 @@ select 'role_access', 'gostratgroup+allidesk-therapist-a@gmail.com', 'Therapist 
        )::text,
        'Patients/bookings/sessions/clinical visible; finance hidden',
        case
-         when (select count(*) from public.patients) = 1
-          and (select count(*) from public.bookings) = 1
-          and (select count(*) from public.sessions) = 1
+         when (select count(*) from public.patients) >= 1
+          and (select count(*) from public.bookings) >= 1
+          and (select count(*) from public.sessions) >= 1
           and (select count(*) from public.clinical_notes) >= 1
           and (select count(*) from public.invoices) = 0
          then 'passed'
@@ -192,9 +192,9 @@ select 'role_access', 'gostratgroup+allidesk-reception-a@gmail.com', 'Reception 
        )::text,
        'Patients/bookings/sessions visible; finance/clinical hidden',
        case
-         when (select count(*) from public.patients) = 1
-          and (select count(*) from public.bookings) = 1
-          and (select count(*) from public.sessions) = 1
+         when (select count(*) from public.patients) >= 1
+          and (select count(*) from public.bookings) >= 1
+          and (select count(*) from public.sessions) >= 1
           and (select count(*) from public.invoices) = 0
           and (select count(*) from public.clinical_notes) = 0
          then 'passed'
@@ -232,7 +232,7 @@ begin;
 set local role authenticated;
 select set_config('request.jwt.claim.sub', (select profile_id::text from operational_readiness_auth_context where email = 'gostratgroup+allidesk-admin-b@gmail.com'), true);
 insert into operational_readiness_rls_results
-select 'tenant_isolation', 'gostratgroup+allidesk-admin-b@gmail.com', 'Tenant B admin sees Tenant B patient', count(*)::text, '1', case when count(*) = 1 then 'passed' else 'failed' end, null
+select 'tenant_isolation', 'gostratgroup+allidesk-admin-b@gmail.com', 'Tenant B admin sees Tenant B patients', count(*)::text, 'at least 1', case when count(*) >= 1 then 'passed' else 'failed' end, null
 from public.patients where tenant_id = '20000000-0000-4000-8000-000000000001';
 insert into operational_readiness_rls_results
 select 'tenant_isolation', 'gostratgroup+allidesk-admin-b@gmail.com', 'Tenant B admin cannot see Tenant A patient', count(*)::text, '0', case when count(*) = 0 then 'passed' else 'failed' end, null

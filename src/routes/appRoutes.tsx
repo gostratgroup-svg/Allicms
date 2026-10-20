@@ -6,18 +6,13 @@ import { AccessDeniedState } from '../components/UiState'
 import { BookingsPage } from '../pages/Bookings'
 import { ClinicalPage } from '../pages/Clinical'
 import { FinancePage } from '../pages/Finance'
-import { FinancePriceListsPage } from '../pages/FinancePriceLists'
 import { OverviewPage } from '../pages/Overview'
 import { PatientsPage } from '../pages/Patients'
-import { PracticeBankingPage } from '../pages/PracticeBanking'
-import { PracticeBillingPage } from '../pages/PracticeBilling'
-import { PracticeBrandingPage } from '../pages/PracticeBranding'
+import { PracticeBillingConfigurationPage } from '../pages/PracticeBillingConfiguration'
 import { ClinicalTemplatesPage } from '../pages/ClinicalTemplates'
 import { PracticeCommunicationTemplatesPage } from '../pages/PracticeCommunicationTemplates'
 import { PracticePage } from '../pages/Practice'
-import { PracticeLocationsPage } from '../pages/PracticeLocations'
-import { PracticeProfilePage } from '../pages/PracticeProfile'
-import { PracticeTherapistsPage } from '../pages/PracticeTherapists'
+import { PracticeSetupConfigurationPage } from '../pages/PracticeSetupConfiguration'
 import { PracticeWorkflowsPage } from '../pages/PracticeWorkflows'
 import { SettingsPage } from '../pages/Settings'
 import { SessionsPage } from '../pages/Sessions'
@@ -44,9 +39,9 @@ export const appRoutes: AppRoute[] = [
   {
     path: '/bookings',
     label: 'Bookings',
-    title: 'Bookings',
+    title: 'Practice Calendar',
     accessArea: 'bookings',
-    description: 'Calendar, new booking, location calendar, therapist calendar and booking queue structure.',
+    description: 'Your daily working desk for appointments, session preparation and care delivery.',
     placeholderPattern: 'bookings',
   },
   {
@@ -54,7 +49,7 @@ export const appRoutes: AppRoute[] = [
     label: 'Sessions',
     title: 'Sessions',
     accessArea: 'bookings',
-    description: 'Create, view, start, complete and reopen sessions from eligible bookings.',
+    description: 'Plan, document and complete care while keeping clinical and billing context connected.',
     placeholderPattern: 'sessions',
     showInNav: false,
   },
@@ -85,8 +80,8 @@ export const appRoutes: AppRoute[] = [
   },
   {
     path: '/finance/price-lists',
-    label: 'Price Lists',
-    title: 'Price Lists',
+    label: 'Services & Pricing',
+    title: 'Services & Pricing',
     accessArea: 'practice_billing',
     description: 'Create and maintain tenant price lists and procedure line items.',
     placeholderPattern: 'financePriceLists',
@@ -102,9 +97,9 @@ export const appRoutes: AppRoute[] = [
   },
   {
     path: '/practice/profile',
-    label: 'Practice Profile',
-    title: 'Practice Profile',
-    accessArea: 'settings',
+    label: 'Practice Setup',
+    title: 'Practice Setup',
+    accessArea: 'practice_team',
     description: 'Create and maintain the current tenant practice profile.',
     placeholderPattern: 'practiceProfile',
     showInNav: false,
@@ -120,8 +115,8 @@ export const appRoutes: AppRoute[] = [
   },
   {
     path: '/practice/therapists',
-    label: 'Therapists',
-    title: 'Therapist Profiles',
+    label: 'Therapists & Team',
+    title: 'Therapists & Team',
     accessArea: 'practice_team',
     description: 'Create and maintain therapist profiles and professional registrations.',
     placeholderPattern: 'practiceTherapists',
@@ -257,16 +252,16 @@ function PlaceholderPage({ route }: { route: AppRoute }) {
       {route.placeholderPattern === 'patients' && <PatientsPage />}
       {route.placeholderPattern === 'clinical' && <ClinicalPage />}
       {route.placeholderPattern === 'finance' && <FinancePage />}
-      {route.placeholderPattern === 'financePriceLists' && <FinancePriceListsPage />}
+      {route.placeholderPattern === 'financePriceLists' && <Navigate to="/practice/billing?section=services-pricing" replace />}
       {route.placeholderPattern === 'practice' && <PracticePage />}
-      {route.placeholderPattern === 'practiceBanking' && <PracticeBankingPage />}
-      {route.placeholderPattern === 'practiceBilling' && <PracticeBillingPage />}
-      {route.placeholderPattern === 'practiceBranding' && <PracticeBrandingPage />}
+      {route.placeholderPattern === 'practiceBanking' && <Navigate to="/practice/billing" replace />}
+      {route.placeholderPattern === 'practiceBilling' && <PracticeBillingConfigurationPage />}
+      {route.placeholderPattern === 'practiceBranding' && <Navigate to="/practice/profile?section=branding" replace />}
       {route.placeholderPattern === 'clinicalTemplates' && <ClinicalTemplatesPage />}
       {route.placeholderPattern === 'practiceCommunicationTemplates' && <PracticeCommunicationTemplatesPage />}
-      {route.placeholderPattern === 'practiceProfile' && <PracticeProfilePage />}
-      {route.placeholderPattern === 'practiceLocations' && <PracticeLocationsPage />}
-      {route.placeholderPattern === 'practiceTherapists' && <PracticeTherapistsPage />}
+      {route.placeholderPattern === 'practiceProfile' && <PracticeSetupConfigurationPage />}
+      {route.placeholderPattern === 'practiceLocations' && <Navigate to="/practice/profile?section=locations" replace />}
+      {route.placeholderPattern === 'practiceTherapists' && <Navigate to="/practice/profile?section=therapists" replace />}
       {route.placeholderPattern === 'practiceWorkflows' && <PracticeWorkflowsPage />}
       {route.placeholderPattern === 'settings' && <SettingsPage />}
     </RoutedPageFrame>
@@ -274,13 +269,31 @@ function PlaceholderPage({ route }: { route: AppRoute }) {
 }
 
 function RoutedPageFrame({ route, children }: { route: AppRoute; children: ReactNode }) {
+  const isPracticeNavigationPage = [
+    '/practice/profile',
+    '/practice/locations',
+    '/practice/therapists',
+    '/finance/price-lists',
+    '/practice/branding',
+    '/practice/banking',
+    '/practice/billing',
+  ].includes(route.path)
+
   return (
     <div className="routed-page-shell">
-      <PageHeader
-        title={route.title}
-        description={route.description}
-        breadcrumbs={getRouteBreadcrumbs(route)}
-      />
+      {route.placeholderPattern !== 'bookings' &&
+        route.placeholderPattern !== 'practice' &&
+        route.placeholderPattern !== 'practiceProfile' &&
+        route.placeholderPattern !== 'practiceLocations' &&
+        route.placeholderPattern !== 'practiceTherapists' &&
+        route.placeholderPattern !== 'financePriceLists' &&
+        route.placeholderPattern !== 'practiceBilling' && (
+        <PageHeader
+          title={route.title}
+          description={isPracticeNavigationPage ? undefined : route.description}
+          breadcrumbs={isPracticeNavigationPage ? [] : getRouteBreadcrumbs(route)}
+        />
+      )}
       {children}
     </div>
   )

@@ -238,6 +238,11 @@ function getMetadataText(metadata: Json, key: string) {
   return typeof value === 'string' ? value : ''
 }
 
+function getMetadataValue(metadata: Json, key: string): Json {
+  if (!metadata || typeof metadata !== 'object' || Array.isArray(metadata)) return null
+  return metadata[key] ?? null
+}
+
 function getMetadataId(metadata: Json, key: string) {
   return getMetadataText(metadata, key)
 }
@@ -999,9 +1004,24 @@ export function FinancePage() {
       }
       const detail = selectedInvoiceDetail
       const invoiceName = getInvoiceDisplay(freshInvoice)
+      const issuer = detail.issuerSnapshot
+      const party = detail.partySnapshot
+      const snapshottedMainLocation = getMetadataValue(issuer?.snapshot ?? {}, 'main_location')
+      const snapshottedMainAddress = getMetadataValue(snapshottedMainLocation, 'address')
+      const practiceName = issuer?.practice_trading_name
+        || issuer?.practice_legal_name
+        || getMetadataText(issuer?.branding ?? {}, 'patient_facing_display_name')
+        || 'Practice details not captured'
+      const practiceAddress = formatJsonAddress(snapshottedMainAddress)
+        || formatJsonAddress(issuer?.practice_address ?? {})
+        || formatJsonAddress(issuer?.location_address ?? {})
+      const practiceLocationName = getMetadataText(snapshottedMainLocation, 'name') || issuer?.location_name || ''
+      const practiceEmail = getMetadataText(snapshottedMainLocation, 'email') || issuer?.practice_email || ''
+      const practicePhone = getMetadataText(snapshottedMainLocation, 'phone') || issuer?.practice_phone || ''
+      const billingAddress = formatJsonAddress(party?.billing_address ?? {})
       const file = buildFinancialPdfFile({
         title: 'Invoice',
-        subtitle: detail.issuerSnapshot?.practice_trading_name || detail.issuerSnapshot?.practice_legal_name || activeTenant?.practice_name || 'AlliDesk practice',
+        subtitle: practiceName,
         documentNumber: invoiceName,
         generatedAt: formatDateTime(new Date().toISOString()),
         sections: [
@@ -1012,7 +1032,7 @@ export function FinancePage() {
               ['Billing email', detail.partySnapshot?.billing_email ?? 'Not set'],
               ['Billing phone', detail.partySnapshot?.billing_phone ?? 'Not set'],
               ['Billing address', formatJsonAddress(detail.partySnapshot?.billing_address ?? {}) || 'Not set'],
-              ['Patient', detail.partySnapshot?.patient_full_name ?? formatPatientName(selectedPatient)],
+              ['Patient', detail.partySnapshot?.patient_full_name ?? 'Not captured'],
               ['Patient number', detail.partySnapshot?.patient_number ?? 'Not set'],
               ['DOB', formatDate(detail.partySnapshot?.patient_date_of_birth)],
               ['ICD-10', detail.partySnapshot?.patient_icd10_code ?? 'Not set'],
@@ -1022,10 +1042,10 @@ export function FinancePage() {
             title: 'From',
             rows: [
               ['Practice', detail.issuerSnapshot?.practice_trading_name || detail.issuerSnapshot?.practice_legal_name || 'Not set'],
-              ['Address', formatJsonAddress(detail.issuerSnapshot?.practice_address ?? {}) || formatJsonAddress(detail.issuerSnapshot?.location_address ?? {}) || 'Not set'],
+              ['Address', practiceAddress || 'Not captured'],
               ['Email', detail.issuerSnapshot?.practice_email ?? 'Not set'],
               ['Phone', detail.issuerSnapshot?.practice_phone ?? 'Not set'],
-              ['Therapist', detail.issuerSnapshot?.therapist_name ?? selectedTherapist?.display_name ?? 'Not set'],
+              ['Therapist', detail.issuerSnapshot?.therapist_name ?? 'Not captured'],
               ['Practice number', detail.issuerSnapshot?.therapist_practice_number ?? 'Not set'],
               ['Banking', [detail.issuerSnapshot?.bank_account_holder, detail.issuerSnapshot?.bank_name, detail.issuerSnapshot?.bank_account_number, detail.issuerSnapshot?.bank_branch_code].filter(Boolean).join(' | ') || 'Not set'],
             ],
@@ -1041,13 +1061,18 @@ export function FinancePage() {
           },
         ],
         table: {
-          headers: ['Date', 'Code', 'Description', 'ICD-10', 'Price'],
+          headers: ['Item description', 'Unit price', 'Qty', 'Total'],
           rows: detail.lines.map((line) => ({
             columns: [
-              formatDate(line.service_date),
-              line.procedure_code ?? 'Not set',
-              line.description || line.procedure_name,
-              line.icd10_code ?? detail.partySnapshot?.patient_icd10_code ?? 'Not set',
+              [
+                line.procedure_name,
+                line.description,
+                [formatDate(line.service_date), line.procedure_code, line.icd10_code ?? party?.patient_icd10_code]
+                  .filter(Boolean)
+                  .join(' | '),
+              ].filter(Boolean).join(' - '),
+              formatMoney(line.unit_price, line.currency_code),
+              String(line.quantity),
               formatMoney(line.line_total, line.currency_code),
             ],
           })),
@@ -1059,7 +1084,42 @@ export function FinancePage() {
           ['Paid', formatMoney(freshInvoice.amount_paid, freshInvoice.currency_code)],
           ['Balance', formatMoney(freshInvoice.balance_due, freshInvoice.currency_code)],
         ],
-        footer: detail.issuerSnapshot?.invoice_footer ?? detail.issuerSnapshot?.payment_instructions ?? 'Generated by AlliDesk.',
+        footer: issuer?.invoice_footer ?? issuer?.payment_instructions ?? 'Thank you for choosing our practice.',
+        invoiceLayout: {
+          practiceName,
+          practiceDetails: [
+            practiceLocationName ? `Main location: ${practiceLocationName}` : '',
+            practiceAddress,
+            practiceEmail,
+            practicePhone,
+            issuer?.practice_website ?? '',
+            [
+              issuer?.practice_registration_number ? `Registration: ${issuer.practice_registration_number}` : '',
+              issuer?.practice_vat_number ? `VAT: ${issuer.practice_vat_number}` : '',
+            ].filter(Boolean).join(' | '),
+          ],
+          recipientName: party?.responsible_party_name || party?.patient_full_name || 'Billing party not captured',
+          recipientDetails: [
+            billingAddress,
+            party?.billing_email ?? '',
+            party?.billing_phone ?? '',
+            party?.patient_full_name ? `Patient: ${party.patient_full_name}` : '',
+            party?.patient_number ? `Patient no: ${party.patient_number}` : '',
+          ],
+          invoiceDate: formatDate(freshInvoice.invoice_date),
+          dueDate: formatDate(freshInvoice.due_date),
+          amountDue: formatMoney(freshInvoice.balance_due, freshInvoice.currency_code),
+          paymentDetails: [
+            issuer?.bank_account_holder ? `Account holder: ${issuer.bank_account_holder}` : '',
+            issuer?.bank_name ? `Bank: ${issuer.bank_name}` : '',
+            issuer?.bank_account_number ? `Account number: ${issuer.bank_account_number}` : '',
+            issuer?.bank_branch_code ? `Branch code: ${issuer.bank_branch_code}` : '',
+            issuer?.bank_account_type ? `Account type: ${formatLabel(issuer.bank_account_type)}` : '',
+            `Reference: ${invoiceName}`,
+          ],
+          terms: issuer?.invoice_footer ?? issuer?.payment_instructions ?? 'Payment is due by the date shown above.',
+          accentColour: getMetadataText(issuer?.branding ?? {}, 'primary_colour') || '#2B9A9A',
+        },
       }, getSafePdfFilename(`invoice-${invoiceName}`))
       await uploadGeneratedPdf(file, 'invoice_pdf', {
         patientId: freshInvoice.patient_id,
@@ -1524,74 +1584,6 @@ export function FinancePage() {
       setSuccessMessage('Invoice line removed from the draft and totals refreshed.')
     } catch (error) {
       setActionError(getFriendlyFinanceError(error, 'Invoice line could not be removed.'))
-    } finally {
-      setSaving(false)
-    }
-  }
-
-  const markReadyToConfirm = async () => {
-    if (!supabase || !activeTenant?.id || !selectedInvoice || !selectedIsEditable || saving) return
-    if (!['draft', 'review_required'].includes(selectedInvoice.invoice_status)) {
-      setActionError('Only draft or review-required invoices can be marked ready to confirm.')
-      return
-    }
-    if (!selectedInvoiceDetail?.lines.length) {
-      setActionError('At least one invoice line is required before the invoice can be marked ready.')
-      return
-    }
-    const validationMessage = validateReadyToConfirm(selectedInvoiceDetail, invoiceForm, lineDrafts)
-    if (validationMessage) {
-      setActionError(validationMessage)
-      return
-    }
-    setSaving(true)
-    setActionError('')
-    setSuccessMessage('')
-    try {
-      const freshInvoice = await loadFreshInvoice(selectedInvoice.id)
-      if (freshInvoice.updated_at !== selectedInvoice.updated_at || freshInvoice.invoice_status !== selectedInvoice.invoice_status) {
-        await refreshSelectedInvoice(selectedInvoice.id)
-        throw new Error('This invoice changed while you were reviewing it. The latest invoice has been loaded; please review before marking ready.')
-      }
-      if (!['draft', 'review_required'].includes(freshInvoice.invoice_status)) throw new Error('Only draft or review-required invoices can be marked ready to confirm.')
-      const result = await supabase.from('invoices').update({
-        invoice_status: 'ready_to_confirm',
-        ready_to_confirm_at: new Date().toISOString(),
-        updated_by_profile_id: profile?.id ?? null,
-      } satisfies InvoiceUpdate).eq('id', selectedInvoice.id).eq('tenant_id', activeTenant.id)
-      if (result.error) throw result.error
-
-      const historyPayload: InvoiceStatusHistoryInsert = {
-        tenant_id: activeTenant.id,
-        invoice_id: selectedInvoice.id,
-        session_id: selectedInvoice.session_id,
-        booking_id: selectedInvoice.booking_id,
-        patient_id: selectedInvoice.patient_id,
-        from_status: selectedInvoice.invoice_status,
-        to_status: 'ready_to_confirm',
-        event_type: 'invoice_ready_to_confirm',
-        event_reason: 'Draft invoice reviewed and marked ready to confirm',
-        created_by_profile_id: profile?.id ?? null,
-      }
-      const workflowPayload: InvoiceWorkflowEventInsert = {
-        tenant_id: activeTenant.id,
-        invoice_id: selectedInvoice.id,
-        session_id: selectedInvoice.session_id,
-        booking_id: selectedInvoice.booking_id,
-        patient_id: selectedInvoice.patient_id,
-        event_type: 'invoice_ready_to_confirm',
-        idempotency_key: `invoice:${selectedInvoice.id}:invoice_ready_to_confirm:v1`,
-        payload: {},
-        created_by_profile_id: profile?.id ?? null,
-      }
-      const historyResult = await supabase.from('invoice_status_history').insert(historyPayload)
-      if (historyResult.error) throw historyResult.error
-      const workflowResult = await supabase.from('invoice_workflow_events').insert(workflowPayload)
-      if (workflowResult.error && !workflowResult.error.message.includes('duplicate key')) throw workflowResult.error
-      await refreshSelectedInvoice(selectedInvoice.id)
-      setSuccessMessage('Draft invoice marked ready to confirm.')
-    } catch (error) {
-      setActionError(getFriendlyFinanceError(error, 'Invoice could not be marked ready.'))
     } finally {
       setSaving(false)
     }
@@ -2139,7 +2131,6 @@ export function FinancePage() {
                 {selectedIsEditable && (
                   <div className="finance-actions-row">
                     <Button variant="secondary" onClick={saveInvoiceDraft} disabled={saving}>Save draft details</Button>
-                    <Button variant="secondary" onClick={markReadyToConfirm} disabled={saving || !['draft', 'review_required'].includes(selectedInvoice.invoice_status)}>Mark ready</Button>
                     <Button onClick={() => setConfirmReviewOpen(true)} disabled={saving || !confirmableStatuses.includes(selectedInvoice.invoice_status)}>Review and confirm</Button>
                   </div>
                 )}

@@ -1,8 +1,11 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useState } from 'react'
 import { useAuth } from '../auth/AuthContext'
 import { useAuthorization } from '../auth/permissions'
+import { EditableField } from '../components/EditableField'
+import { EditSaveControls } from '../components/EditSaveControls'
 import { ErrorState, LoadingState } from '../components/UiState'
-import { Button, Card, StatusBadge } from '../components/ui'
+import { Button, Card } from '../components/ui'
+import { showErrorNotice, showSuccessNotice } from '../lib/appNotice'
 import { isSupabaseConfigured, supabase } from '../lib/supabase'
 import type { Database } from '../lib/database.types'
 
@@ -94,12 +97,12 @@ export function PracticeProfilePage() {
   const [formState, setFormState] = useState<PracticeProfileFormState>(emptyPracticeProfileForm)
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
+  const [isEditing, setIsEditing] = useState(false)
   const [loadError, setLoadError] = useState('')
-  const [saveError, setSaveError] = useState('')
-  const [successMessage, setSuccessMessage] = useState('')
 
   const hasExistingProfile = Boolean(profile?.id)
-  const isReadOnly = !canEditPracticeProfile || saving
+  const showEditableFields = !hasExistingProfile || isEditing
+  const isReadOnly = !canEditPracticeProfile || saving || (hasExistingProfile && !isEditing)
 
   useEffect(() => {
     if (!activeTenant?.id) {
@@ -121,8 +124,6 @@ export function PracticeProfilePage() {
     async function loadPracticeProfile() {
       setLoading(true)
       setLoadError('')
-      setSaveError('')
-      setSuccessMessage('')
 
       const { data, error } = await supabaseClient
         .from('practice_profiles')
@@ -163,6 +164,7 @@ export function PracticeProfilePage() {
       const nextProfile = data as PracticeProfileRow | null
       setProfile(nextProfile)
       setFormState(formFromProfile(nextProfile))
+      setIsEditing(!nextProfile)
       setLoading(false)
     }
 
@@ -173,25 +175,14 @@ export function PracticeProfilePage() {
     }
   }, [activeTenant?.id])
 
-  const statusTone = useMemo(() => {
-    if (formState.profile_status === 'active') return 'success'
-    if (formState.profile_status === 'incomplete') return 'warning'
-    if (formState.profile_status === 'archived') return 'neutral'
-    return 'info'
-  }, [formState.profile_status])
-
   const updateField = (field: keyof PracticeProfileFormState, value: string) => {
     setFormState((currentFormState) => ({ ...currentFormState, [field]: value }))
-    setSuccessMessage('')
-    setSaveError('')
   }
 
   const savePracticeProfile = async () => {
     if (!activeTenant?.id || !supabase || !canEditPracticeProfile) return
 
     setSaving(true)
-    setSaveError('')
-    setSuccessMessage('')
 
     const payload = toPracticeProfilePayload(formState)
 
@@ -210,7 +201,7 @@ export function PracticeProfilePage() {
           .single()
 
     if (result.error) {
-      setSaveError(result.error.message)
+      showErrorNotice(`Practice profile could not be saved: ${result.error.message}`)
       setSaving(false)
       return
     }
@@ -218,7 +209,8 @@ export function PracticeProfilePage() {
     const savedProfile = result.data as PracticeProfileRow
     setProfile(savedProfile)
     setFormState(formFromProfile(savedProfile))
-    setSuccessMessage(hasExistingProfile ? 'Practice profile updated.' : 'Practice profile created.')
+    showSuccessNotice(hasExistingProfile ? 'Practice profile updated.' : 'Practice profile created.')
+    setIsEditing(false)
     setSaving(false)
   }
 
@@ -238,21 +230,6 @@ export function PracticeProfilePage() {
 
   return (
     <div className="practice-profile-page">
-      <Card className="practice-profile-summary">
-        <div>
-          <span>{hasExistingProfile ? 'Active tenant profile' : 'No profile yet'}</span>
-          <h3>{formState.trading_name || formState.legal_name || activeTenant?.practice_name || 'Practice profile'}</h3>
-          <p>
-            This is the tenant-level practice profile. It will later feed documents, communication defaults,
-            invoices and patient-facing practice details.
-          </p>
-        </div>
-        <div className="practice-profile-summary-actions">
-          <StatusBadge tone={statusTone}>{formState.profile_status}</StatusBadge>
-          {!canEditPracticeProfile && <StatusBadge tone="warning">Read only</StatusBadge>}
-        </div>
-      </Card>
-
       {!hasExistingProfile && (
         <Card className="practice-profile-notice">
           <strong>Practice profile not created yet.</strong>
@@ -264,9 +241,21 @@ export function PracticeProfilePage() {
         <div className="practice-profile-form-header">
           <div>
             <span>Practice details</span>
-            <h3>{hasExistingProfile ? 'Edit practice profile' : 'Create practice profile'}</h3>
+            <h3>{hasExistingProfile ? (isEditing ? 'Edit practice profile' : 'Practice profile') : 'Create practice profile'}</h3>
           </div>
-          {canEditPracticeProfile && (
+          {canEditPracticeProfile && hasExistingProfile && (
+            <EditSaveControls
+              isEditing={isEditing}
+              isSaving={saving}
+              onEdit={() => {
+                setIsEditing(true)
+              }}
+              onSave={savePracticeProfile}
+              editLabel="Edit practice profile"
+              saveLabel="Save practice profile"
+            />
+          )}
+          {canEditPracticeProfile && !hasExistingProfile && (
             <Button disabled={saving} onClick={savePracticeProfile}>
               {saving ? 'Saving' : 'Save Profile'}
             </Button>
@@ -274,69 +263,51 @@ export function PracticeProfilePage() {
         </div>
 
         <div className="settings-form-grid practice-profile-form">
-          <label>
-            <span>Legal name</span>
+          <EditableField label="Legal name" isEditing={showEditableFields} value={formState.legal_name}>
             <input value={formState.legal_name} disabled={isReadOnly} onChange={(event) => updateField('legal_name', event.target.value)} />
-          </label>
-          <label>
-            <span>Trading name</span>
+          </EditableField>
+          <EditableField label="Trading name" isEditing={showEditableFields} value={formState.trading_name}>
             <input value={formState.trading_name} disabled={isReadOnly} onChange={(event) => updateField('trading_name', event.target.value)} />
-          </label>
-          <label>
-            <span>Business registration number</span>
+          </EditableField>
+          <EditableField label="Business registration number" isEditing={showEditableFields} value={formState.business_registration_number}>
             <input value={formState.business_registration_number} disabled={isReadOnly} onChange={(event) => updateField('business_registration_number', event.target.value)} />
-          </label>
-          <label>
-            <span>Tax number</span>
+          </EditableField>
+          <EditableField label="Tax number" isEditing={showEditableFields} value={formState.tax_number}>
             <input value={formState.tax_number} disabled={isReadOnly} onChange={(event) => updateField('tax_number', event.target.value)} />
-          </label>
-          <label>
-            <span>VAT number</span>
+          </EditableField>
+          <EditableField label="VAT number" isEditing={showEditableFields} value={formState.vat_number}>
             <input value={formState.vat_number} disabled={isReadOnly} onChange={(event) => updateField('vat_number', event.target.value)} />
-          </label>
-          <label>
-            <span>Main email</span>
+          </EditableField>
+          <EditableField label="Main email" isEditing={showEditableFields} value={formState.main_email}>
             <input type="email" value={formState.main_email} disabled={isReadOnly} onChange={(event) => updateField('main_email', event.target.value)} />
-          </label>
-          <label>
-            <span>Main phone</span>
+          </EditableField>
+          <EditableField label="Main phone" isEditing={showEditableFields} value={formState.main_phone}>
             <input value={formState.main_phone} disabled={isReadOnly} onChange={(event) => updateField('main_phone', event.target.value)} />
-          </label>
-          <label>
-            <span>Website</span>
+          </EditableField>
+          <EditableField label="Website" isEditing={showEditableFields} value={formState.website}>
             <input type="url" value={formState.website} disabled={isReadOnly} onChange={(event) => updateField('website', event.target.value)} />
-          </label>
-          <label>
-            <span>Default timezone</span>
+          </EditableField>
+          <EditableField label="Default timezone" isEditing={showEditableFields} value={formState.default_time_zone}>
             <select value={formState.default_time_zone} disabled={isReadOnly} onChange={(event) => updateField('default_time_zone', event.target.value)}>
               {timeZoneOptions.map((timeZone) => <option value={timeZone} key={timeZone}>{timeZone}</option>)}
             </select>
-          </label>
-          <label>
-            <span>Default country</span>
+          </EditableField>
+          <EditableField label="Default country" isEditing={showEditableFields} value={formState.default_country}>
             <select value={formState.default_country} disabled={isReadOnly} onChange={(event) => updateField('default_country', event.target.value)}>
               {countryOptions.map((country) => <option value={country} key={country}>{country}</option>)}
             </select>
-          </label>
-          <label>
-            <span>Default currency</span>
+          </EditableField>
+          <EditableField label="Default currency" isEditing={showEditableFields} value={formState.default_currency}>
             <select value={formState.default_currency} disabled={isReadOnly} onChange={(event) => updateField('default_currency', event.target.value)}>
               {currencyOptions.map((currency) => <option value={currency} key={currency}>{currency}</option>)}
             </select>
-          </label>
-          <label>
-            <span>Status</span>
+          </EditableField>
+          <EditableField label="Status" isEditing={showEditableFields} value={formState.profile_status}>
             <select value={formState.profile_status} disabled={isReadOnly} onChange={(event) => updateField('profile_status', event.target.value)}>
               {profileStatusOptions.map((status) => <option value={status} key={status}>{status}</option>)}
             </select>
-          </label>
+          </EditableField>
         </div>
-
-        {(saveError || successMessage) && (
-          <div className={`practice-profile-message ${saveError ? 'error' : 'success'}`}>
-            {saveError || successMessage}
-          </div>
-        )}
       </Card>
     </div>
   )

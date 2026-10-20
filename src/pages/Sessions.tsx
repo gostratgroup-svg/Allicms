@@ -4,10 +4,12 @@ import { useAuth } from '../auth/AuthContext'
 import { useAuthorization } from '../auth/permissions'
 import { EmptyState, ErrorState, LoadingState } from '../components/UiState'
 import { Button, Card, StatusBadge, SearchBar } from '../components/ui'
+import { showErrorNotice, showSuccessNotice } from '../lib/appNotice'
 import type { Database, Json } from '../lib/database.types'
 import { supabase } from '../lib/supabase'
 
 type BookingRow = Database['public']['Tables']['bookings']['Row']
+type BookingProcedureRow = Database['public']['Tables']['booking_procedures']['Row']
 type PatientRow = Database['public']['Tables']['patients']['Row']
 type ResponsiblePartyRow = Database['public']['Tables']['responsible_parties']['Row']
 type TherapistRow = Database['public']['Tables']['therapist_profiles']['Row']
@@ -25,6 +27,7 @@ type SessionNoteRow = Database['public']['Tables']['session_notes']['Row']
 type SessionNoteInsert = Database['public']['Tables']['session_notes']['Insert']
 type SessionNoteUpdate = Database['public']['Tables']['session_notes']['Update']
 type PatientHistoryEventInsert = Database['public']['Tables']['patient_history_events']['Insert']
+type InvoiceRow = Database['public']['Tables']['invoices']['Row']
 
 type SessionListItem =
   | { kind: 'session'; id: string; session: SessionRow; booking: BookingRow | null }
@@ -161,7 +164,12 @@ function getPatientHistoryCopy(eventType: string, patientName: string) {
   return { title: formatLabel(eventType), body: `${patientName}'s session was updated.` }
 }
 
-export function SessionsPage() {
+type SessionsPageProps = {
+  embeddedBookingId?: string
+  onSessionStatusChange?: (session: Pick<SessionRow, 'id' | 'booking_id' | 'session_status'>) => void
+}
+
+export function SessionsPage({ embeddedBookingId, onSessionStatusChange }: SessionsPageProps = {}) {
   const [searchParams, setSearchParams] = useSearchParams()
   const { activeTenant, profile } = useAuth()
   const authorization = useAuthorization()
@@ -170,17 +178,21 @@ export function SessionsPage() {
   const canCompleteSession = authorization.hasRole('admin', 'therapist')
   const canReadInternalNotes = authorization.hasRole('admin', 'receptionist', 'therapist')
   const canReadPricing = authorization.hasPermission('tenant.finance.view', 'tenant.practice.configure')
+  const canViewClinical = authorization.hasPermission('tenant.clinical.view') && !authorization.isSuperAdmin
+  const canViewFinance = authorization.hasPermission('tenant.finance.view')
   const [patients, setPatients] = useState<PatientRow[]>([])
   const [responsibleParties, setResponsibleParties] = useState<ResponsiblePartyRow[]>([])
   const [therapists, setTherapists] = useState<TherapistRow[]>([])
   const [locations, setLocations] = useState<LocationRow[]>([])
   const [bookings, setBookings] = useState<BookingRow[]>([])
+  const [bookingProcedures, setBookingProcedures] = useState<BookingProcedureRow[]>([])
   const [sessions, setSessions] = useState<SessionRow[]>([])
   const [sessionProcedures, setSessionProcedures] = useState<SessionProcedureRow[]>([])
   const [sessionHistory, setSessionHistory] = useState<SessionStatusHistoryRow[]>([])
   const [sessionEvents, setSessionEvents] = useState<SessionWorkflowEventRow[]>([])
   const [sessionNotes, setSessionNotes] = useState<SessionNoteRow[]>([])
   const [priceListItems, setPriceListItems] = useState<PriceListItemRow[]>([])
+  const [invoices, setInvoices] = useState<InvoiceRow[]>([])
   const [selectedItemId, setSelectedItemId] = useState('')
   const [search, setSearch] = useState('')
   const [statusFilter, setStatusFilter] = useState('active')
@@ -200,6 +212,14 @@ export function SessionsPage() {
   const [noteBody, setNoteBody] = useState('')
   const [noteId, setNoteId] = useState<string | null>(null)
   const [reopenReason, setReopenReason] = useState('')
+
+  useEffect(() => {
+    if (actionError) showErrorNotice(actionError)
+  }, [actionError])
+
+  useEffect(() => {
+    if (successMessage) showSuccessNotice(successMessage)
+  }, [successMessage])
 
   const sessionBookingIds = useMemo(() => new Set(sessions.map((session) => session.booking_id)), [sessions])
   const patientById = useMemo(() => new Map(patients.map((patient) => [patient.id, patient])), [patients])
@@ -228,7 +248,13 @@ export function SessionsPage() {
       session,
       booking: bookingById.get(session.booking_id) ?? null,
     }))
-    const bookingItems: SessionListItem[] = eligibleBookings.map((booking) => ({
+    const embeddedBooking = embeddedBookingId
+      ? bookings.find((booking) => booking.id === embeddedBookingId && !sessionBookingIds.has(booking.id))
+      : null
+    const visibleEligibleBookings = embeddedBooking && !eligibleBookings.some((booking) => booking.id === embeddedBooking.id)
+      ? [...eligibleBookings, embeddedBooking]
+      : eligibleBookings
+    const bookingItems: SessionListItem[] = visibleEligibleBookings.map((booking) => ({
       kind: 'eligible_booking',
       id: `booking-${booking.id}`,
       booking,
@@ -256,7 +282,7 @@ export function SessionsPage() {
         const rightBooking = right.kind === 'session' ? right.booking : right.booking
         return (leftBooking?.start_at ?? '').localeCompare(rightBooking?.start_at ?? '')
       })
-  }, [bookingById, eligibleBookings, patientById, search, sessions, statusFilter, therapistById])
+  }, [bookingById, bookings, eligibleBookings, embeddedBookingId, patientById, search, sessionBookingIds, sessions, statusFilter, therapistById])
 
   const selectedItem = useMemo(() => listItems.find((item) => item.id === selectedItemId) ?? listItems[0] ?? null, [listItems, selectedItemId])
   const selectedSession = selectedItem?.kind === 'session' ? selectedItem.session : null
@@ -274,6 +300,14 @@ export function SessionsPage() {
     () => selectedSession ? sessionProcedures.filter((procedure) => procedure.session_id === selectedSession.id) : [],
     [selectedSession, sessionProcedures],
   )
+  const selectedBookingProcedures = useMemo(
+    () => selectedBooking ? bookingProcedures.filter((procedure) => procedure.booking_id === selectedBooking.id) : [],
+    [bookingProcedures, selectedBooking],
+  )
+  const plannedTotal = useMemo(
+    () => selectedBookingProcedures.reduce((total, procedure) => total + procedure.line_total, 0),
+    [selectedBookingProcedures],
+  )
   const selectedSessionHistory = useMemo(
     () => selectedSession ? sessionHistory.filter((history) => history.session_id === selectedSession.id) : [],
     [selectedSession, sessionHistory],
@@ -290,6 +324,18 @@ export function SessionsPage() {
     () => selectedSessionProcedures.reduce((total, procedure) => total + procedure.line_total, 0),
     [selectedSessionProcedures],
   )
+  const selectedInvoice = useMemo(
+    () => selectedSession ? invoices.find((invoice) => invoice.session_id === selectedSession.id && !invoice.deleted_at) ?? null : null,
+    [invoices, selectedSession],
+  )
+  useEffect(() => {
+    if (!selectedSession || !onSessionStatusChange) return
+    onSessionStatusChange({
+      id: selectedSession.id,
+      booking_id: selectedSession.booking_id,
+      session_status: selectedSession.session_status,
+    })
+  }, [onSessionStatusChange, selectedSession])
   const procedureDraftTotal = useMemo(
     () => procedureDrafts.reduce((total, procedure) => {
       const unitPrice = Number(procedure.unit_price)
@@ -336,12 +382,14 @@ export function SessionsPage() {
         therapistsResult,
         locationsResult,
         bookingsResult,
+        bookingProceduresResult,
         sessionsResult,
         proceduresResult,
         historyResult,
         eventsResult,
         notesResult,
         priceItemsResult,
+        invoicesResult,
       ] = await Promise.all([
         supabaseClient
           .from('patients')
@@ -369,6 +417,11 @@ export function SessionsPage() {
           .eq('tenant_id', tenantId)
           .is('deleted_at', null)
           .order('start_at', { ascending: true }),
+        supabaseClient
+          .from('booking_procedures')
+          .select('*')
+          .eq('tenant_id', tenantId)
+          .is('deleted_at', null),
         supabaseClient
           .from('sessions')
           .select('id, tenant_id, booking_id, patient_id, therapist_profile_id, practice_location_id, session_status, attendance_outcome, session_type, session_modality, session_outcome, scheduled_start_at, scheduled_end_at, actual_start_at, actual_end_at, actual_duration_minutes, timezone, room_label, operational_summary, completed_at, completed_by_profile_id, cancelled_at, cancelled_by_profile_id, cancellation_reason, no_show_at, reopened_at, reopened_by_profile_id, reopen_reason, draft_invoice_requested_at, draft_invoice_request_status, patient_history_ready, patient_link_update_ready, metadata, created_by_profile_id, updated_by_profile_id, deleted_at, created_at, updated_at')
@@ -409,11 +462,18 @@ export function SessionsPage() {
               .eq('is_active', true)
               .order('procedure_name', { ascending: true })
           : pricingEmptyResult,
+        canViewFinance
+          ? supabaseClient
+              .from('invoices')
+              .select('*')
+              .eq('tenant_id', tenantId)
+              .is('deleted_at', null)
+          : Promise.resolve({ data: [], error: null }),
       ])
 
       if (!isMounted) return
 
-      const firstError = patientsResult.error || responsiblePartiesResult.error || therapistsResult.error || locationsResult.error || bookingsResult.error || sessionsResult.error || proceduresResult.error || historyResult.error || eventsResult.error || notesResult.error || priceItemsResult.error
+      const firstError = patientsResult.error || responsiblePartiesResult.error || therapistsResult.error || locationsResult.error || bookingsResult.error || bookingProceduresResult.error || sessionsResult.error || proceduresResult.error || historyResult.error || eventsResult.error || notesResult.error || priceItemsResult.error || invoicesResult.error
       if (firstError) {
         setLoadError(firstError.message)
         setLoading(false)
@@ -425,12 +485,14 @@ export function SessionsPage() {
       setTherapists((therapistsResult.data ?? []) as TherapistRow[])
       setLocations((locationsResult.data ?? []) as LocationRow[])
       setBookings((bookingsResult.data ?? []) as BookingRow[])
+      setBookingProcedures((bookingProceduresResult.data ?? []) as BookingProcedureRow[])
       setSessions((sessionsResult.data ?? []) as SessionRow[])
       setSessionProcedures((proceduresResult.data ?? []) as SessionProcedureRow[])
       setSessionHistory((historyResult.data ?? []) as SessionStatusHistoryRow[])
       setSessionEvents((eventsResult.data ?? []) as SessionWorkflowEventRow[])
       setSessionNotes((notesResult.data ?? []) as SessionNoteRow[])
       setPriceListItems((priceItemsResult.data ?? []) as PriceListItemRow[])
+      setInvoices((invoicesResult.data ?? []) as InvoiceRow[])
       setLoading(false)
     }
 
@@ -439,11 +501,11 @@ export function SessionsPage() {
     return () => {
       isMounted = false
     }
-  }, [activeTenant?.id, canReadInternalNotes, canReadPricing, canViewSessions])
+  }, [activeTenant?.id, canReadInternalNotes, canReadPricing, canViewFinance, canViewSessions])
 
   useEffect(() => {
     const requestedSessionId = searchParams.get('session')
-    const requestedBookingId = searchParams.get('booking')
+    const requestedBookingId = embeddedBookingId ?? searchParams.get('booking')
     const requestedItem = requestedSessionId
       ? listItems.find((item) => item.kind === 'session' && item.session.id === requestedSessionId)
       : requestedBookingId
@@ -460,9 +522,9 @@ export function SessionsPage() {
     if (selectedItemId && listItems.length && !listItems.some((item) => item.id === selectedItemId)) setSelectedItemId(listItems[0].id)
     if ((requestedSessionId || requestedBookingId) && listItems.length && !requestedItem) {
       setActionError('The requested booking or session is not available in this workspace. It may be completed, archived, or restricted for your role.')
-      setSearchParams({}, { replace: true })
+      if (!embeddedBookingId) setSearchParams({}, { replace: true })
     }
-  }, [listItems, searchParams, selectedItemId, setSearchParams])
+  }, [embeddedBookingId, listItems, searchParams, selectedItemId, setSearchParams])
 
   useEffect(() => {
     if (!selectedSession) {
@@ -646,7 +708,7 @@ export function SessionsPage() {
       if (!rpcRow?.session_id) throw new Error('The session could not be created from this booking.')
 
       await refreshSessionRecords(rpcRow.session_id)
-      setSearchParams({ session: rpcRow.session_id }, { replace: true })
+      if (!embeddedBookingId) setSearchParams({ session: rpcRow.session_id }, { replace: true })
       setSuccessMessage(rpcRow.created_session ? 'Session created from booking.' : 'Existing session opened for this booking.')
     } catch (error) {
       setActionError(getFriendlySessionError(error, 'Session creation failed.'))
@@ -670,104 +732,6 @@ export function SessionsPage() {
     return ''
   }
 
-  const startSession = async () => {
-    if (!selectedSession || !supabase || !activeTenant?.id || !canManageSession || saving) return
-    setSaving(true)
-    setActionError('')
-    setSuccessMessage('')
-    try {
-      if (!['not_started', 'ready', 'reopened'].includes(selectedSession.session_status)) {
-        throw new Error('This session cannot be started from its current state.')
-      }
-      const nowIso = new Date().toISOString()
-      const result = await supabase
-        .from('sessions')
-        .update({
-          session_status: 'in_progress',
-          attendance_outcome: 'attended',
-          actual_start_at: selectedSession.actual_start_at ?? nowIso,
-          updated_by_profile_id: profile?.id ?? null,
-        })
-        .eq('id', selectedSession.id)
-        .eq('tenant_id', activeTenant.id)
-        .eq('session_status', selectedSession.session_status)
-        .select()
-        .single()
-
-      if (result.error) throw new Error(result.error.message)
-      const updatedSession = result.data as SessionRow
-      await createStatusHistory(selectedSession, 'in_progress', 'session_started', 'Session started', updatedSession.actual_start_at, null)
-      await createWorkflowEvent(updatedSession, 'session_started', 'v1', { actual_start_at: updatedSession.actual_start_at })
-      await createPatientHistory(updatedSession, 'session_started', updatedSession.id)
-      await syncBookingFromSession(updatedSession, 'in_progress')
-      await refreshSessionRecords(updatedSession.id)
-      setSuccessMessage('Session started.')
-    } catch (error) {
-      setActionError(getFriendlySessionError(error, 'Session could not be started.'))
-    } finally {
-      setSaving(false)
-    }
-  }
-
-  const pauseOrResumeSession = async (nextStatus: 'paused' | 'in_progress') => {
-    if (!selectedSession || !supabase || !activeTenant?.id || !canManageSession || saving) return
-    setSaving(true)
-    setActionError('')
-    setSuccessMessage('')
-    try {
-      const eventType = nextStatus === 'paused' ? 'session_paused' : 'session_resumed'
-      if (nextStatus === 'paused' && selectedSession.session_status !== 'in_progress') throw new Error('Only in-progress sessions can be paused.')
-      if (nextStatus === 'in_progress' && selectedSession.session_status !== 'paused') throw new Error('Only paused sessions can be resumed.')
-      const result = await supabase
-        .from('sessions')
-        .update({ session_status: nextStatus, updated_by_profile_id: profile?.id ?? null })
-        .eq('id', selectedSession.id)
-        .eq('tenant_id', activeTenant.id)
-        .eq('session_status', selectedSession.session_status)
-        .select()
-        .single()
-
-      if (result.error) throw new Error(result.error.message)
-      const updatedSession = result.data as SessionRow
-      await createStatusHistory(selectedSession, nextStatus, eventType, formatLabel(eventType))
-      await createWorkflowEvent(updatedSession, eventType, `${Date.now()}`)
-      await refreshSessionRecords(updatedSession.id)
-      setSuccessMessage(nextStatus === 'paused' ? 'Session paused.' : 'Session resumed.')
-    } catch (error) {
-      setActionError(getFriendlySessionError(error, 'Session state could not be updated.'))
-    } finally {
-      setSaving(false)
-    }
-  }
-
-  const syncBookingFromSession = async (session: SessionRow, targetStatus: 'in_progress' | 'cancelled' | 'no_show') => {
-    if (!supabase || !activeTenant?.id) return
-    const updatePayload: Partial<BookingRow> = {
-      updated_by_profile_id: profile?.id ?? null,
-    }
-    if (targetStatus === 'in_progress') {
-      updatePayload.booking_status = 'in_progress'
-      updatePayload.checked_in_at = session.actual_start_at ?? new Date().toISOString()
-      updatePayload.in_progress_at = session.actual_start_at ?? new Date().toISOString()
-    }
-    if (targetStatus === 'cancelled') {
-      updatePayload.booking_status = 'cancelled'
-      updatePayload.cancelled_at = session.cancelled_at ?? new Date().toISOString()
-      updatePayload.cancellation_reason = session.cancellation_reason ?? 'Session cancelled'
-    }
-    if (targetStatus === 'no_show') {
-      updatePayload.booking_status = 'no_show'
-      updatePayload.no_show_at = session.no_show_at ?? new Date().toISOString()
-    }
-    const result = await supabase
-      .from('bookings')
-      .update(updatePayload)
-      .eq('id', session.booking_id)
-      .eq('tenant_id', activeTenant.id)
-      .not('booking_status', 'in', '("completed","cancelled","no_show")')
-
-    if (result.error) throw new Error('Booking synchronization failed after the session action.')
-  }
 
   const saveProcedures = async () => {
     if (!selectedSession || !supabase || !activeTenant?.id || !canEditSelectedSession || saving) return
@@ -964,56 +928,6 @@ export function SessionsPage() {
     }
   }
 
-  const cancelOrNoShowSession = async (nextStatus: 'cancelled' | 'no_show') => {
-    if (!selectedSession || !supabase || !activeTenant?.id || !canManageSession || saving) return
-    const reason = nextStatus === 'cancelled' ? window.prompt('Reason for cancelling this session?') : 'No show recorded'
-    if (nextStatus === 'cancelled' && (!reason || !reason.trim())) return
-    setSaving(true)
-    setActionError('')
-    setSuccessMessage('')
-    try {
-      if (isTerminalSession(selectedSession.session_status)) throw new Error('Terminal sessions cannot be cancelled or marked no-show again.')
-      if (nextStatus === 'no_show' && !['not_started', 'ready'].includes(selectedSession.session_status)) throw new Error('No show can only be recorded before a session has started.')
-      const nowIso = new Date().toISOString()
-      const updatePayload: Partial<SessionRow> = {
-        session_status: nextStatus,
-        attendance_outcome: nextStatus === 'cancelled' ? 'cancelled' : 'no_show',
-        updated_by_profile_id: profile?.id ?? null,
-      }
-      if (nextStatus === 'cancelled') {
-        updatePayload.cancelled_at = nowIso
-        updatePayload.cancelled_by_profile_id = profile?.id ?? null
-        updatePayload.cancellation_reason = reason?.trim() ?? 'Session cancelled'
-        updatePayload.draft_invoice_request_status = 'cancelled'
-      } else {
-        updatePayload.no_show_at = nowIso
-      }
-
-      const result = await supabase
-        .from('sessions')
-        .update(updatePayload)
-        .eq('id', selectedSession.id)
-        .eq('tenant_id', activeTenant.id)
-        .eq('session_status', selectedSession.session_status)
-        .select()
-        .single()
-
-      if (result.error) throw new Error(result.error.message)
-      const updatedSession = result.data as SessionRow
-      const eventType = nextStatus === 'cancelled' ? 'session_cancelled' : 'session_no_show_recorded'
-      await createStatusHistory(selectedSession, nextStatus, eventType, reason ?? eventType, null, null, nextStatus === 'cancelled')
-      await createWorkflowEvent(updatedSession, eventType, 'v1')
-      await createPatientHistory(updatedSession, eventType, updatedSession.id)
-      await syncBookingFromSession(updatedSession, nextStatus)
-      await refreshSessionRecords(updatedSession.id)
-      setSuccessMessage(nextStatus === 'cancelled' ? 'Session cancelled.' : 'No show recorded.')
-    } catch (error) {
-      setActionError(getFriendlySessionError(error, 'Session action failed.'))
-    } finally {
-      setSaving(false)
-    }
-  }
-
   const saveOperationalNote = async () => {
     if (!selectedSession || !supabase || !activeTenant?.id || !canReadInternalNotes || !canManageSession || saving) return
     setSaving(true)
@@ -1060,7 +974,7 @@ export function SessionsPage() {
   if (loadError) return <ErrorState title="Sessions unavailable" description={loadError} />
 
   return (
-    <div className="booking-engine-page session-engine-page">
+    <div className={`booking-engine-page session-engine-page${embeddedBookingId ? ' embedded-session-panel' : ''}`}>
       <Card className="booking-toolbar">
         <div>
           <span>Session Engine</span>
@@ -1116,7 +1030,7 @@ export function SessionsPage() {
                     type="button"
                     onClick={() => {
                       setSelectedItemId(item.id)
-                      setSearchParams(item.kind === 'session' ? { session: item.session.id } : { booking: item.booking.id }, { replace: true })
+                      if (!embeddedBookingId) setSearchParams(item.kind === 'session' ? { session: item.session.id } : { booking: item.booking.id }, { replace: true })
                     }}
                     key={item.id}
                   >
@@ -1144,8 +1058,13 @@ export function SessionsPage() {
                 <h3>{formatPatientName(selectedPatient)}</h3>
               </div>
               <div className="patients-action-row">
+                {selectedPatient && <Link className="ui-button ui-button-secondary" to={`/patients?patient=${selectedPatient.id}`}>Patient Profile</Link>}
+                {selectedPatient && canViewClinical && <Link className="ui-button ui-button-secondary" to={`/patients/clinical?patient=${selectedPatient.id}`}>Clinical Workspace</Link>}
                 {selectedItem?.kind === 'eligible_booking' && canManageSession && (
-                  <Button disabled={saving} onClick={() => createSessionFromBooking(selectedItem.booking)}>Create Session</Button>
+                  <Button
+                    disabled={saving || Boolean(validateEligibleBooking(selectedItem.booking))}
+                    onClick={() => createSessionFromBooking(selectedItem.booking)}
+                  >{validateEligibleBooking(selectedItem.booking) ? 'Session unavailable' : 'Create Session'}</Button>
                 )}
                 {selectedSession && <StatusBadge tone={getSessionTone(selectedSession.session_status)}>{formatLabel(selectedSession.session_status)}</StatusBadge>}
               </div>
@@ -1161,12 +1080,15 @@ export function SessionsPage() {
                 <div><span>Scheduled end</span><strong>{formatDateTime(selectedBooking.end_at)}</strong></div>
                 <div><span>Booking status</span><strong>{formatLabel(selectedBooking.booking_status)}</strong></div>
                 <div><span>Type / modality</span><strong>{formatLabel(selectedBooking.booking_type)} · {formatLabel(selectedBooking.appointment_mode)}</strong></div>
+                <div><span>Diagnosis</span><strong>{selectedPatient?.active_icd10_code ?? 'Not captured'}</strong></div>
+                <div><span>Planned charges</span><strong>{formatMoney(plannedTotal)}</strong><small>Expected only, not an outstanding balance</small></div>
                 {selectedSession && <div><span>Actual start</span><strong>{formatDateTime(selectedSession.actual_start_at)}</strong></div>}
                 {selectedSession && <div><span>Actual end</span><strong>{formatDateTime(selectedSession.actual_end_at)}</strong></div>}
                 {selectedSession && <div><span>Actual duration</span><strong>{selectedSession.actual_duration_minutes ? `${selectedSession.actual_duration_minutes} min` : 'Not captured'}</strong></div>}
                 {selectedSession && <div><span>Attendance</span><strong>{formatLabel(selectedSession.attendance_outcome)}</strong></div>}
                 {selectedSession && <div><span>Outcome</span><strong>{selectedSession.session_outcome ? formatLabel(selectedSession.session_outcome) : 'Not captured'}</strong></div>}
                 {selectedSession && <div><span>Draft invoice</span><strong>{formatLabel(selectedSession.draft_invoice_request_status)}</strong><small>{formatDateTime(selectedSession.draft_invoice_requested_at)}</small></div>}
+                {selectedSession && canViewFinance && <div><span>Linked invoice</span><strong>{selectedInvoice ? formatLabel(selectedInvoice.invoice_status) : 'Not created'}</strong><small>{selectedInvoice?.invoice_number ?? selectedInvoice?.draft_reference ?? 'No financial obligation yet'}</small></div>}
                 {selectedSession && <div><span>Reopened</span><strong>{formatDateTime(selectedSession.reopened_at)}</strong><small>{selectedSession.reopen_reason ?? ''}</small></div>}
               </div>
             ) : (
@@ -1174,17 +1096,34 @@ export function SessionsPage() {
             )}
           </Card>
 
-          {selectedSession && (
-            <Card className="patients-foundation-card">
-              <span>Lifecycle actions</span>
-              <div className="patients-foundation-grid">
-                {['not_started', 'ready', 'reopened'].includes(selectedSession.session_status) && <Button variant="secondary" disabled={saving || !canManageSession} onClick={startSession}>Start Session</Button>}
-                {selectedSession.session_status === 'in_progress' && <Button variant="secondary" disabled={saving || !canManageSession} onClick={() => pauseOrResumeSession('paused')}>Pause</Button>}
-                {selectedSession.session_status === 'paused' && <Button variant="secondary" disabled={saving || !canManageSession} onClick={() => pauseOrResumeSession('in_progress')}>Resume</Button>}
-                {!isTerminalSession(selectedSession.session_status) && <Button variant="secondary" disabled={saving || !canManageSession} onClick={() => cancelOrNoShowSession('cancelled')}>Cancel</Button>}
-                {['not_started', 'ready'].includes(selectedSession.session_status) && <Button variant="secondary" disabled={saving || !canManageSession} onClick={() => cancelOrNoShowSession('no_show')}>No Show</Button>}
-                {selectedSession.session_status === 'completed' && <StatusBadge tone="warning">Future finance reconciliation may be required if reopened</StatusBadge>}
+          {selectedBooking && (
+            <Card className="practice-profile-form-card">
+              <div className="practice-profile-form-header">
+                <div>
+                  <span>Booked services</span>
+                  <h3>{formatMoney(plannedTotal)}</h3>
+                </div>
+                <StatusBadge tone="neutral">Expected charges</StatusBadge>
               </div>
+              {selectedBookingProcedures.length === 0 ? (
+                <EmptyState title="No booked services" description="This appointment has no procedure snapshots attached." />
+              ) : (
+                <div className="session-service-summary-list">
+                  {selectedBookingProcedures.map((procedure) => (
+                    <article key={procedure.id}>
+                      <div>
+                        <strong>{procedure.procedure_name}</strong>
+                        <span>{procedure.procedure_code ?? 'No code'} · {procedure.duration_minutes ? `${procedure.duration_minutes} min` : 'Duration not set'}</span>
+                      </div>
+                      <div>
+                        <span>{formatMoney(procedure.unit_price)} × {procedure.quantity}</span>
+                        <strong>{formatMoney(procedure.line_total)}</strong>
+                      </div>
+                    </article>
+                  ))}
+                </div>
+              )}
+              <p className="session-foundation-note">Expected charges are planning context only. No invoice or debt exists until the completed-session finance workflow creates and confirms one.</p>
             </Card>
           )}
 
@@ -1260,16 +1199,41 @@ export function SessionsPage() {
             <Card className="practice-profile-form-card">
               <div className="practice-profile-form-header">
                 <div>
-                  <span>Operational notes</span>
-                  <h3>Non-clinical only</h3>
+                  <span>Session planning</span>
+                  <h3>Prepare for this appointment</h3>
                 </div>
-                {canManageSession && <Button variant="secondary" disabled={saving} onClick={saveOperationalNote}>Save Note</Button>}
+                {canManageSession && <Button variant="secondary" disabled={saving} onClick={saveOperationalNote}>Save Plan</Button>}
               </div>
               <label className="session-note-editor">
-                <span>Internal operational note</span>
+                <span>Internal session plan</span>
                 <textarea value={noteBody} disabled={!canManageSession || saving} onChange={(event) => setNoteBody(event.target.value)} />
               </label>
-              <p className="session-foundation-note">Do not capture clinical process notes here. Clinical documentation remains a future engine.</p>
+              <p className="session-foundation-note">Internal only. Use the Clinical Workspace for Session Feedback and Session Process Notes.</p>
+              {selectedPatient && canViewClinical && (
+                <div className="session-clinical-actions">
+                  <Link className="ui-button ui-button-secondary" to={`/patients/clinical?patient=${selectedPatient.id}&session=${selectedSession.id}&intent=session_feedback`}>Add Session Feedback</Link>
+                  <Link className="ui-button ui-button-secondary" to={`/patients/clinical?patient=${selectedPatient.id}&session=${selectedSession.id}&intent=process_note`}>Add Process Note</Link>
+                </div>
+              )}
+            </Card>
+          )}
+
+          {selectedSession && (
+            <Card className="practice-profile-form-card session-finance-summary-card">
+              <div className="practice-profile-form-header">
+                <div>
+                  <span>Billing follow-through</span>
+                  <h3>{formatMoney(sessionTotal)}</h3>
+                </div>
+                {canViewFinance && selectedInvoice && <Link className="ui-button ui-button-secondary" to={`/finance?invoice=${selectedInvoice.id}`}>View Invoice</Link>}
+                {canViewFinance && !selectedInvoice && selectedSession.session_status === 'completed' && <Link className="ui-button ui-button-secondary" to="/finance">Open Billing Queue</Link>}
+              </div>
+              <div className="session-billing-strip">
+                <div><span>Planned</span><strong>{formatMoney(plannedTotal)}</strong></div>
+                <div><span>Delivered procedures</span><strong>{selectedSessionProcedures.length}</strong></div>
+                <div><span>Invoice readiness</span><strong>{formatLabel(selectedSession.draft_invoice_request_status)}</strong></div>
+                <div><span>Invoice</span><strong>{canViewFinance ? (selectedInvoice ? formatLabel(selectedInvoice.invoice_status) : 'Not created') : 'Restricted'}</strong></div>
+              </div>
             </Card>
           )}
 
@@ -1305,11 +1269,6 @@ export function SessionsPage() {
             </Card>
           )}
 
-          {(actionError || successMessage) && (
-            <div className={`practice-profile-message ${actionError ? 'error' : 'success'}`}>
-              {actionError || successMessage}
-            </div>
-          )}
         </div>
       </div>
     </div>

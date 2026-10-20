@@ -1,244 +1,173 @@
-# MVP Pilot E2E Validation
+# AlliDesk MVP Pilot E2E Validation
 
-Date: 2026-07-21
+Validation date: 2026-10-18
 
-## Environment Used
+Repository: `/Users/gerhardolivier/Go Difference Coding /Allidesk`
 
-- Supabase project: `allidesk-dev`
-- Project ref: `wdhfhdpcrcuyxqjehiyy`
-- Environment classification: development only
-- Data classification: fictional development data only
-- Local app URL: `http://127.0.0.1:5173/`
-- Git branch: `main`
+Supabase project: `allidesk-dev` (`wdhfhdpcrcuyxqjehiyy`)
+Data classification: fictional development data only
 
-No production environment was used.
+## Overall Result
 
-## Pre-Test Checks
+**NOT READY FOR CONTROLLED PILOT SIGN-OFF**
 
-| Check | Result | Evidence |
+The repaired local application opened successfully in an automated Chrome session. The complete authenticated browser journey could not begin because no current development-user password was available to the validation environment. No credential was requested, displayed, logged, committed, or changed.
+
+This is an acceptance-test access blocker, not a newly confirmed application defect.
+
+## Browser-Testing Method
+
+- Method: Chrome browser automation through the supported computer-use connector.
+- Application tested: local repaired source at `http://127.0.0.1:5173/`.
+- Browser result: AlliDesk Login rendered successfully.
+- Saved session result: none available.
+- Autofilled credential result: none available.
+- Playwright package: not added to the repository; the supported browser connector was sufficient.
+- Authenticated browser interactions: not performed because a valid password was unavailable.
+
+No browser workflow is marked passed unless it was actually exercised.
+
+## Authentication Verification
+
+A read-only query against `allidesk-dev` confirmed these existing fictional users:
+
+| User | Tenant | Role | Confirmed | Membership |
+| --- | --- | --- | --- | --- |
+| `gostratgroup+allidesk-admin-a@gmail.com` | AlliDesk Pilot Practice | admin | Yes | Active |
+| `gostratgroup+allidesk-therapist-a@gmail.com` | AlliDesk Pilot Practice | therapist | Yes | Active |
+| `gostratgroup+allidesk-reception-a@gmail.com` | AlliDesk Pilot Practice | receptionist | Yes | Active |
+| `gostratgroup+allidesk-finance-a@gmail.com` | AlliDesk Pilot Practice | finance | Yes | Active |
+| `gostratgroup+allidesk-admin-b@gmail.com` | AlliDesk Isolation Tenant B | admin | Yes | Active |
+| `gostratgroup@gmail.com` | AlliDesk Pilot Practice | admin | Yes | Active |
+
+None is banned. Profiles and tenant memberships already exist and must not be recreated.
+
+No profile currently has `is_super_admin = true`. This does not block the tenant pilot journey, but Super Admin testing requires a separately approved profile promotion.
+
+## Owner Password Reset Action
+
+Use `gostratgroup+allidesk-admin-a@gmail.com` for the first journey. The safest reset is an owner-controlled, one-time Supabase Auth Admin update. It must run only from a trusted local terminal with the project secret key and must never use the browser publishable key.
+
+1. Sign in to the Supabase Dashboard and open `allidesk-dev`.
+2. Open **Project Settings > API Keys** and copy a project secret key temporarily. Do not paste it into chat or save it in `.env`.
+3. In a private local terminal, run the following. Enter the secret and new fictional-user password only at the hidden prompts:
+
+   ```bash
+   cd "/Users/gerhardolivier/Go Difference Coding /Allidesk"
+   read -s "SUPABASE_SECRET_KEY?Supabase secret key: "
+   echo
+   read -s "ALLIDESK_TEST_PASSWORD?New fictional test password: "
+   echo
+   export SUPABASE_SECRET_KEY ALLIDESK_TEST_PASSWORD
+   node --input-type=module -e '
+   import { createClient } from "@supabase/supabase-js";
+   const client = createClient("https://wdhfhdpcrcuyxqjehiyy.supabase.co", process.env.SUPABASE_SECRET_KEY, {
+     auth: { autoRefreshToken: false, persistSession: false }
+   });
+   const email = "gostratgroup+allidesk-admin-a@gmail.com";
+   const { data, error } = await client.auth.admin.listUsers({ page: 1, perPage: 100 });
+   if (error) throw error;
+   const user = data.users.find((item) => item.email?.toLowerCase() === email);
+   if (!user) throw new Error("Development user not found");
+   const result = await client.auth.admin.updateUserById(user.id, { password: process.env.ALLIDESK_TEST_PASSWORD });
+   if (result.error) throw result.error;
+   console.log("Development test password updated successfully.");
+   '
+   unset SUPABASE_SECRET_KEY ALLIDESK_TEST_PASSWORD
+   ```
+
+4. Close the terminal after the variables are cleared.
+5. Enter the new password directly into the AlliDesk login form. Do not send it through chat.
+
+The reset changes only the selected fictional Auth credential. It does not recreate the user or modify profile, tenant, or role records. Supabase documents `auth.admin.updateUserById()` as a trusted-server operation; the secret key must never be exposed in frontend code.
+
+## Acceptance Journey
+
+| Step | Status | Evidence / next check |
 | --- | --- | --- |
-| `git status --short` | Passed with dirty worktree | Existing Phase 6/storage/PDF work remains uncommitted. No unrelated changes were reverted. |
-| `git branch --show-current` | Passed | Current branch: `main`. |
-| `npx supabase projects list` | Passed | Linked project is `allidesk-dev`, ref `wdhfhdpcrcuyxqjehiyy`, status `ACTIVE_HEALTHY`. |
-| `npx supabase migration list --linked` | Passed | Local and remote migration histories match through `202607180003`. |
-| `npm run build` | Passed | TypeScript and Vite build completed. Existing Vite large-chunk warning remains. |
-| `git diff --check` | Passed | No whitespace errors. |
-| Local app startup | Passed | Vite served `http://127.0.0.1:5173/`. |
-| Local HTTP reachability | Passed | `curl -s -I http://127.0.0.1:5173/` returned `HTTP/1.1 200 OK`. |
+| 1. Successful login | Blocked by owner credential action | User metadata is healthy; no password was available. |
+| 2. Practice dashboard | Not tested | Requires authenticated session. |
+| 3. Patient creation | Not tested | Create a uniquely named fictional patient and confirm success. |
+| 4. Booking creation | Not tested | Use the top-bar New Booking action and live form. |
+| 5. Booking persistence after refresh | Not tested | Refresh `/bookings`; verify the created booking remains. |
+| 6. Session completion | Not tested | Create/open session and use approved Complete action. |
+| 7. Clinical note creation and reopening | Not tested | Save a draft, reopen it, and verify content persists. |
+| 8. Invoice creation and issuing | Not tested | Confirm and issue the session-linked invoice. |
+| 9. Invoice PDF generation and viewing | Not tested | Generate, open signed URL, and verify patient/practice/totals. |
+| 10. Manual payment recording | Not tested | Record a fictional payment and verify balance. |
+| 11. Receipt PDF generation and viewing | Not tested | Generate and open the receipt. |
+| 12. Statement PDF generation and viewing | Not tested | Generate and open the patient statement. |
+| 13. Patient history | Not tested | Confirm booking, session, clinical, invoice, and payment events. |
+| 14. Logout and login again | Not tested | Verify logout clears session and login restores tenant workspace. |
 
-## Browser Validation Status
+## Manual Fallback Checklist
 
-The requested browser-based MVP journey could not be completed in this execution session.
+1. Open `http://127.0.0.1:5173/`.
+2. Sign in as Tenant A Admin using the privately reset password.
+3. Create one fictional patient named with the current date/time.
+4. Click the global **New Booking** action and save a booking for that patient.
+5. Refresh the browser and confirm the booking remains.
+6. Create/open its session and complete it using the supported action.
+7. Create and save a clinical note, leave it, reopen it, and verify the content.
+8. Open Finance, confirm and issue the generated invoice.
+9. Generate and open the invoice PDF.
+10. Record a fictional manual payment for the full balance.
+11. Generate and open the receipt PDF.
+12. Generate and open a patient statement PDF.
+13. Return to the patient and inspect operational history.
+14. Log out, log in again, and verify the same tenant data remains.
 
-Blockers:
+Record the URL, action, expected result, actual result, and screenshot for any failure. Classify only a data-loss, security, or core-workflow failure as P0/P1.
 
-- In-app browser connector returned: `No browser is available`.
-- Chrome connector returned: `Browser is not available: extension`.
-- Playwright is not installed in the project.
-- Dedicated Auth user passwords were not available in the execution environment, so role-based UI login could not be performed independently.
+## Defects
 
-This is a validation-environment blocker, not a confirmed product defect.
+### Confirmed in this run
 
-## Users And Roles Tested
+None. The journey did not advance far enough to establish a product defect.
 
-Terminal-authenticated RLS and storage harnesses use the dedicated development Auth users:
+### Previously repaired and awaiting browser regression
 
-- `gostratgroup+allidesk-admin-a@gmail.com` — Tenant A admin
-- `gostratgroup+allidesk-therapist-a@gmail.com` — Tenant A therapist
-- `gostratgroup+allidesk-reception-a@gmail.com` — Tenant A receptionist
-- `gostratgroup+allidesk-finance-a@gmail.com` — Tenant A finance
-- `gostratgroup+allidesk-admin-b@gmail.com` — Tenant B admin
+- Global New Booking now enters the live Supabase Bookings form.
+- Prototype role switching is removed.
+- Unsupported direct session lifecycle mutations are removed; approved RPC actions remain.
+- Obsolete Finance Mark Ready is removed.
 
-Browser login for these users was not completed because credentials/browser control were unavailable.
+## Validation Status
 
-## Complete Test Journey
+### Passed
 
-| Step | Result | Notes |
-| --- | --- | --- |
-| Practice setup | Not browser-tested | Requires UI login/browser access. Prior implementation/build validation exists. |
-| User and therapist setup | Not browser-tested | Requires UI login/browser access. |
-| Patient creation | Not browser-tested | Requires UI login/browser access. |
-| Booking creation | Not browser-tested | Requires UI login/browser access. |
-| Session management | Not browser-tested | Requires UI login/browser access. |
-| Clinical note creation | Not browser-tested | Requires UI login/browser access. |
-| Invoice creation | Not browser-tested | Requires UI login/browser access. |
-| Invoice PDF generation | Not browser-tested | Implementation builds; live browser generation not executed. |
-| Manual payment recording | Not browser-tested | Requires UI login/browser access. |
-| Receipt PDF generation | Not browser-tested | Implementation builds; live browser generation not executed. |
-| Patient statement PDF generation | Not browser-tested | Implementation builds; live browser generation not executed. |
-| Document view/download | Not browser-tested | Signed URL browser interaction not executed. |
-| Patient history verification | Not browser-tested | Existing terminal smoke history evidence remains, but this run did not complete browser verification. |
-| Audit verification | Not browser-tested | Existing readiness evidence remains, but this run did not complete browser verification. |
+- Local repaired app started.
+- Automated Chrome opened the local app.
+- Login screen rendered.
+- Existing fictional Auth identities, profiles, memberships, roles, and tenant mappings were verified read-only.
 
-## PDF Output Validation
+### Failed
 
-Implementation status:
+None were executed with valid authentication, so no functional step is classified as failed.
 
-- Invoice PDF generation exists in `src/pages/Finance.tsx`.
-- Receipt PDF generation exists in `src/pages/Finance.tsx`.
-- Patient statement PDF generation exists in `src/pages/Finance.tsx`.
-- PDF creation utility exists at `src/lib/financePdf.ts`.
-- Generated PDFs use the existing `generated-documents` Storage bucket.
-- View actions use short-lived signed URLs.
+### Not tested
 
-Live browser validation status:
+All authenticated steps 1–14 remain untested pending the owner credential action.
 
-- Not completed.
+## Remaining P0/P1 Defects
 
-Remote metadata observation:
+- No P0 or P1 product defect was confirmed in this run.
+- Authenticated browser acceptance remains a release-sign-off blocker.
 
-- Existing generated finance document metadata exists for `invoice_pdf` in `generated-documents`.
-- Observed status was `uploaded`, not a newly browser-generated `available` PDF from this run.
+## Files Changed
 
-This means the final browser proof for generated financial PDFs remains outstanding.
+- `docs/mvp-pilot-e2e-validation.md` — current browser method, identity evidence, owner reset procedure, and acceptance status.
 
-## Security And Tenant Isolation Validation
+No application, migration, RLS, or Auth data was changed during this validation attempt.
 
-Storage security harness executed successfully:
+## Final Validation
 
-```bash
-npx supabase db query --linked --file supabase/smoke-tests/operational_readiness_storage_security.sql
-```
+- `npm run build`: passed; existing Vite large-chunk warning remains.
+- `git diff --check`: passed.
+- Additional RLS checks: not required because this attempt changed no application permissions or database access.
 
-Result: passed.
+## Release Decision
 
-Validated:
+**NOT READY for controlled pilot sign-off.**
 
-- all five required development Auth users discovered
-- Tenant A admin sees Tenant A document metadata only
-- Tenant B admin sees Tenant B document metadata only
-- admin sees patient, clinical, practice, and generated document metadata
-- therapist cannot see generated finance documents
-- reception cannot see clinical or finance documents
-- finance can see generated finance documents and cannot see clinical attachments
-- anonymous direct table access to `document_files` is denied
-- invalid Patient Link session cannot see documents
-- valid Patient Link session sees only explicitly shared documents
-- executable uploads are rejected
-- oversized practice logo uploads are rejected
-- object paths must match tenant/document metadata
-
-The full authenticated RLS harness did not complete through the linked CLI during this run and was interrupted after repeated timeout windows.
-
-## Usability Findings
-
-Not assessed in browser during this run.
-
-Reason:
-
-- no automated browser was available
-- role login credentials were unavailable to the execution environment
-
-## Defects Found
-
-No reproducible application defect was confirmed during this run.
-
-Validation blockers found:
-
-1. Browser automation unavailable in this Codex session.
-2. Role login credentials unavailable to the execution environment.
-3. Some linked Supabase SQL executions hung and had to be interrupted:
-   - pilot seed refresh
-   - storage seed refresh
-   - schema smoke file
-   - authenticated RLS file
-   - several broad summary queries
-
-The storage security harness and migration comparison did complete successfully.
-
-## Defects Fixed
-
-None.
-
-No code changes were made during this validation pass.
-
-## Launch Blockers
-
-No product launch blocker was reproduced.
-
-However, MVP pilot sign-off is blocked until the browser-based E2E journey is completed with actual role logins.
-
-## Pilot-Polish Items
-
-None recorded because browser usability testing was not completed.
-
-## Post-MVP Items
-
-No new Post-MVP items were added.
-
-The existing Post-MVP decisions remain:
-
-- payment gateways
-- medical aid claims
-- AI
-- workflow automation runtime
-- email, WhatsApp, and SMS automation
-- advanced reporting
-- Patient Link expansion
-- patient portal/accounts/messaging
-- recurring bookings
-- advanced assessment scoring
-- profession-specific modules
-
-## Safe Rerun Instructions
-
-1. Confirm Supabase target:
-
-   ```bash
-   npx supabase projects list
-   npx supabase migration list --linked
-   ```
-
-2. Start the app:
-
-   ```bash
-   npm run dev
-   ```
-
-3. Open:
-
-   ```text
-   http://127.0.0.1:5173/
-   ```
-
-4. Log in manually with each dedicated development role.
-
-5. Complete the MVP journey:
-
-   ```text
-   practice setup
-   -> patient
-   -> booking
-   -> session
-   -> clinical note
-   -> invoice confirm/issue
-   -> invoice PDF
-   -> manual payment
-   -> receipt PDF
-   -> statement PDF
-   -> document view/download
-   -> history/audit checks
-   ```
-
-6. Run final validation:
-
-   ```bash
-   npm run build
-   git diff --check
-   npx supabase migration list --linked
-   npx supabase db query --linked --file supabase/smoke-tests/operational_readiness_storage_security.sql
-   ```
-
-## Final Result
-
-Status: **NOT READY FOR PILOT SIGN-OFF**
-
-Reason:
-
-- The requested browser-based pilot E2E journey was not completed.
-- No reproducible product defect was found.
-- The remaining blocker is validation access/tooling, not a confirmed application defect.
-
-Next required action:
-
-- Run the browser journey manually or provide a browser-capable session plus test-role login access so the final pilot sign-off can be completed.
+The sole currently evidenced blocker is completion of the authenticated browser journey. After the Product Owner privately resets one fictional Admin password, rerun this document's 14-step journey and record evidence before changing the release decision.

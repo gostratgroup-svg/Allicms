@@ -1,11 +1,14 @@
 import { type Dispatch, type PointerEvent, type SetStateAction, useEffect, useMemo, useRef, useState } from 'react'
-import { NavLink, useLocation } from 'react-router-dom'
+import { NavLink, useLocation, useNavigate } from 'react-router-dom'
 import { useAuth, type ActiveRole, type Profile } from './auth/AuthContext'
 import { useAuthorization } from './auth/permissions'
 import { isSupabaseConfigured, testSupabaseConnection, type SupabaseConnectionTestResult } from './lib/supabase'
 import { AppShell, MainContent, Sidebar, Topbar } from './layout/AppShell'
 import { NotificationMenu } from './components/NotificationMenu'
+import { TopbarNotice } from './components/TopbarNotice'
+import { FinanceIcon } from './components/icons'
 import { UserAccountMenu } from './components/UserAccountMenu'
+import { appNoticeEventName, type AppNotice } from './lib/appNotice'
 import { AppRoutes, appRoutes, getRouteForPath } from './routes/appRoutes'
 
 type View = 'overview' | 'sessions' | 'patients' | 'finances' | 'settings'
@@ -180,13 +183,7 @@ function NavIcon({ icon }: { icon: string }) {
   }
 
   if (icon === 'coins') {
-    return (
-      <svg {...commonProps}>
-        <ellipse cx="12" cy="6.4" rx="6.1" ry="2.5" />
-        <path d="M5.9 6.4v4.3c0 1.4 2.7 2.5 6.1 2.5s6.1-1.1 6.1-2.5V6.4" />
-        <path d="M5.9 10.8v4.3c0 1.4 2.7 2.5 6.1 2.5s6.1-1.1 6.1-2.5v-4.3" />
-      </svg>
-    )
+    return <FinanceIcon />
   }
 
   if (icon === 'platform-dashboard') {
@@ -1530,17 +1527,21 @@ function getRouteIcon(path: string) {
   return 'blocks'
 }
 
+const practiceNavigationItems = [
+  { path: '/practice/profile', label: 'Practice Setup' },
+  { path: '/practice/billing', label: 'Billing Configuration' },
+]
+
 function App() {
   const { user, profile, tenantMemberships, activeTenant, activeRole, selectActiveTenant, signOut } = useAuth()
   const authorization = useAuthorization()
   const location = useLocation()
+  const navigate = useNavigate()
   const [view, setView] = useState<View>('overview')
-  const [role, setRole] = useState<Role>('Admin')
   const [activeSuperAdminModule, setActiveSuperAdminModule] = useState<SuperAdminModule>('dashboard')
+  const [practiceNavigationOpen, setPracticeNavigationOpen] = useState(() => location.pathname.startsWith('/practice') || location.pathname === '/finance/price-lists')
   const [query, setQuery] = useState('')
   const [patientRecords, setPatientRecords] = useState<Patient[]>(() => loadLocalState(localStateKeys.patients, patients, legacyLocalStateKeys.patients))
-  const [isNewSessionOpen, setIsNewSessionOpen] = useState(false)
-  const [newSessionSlot, setNewSessionSlot] = useState<SessionSlot | null>(null)
   const [calendarSessionRecords, setCalendarSessionRecords] = useState<CalendarSession[]>(() => loadLocalState(localStateKeys.bookings, weekSessions, legacyLocalStateKeys.bookings))
   const [selectedCalendarSessionId, setSelectedCalendarSessionId] = useState(weekSessions[0]?.id ?? '')
   const [selectedPatientName, setSelectedPatientName] = useState(patients[0].name)
@@ -1549,7 +1550,7 @@ function App() {
   const [practiceLocationRecords, setPracticeLocationRecords] = useState(practiceLocations)
   const [procedurePriceLists, setProcedurePriceLists] = useState(billingPriceListDefaults)
   const [procedurePriceRecords, setProcedurePriceRecords] = useState(billingCodeDefaults)
-  const [topNotice, setTopNotice] = useState('')
+  const [topNotice, setTopNotice] = useState<AppNotice | null>(null)
   const patientLinkMatch = getPatientLinkRoute()
   const currentDayIso = useLocalTodayIso()
   const resolvedRoleLabel = getResolvedRoleLabel(activeRole)
@@ -1559,39 +1560,43 @@ function App() {
   const identityContextLabel = isResolvedSuperAdmin ? 'AlliDesk Platform' : tenantDisplayName
   const canSwitchTenant = !isResolvedSuperAdmin && tenantMemberships.length > 1
   const activeRoute = getRouteForPath(location.pathname)
-  const visibleAppRoutes = appRoutes.filter((item) => item.showInNav !== false && authorization.canAccess(item.accessArea))
+  const visiblePracticeNavigationItems = practiceNavigationItems.filter((item) => {
+    const route = appRoutes.find((candidate) => candidate.path === item.path)
+    return Boolean(route && authorization.canAccess(route.accessArea))
+  })
+  const visibleAppRoutes = appRoutes.filter((item) => (
+    item.showInNav !== false
+    && (item.path === '/practice' ? visiblePracticeNavigationItems.length > 0 : authorization.canAccess(item.accessArea))
+  ))
+  const practiceNavigationActive = practiceNavigationItems.some((item) => item.path === location.pathname)
 
   const openNewSession = (slot?: SessionSlot) => {
-    setNewSessionSlot(slot ?? null)
-    setIsNewSessionOpen(true)
+    const params = new URLSearchParams({ new: '1' })
+    if (slot?.date) params.set('date', slot.date)
+    if (slot?.time) params.set('time', slot.time)
+    if (slot?.patientName) params.set('patient', slot.patientName)
+    navigate(`/bookings?${params.toString()}`)
   }
 
   useEffect(() => {
-    if (activeRole === 'super_admin') {
-      setRole('Super Admin')
-      return
-    }
-
-    if (activeRole === 'admin') {
-      setRole('Admin')
-      return
-    }
-
-    if (activeRole === 'receptionist') {
-      setRole('Reception')
-      return
-    }
-
-    if (activeRole === 'therapist') {
-      setRole('Therapist')
-    }
-  }, [activeRole])
-
-  useEffect(() => {
     if (!topNotice) return
-    const timer = window.setTimeout(() => setTopNotice(''), 6500)
+    const timer = window.setTimeout(() => setTopNotice(null), 6500)
     return () => window.clearTimeout(timer)
   }, [topNotice])
+
+  useEffect(() => {
+    if (practiceNavigationActive) setPracticeNavigationOpen(true)
+  }, [practiceNavigationActive])
+
+  useEffect(() => {
+    const handleNotice = (event: Event) => {
+      const notice = (event as CustomEvent<AppNotice>).detail
+      if (!notice?.message) return
+      setTopNotice(notice)
+    }
+    window.addEventListener(appNoticeEventName, handleNotice)
+    return () => window.removeEventListener(appNoticeEventName, handleNotice)
+  }, [])
 
   useEffect(() => {
     saveLocalState(localStateKeys.patients, patientRecords)
@@ -1863,8 +1868,8 @@ function App() {
         <img src="/assets/AlliDesk_Main_App_logo.png" alt="AlliDesk" className="brand-logo" />
       </div>
 
-      <nav className={`main-nav ${role === 'Super Admin' ? 'platform-nav' : ''}`} aria-label={role === 'Super Admin' ? 'Platform navigation' : 'Main navigation'}>
-        {role === 'Super Admin' ? (
+      <nav className={`main-nav ${isResolvedSuperAdmin ? 'platform-nav' : ''}`} aria-label={isResolvedSuperAdmin ? 'Platform navigation' : 'Main navigation'}>
+        {isResolvedSuperAdmin ? (
           superAdminNavItems.map((item) => (
             <button className={activeSuperAdminModule === item.id ? 'active' : ''} key={item.id} onClick={() => setActiveSuperAdminModule(item.id)}>
               <span className="nav-icon" aria-hidden="true">
@@ -1876,7 +1881,30 @@ function App() {
             </button>
           ))
         ) : (
-          visibleAppRoutes.map((item) => (
+          visibleAppRoutes.map((item) => item.path === '/practice' ? (
+            <div className={`practice-nav-section${practiceNavigationActive ? ' active' : ''}`} key={item.path}>
+              <button
+                className={`practice-nav-toggle${practiceNavigationActive ? ' active' : ''}`}
+                type="button"
+                aria-expanded={practiceNavigationOpen}
+                aria-controls="practice-navigation-submenu"
+                onClick={() => setPracticeNavigationOpen((current) => !current)}
+              >
+                <span className="nav-icon" aria-hidden="true"><NavIcon icon={getRouteIcon(item.path)} /></span>
+                <span>Practice</span>
+                <span className="practice-nav-chevron" aria-hidden="true" />
+              </button>
+              {practiceNavigationOpen && (
+                <div className="practice-subnav" id="practice-navigation-submenu">
+                  {visiblePracticeNavigationItems.map((child) => (
+                    <NavLink className={({ isActive }) => (isActive ? 'active' : '')} to={child.path} key={child.path}>
+                      {child.label}
+                    </NavLink>
+                  ))}
+                </div>
+              )}
+            </div>
+          ) : (
             <NavLink className={({ isActive }) => (isActive ? 'active' : '')} to={item.path} key={item.path}>
               <span className="nav-icon" aria-hidden="true">
                 <NavIcon icon={getRouteIcon(item.path)} />
@@ -1891,10 +1919,15 @@ function App() {
 
   const topbar = (
     <Topbar
-      eyebrow={`${resolvedRoleLabel} · ${identityContextLabel}`}
-      title={role === 'Super Admin' ? superAdminPageTitle(activeSuperAdminModule) : activeRoute.title}
+      eyebrow={isResolvedSuperAdmin ? `${resolvedRoleLabel} · ${identityContextLabel}` : `${resolvedRoleLabel} - ${identityContextLabel}`}
+      eyebrowCase={isResolvedSuperAdmin ? 'uppercase' : 'normal'}
+      title={isResolvedSuperAdmin ? superAdminPageTitle(activeSuperAdminModule) : activeRoute.title}
       actions={(
         <div className="topbar-actions">
+          <TopbarNotice
+            notice={topNotice}
+            onDismiss={() => setTopNotice(null)}
+          />
           <NotificationMenu />
           <UserAccountMenu
             displayName={identityDisplayName}
@@ -1915,81 +1948,16 @@ function App() {
               </select>
             </label>
           )}
-          <label className="role-switcher" aria-label="Switch role view">
-            <select value={role} onChange={(event) => setRole(event.target.value as Role)}>
-              {roles.map((roleOption) => (
-                <option value={roleOption.role} key={roleOption.role}>{roleOption.role}</option>
-              ))}
-            </select>
-          </label>
-          {role !== 'Super Admin' && (
-            <button type="button" onClick={() => openNewSession()}>
-              New Booking
-            </button>
-          )}
         </div>
       )}
     />
   )
 
-  const modals = isNewSessionOpen ? (
-        <NewSessionModal
-          patients={patientRecords}
-          calendarSessions={calendarSessionRecords}
-          practiceEntities={practiceEntityRecords}
-          practiceLocations={practiceLocationRecords}
-          procedurePriceLists={procedurePriceLists}
-          procedurePriceRecords={procedurePriceRecords}
-          initialDate={newSessionSlot?.date}
-          initialTime={newSessionSlot?.time}
-          initialPatientName={newSessionSlot?.patientName}
-          onCreate={(session, newPatient) => {
-            const sessionSummary = `${session.date} · ${session.startTime}-${session.endTime}`
-            const sessionHistoryEvent = {
-              title: `Booking created · ${session.date} ${session.startTime}`,
-              visibility: 'Available on patient link',
-              detail: `${session.type} booked with ${session.therapist}.`,
-            }
-            setPatientRecords((records) => {
-              if (newPatient) {
-                const syncedNewPatient = {
-                  ...newPatient,
-                  therapist: session.therapist,
-                  nextSession: sessionSummary,
-                  historyEvents: [sessionHistoryEvent, ...newPatient.historyEvents],
-                }
-                return records.some((patient) => patient.patientNumber === newPatient.patientNumber)
-                  ? records.map((patient) => (patient.patientNumber === newPatient.patientNumber ? syncedNewPatient : patient))
-                  : [...records, syncedNewPatient]
-              }
-              return records.map((patient) =>
-                patient.name === session.patient
-                  ? {
-                      ...patient,
-                      therapist: session.therapist,
-                      nextSession: sessionSummary,
-                      historyEvents: [sessionHistoryEvent, ...patient.historyEvents],
-                    }
-                  : patient,
-              )
-            })
-            setSelectedPatientName(newPatient?.name ?? session.patient)
-            setCalendarSessionRecords((records) => [...records, session])
-            setInvoiceRecords((records) => [...records, createInvoiceFromSession(session, records.length + 80)])
-            setSelectedCalendarSessionId(session.id)
-            setView('sessions')
-            setIsNewSessionOpen(false)
-          }}
-          onIntakeMessageCopied={(patientName) => setTopNotice(`New patient message copied for ${patientName}.`)}
-          onClose={() => setIsNewSessionOpen(false)}
-        />
-  ) : null
-
   return (
-    <AppShell topNotice={topNotice} sidebar={sidebar} topbar={topbar} modals={modals}>
+    <AppShell sidebar={sidebar} topbar={topbar}>
       <MainContent>
-        {role === 'Super Admin' && <SuperAdminWorkspace activeModule={activeSuperAdminModule} />}
-        {role !== 'Super Admin' && <AppRoutes />}
+        {isResolvedSuperAdmin && <SuperAdminWorkspace activeModule={activeSuperAdminModule} />}
+        {!isResolvedSuperAdmin && <AppRoutes />}
       </MainContent>
     </AppShell>
   )
@@ -6704,7 +6672,6 @@ function Settings({
 function SuperAdminWorkspace({ activeModule }: { activeModule: SuperAdminModule }) {
   const { session } = useAuth()
   const [selectedTenantName, setSelectedTenantName] = useState('Kids Therapy Centre')
-  const [isCreateTenantOpen, setIsCreateTenantOpen] = useState(false)
   const [isSupportTicketOpen, setIsSupportTicketOpen] = useState(false)
   const [selectedSupportTicketNumber, setSelectedSupportTicketNumber] = useState('')
   const [profileTenantName, setProfileTenantName] = useState('')
@@ -6898,7 +6865,6 @@ function SuperAdminWorkspace({ activeModule }: { activeModule: SuperAdminModule 
                   placeholder="Search tenants"
                   aria-label="Search tenants"
                 />
-                <button type="button" onClick={() => setIsCreateTenantOpen(true)}>Create Tenant</button>
               </div>
             </div>
             <div className="tenant-list-table" aria-label="Tenant list">
@@ -6926,16 +6892,6 @@ function SuperAdminWorkspace({ activeModule }: { activeModule: SuperAdminModule 
                 <p className="tenant-empty-state">No tenants match your search.</p>
               )}
             </div>
-            {isCreateTenantOpen && (
-              <CreateTenantModal
-                onClose={() => setIsCreateTenantOpen(false)}
-                onCreate={(newTenant) => {
-                  setPlatformTenants((tenants) => [newTenant, ...tenants])
-                  setSelectedTenantName(newTenant.businessName)
-                  setIsCreateTenantOpen(false)
-                }}
-              />
-            )}
             {profileTenant && (
               <TenantProfileModal
                 tenantRecord={profileTenant}

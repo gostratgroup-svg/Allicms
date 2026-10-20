@@ -1,8 +1,11 @@
 import { useEffect, useMemo, useState } from 'react'
 import { useAuth } from '../auth/AuthContext'
 import { useAuthorization } from '../auth/permissions'
+import { EditableField } from '../components/EditableField'
+import { EditSaveControls } from '../components/EditSaveControls'
 import { EmptyState, ErrorState, LoadingState } from '../components/UiState'
 import { Button, Card, StatusBadge } from '../components/ui'
+import { showErrorNotice, showSuccessNotice } from '../lib/appNotice'
 import { isSupabaseConfigured, supabase } from '../lib/supabase'
 import type { Database } from '../lib/database.types'
 
@@ -129,9 +132,11 @@ export function FinancePriceListsPage() {
   const [loading, setLoading] = useState(true)
   const [savingPriceList, setSavingPriceList] = useState(false)
   const [savingItem, setSavingItem] = useState(false)
+  const [isCreatingPriceList, setIsCreatingPriceList] = useState(false)
+  const [isCreatingItem, setIsCreatingItem] = useState(false)
+  const [isPriceListEditing, setIsPriceListEditing] = useState(false)
+  const [isItemEditing, setIsItemEditing] = useState(false)
   const [loadError, setLoadError] = useState('')
-  const [saveError, setSaveError] = useState('')
-  const [successMessage, setSuccessMessage] = useState('')
 
   const selectedPriceList = useMemo(
     () => priceLists.find((priceList) => priceList.id === selectedPriceListId) ?? null,
@@ -145,8 +150,10 @@ export function FinancePriceListsPage() {
     () => items.filter((item) => item.price_list_id === selectedPriceListId),
     [items, selectedPriceListId],
   )
-  const isPriceListReadOnly = !canEditPriceLists || savingPriceList
-  const isItemReadOnly = !canEditPriceLists || savingItem || !selectedPriceListId
+  const showPriceListFields = isCreatingPriceList || isPriceListEditing
+  const showItemFields = isCreatingItem || isItemEditing
+  const isPriceListReadOnly = !canEditPriceLists || savingPriceList || (!isCreatingPriceList && !isPriceListEditing)
+  const isItemReadOnly = !canEditPriceLists || savingItem || !selectedPriceListId || (!isCreatingItem && !isItemEditing)
 
   useEffect(() => {
     if (!activeTenant?.id) {
@@ -168,8 +175,6 @@ export function FinancePriceListsPage() {
     async function loadPriceListData() {
       setLoading(true)
       setLoadError('')
-      setSaveError('')
-      setSuccessMessage('')
 
       const [priceListsResult, itemsResult] = await Promise.all([
         supabaseClient
@@ -231,13 +236,16 @@ export function FinancePriceListsPage() {
         return
       }
 
-      const nextPriceLists = (priceListsResult.data ?? []) as PriceListRow[]
-      setPriceLists(nextPriceLists)
+      setPriceLists((priceListsResult.data ?? []) as PriceListRow[])
       setItems((itemsResult.data ?? []) as PriceListItemRow[])
-      setSelectedPriceListId(nextPriceLists[0]?.id ?? null)
+      setSelectedPriceListId(null)
       setSelectedItemId(null)
-      setPriceListForm(formFromPriceList(nextPriceLists[0] ?? null))
+      setPriceListForm(emptyPriceListForm)
       setItemForm(emptyPriceListItemForm)
+      setIsCreatingPriceList(false)
+      setIsCreatingItem(false)
+      setIsPriceListEditing(false)
+      setIsItemEditing(false)
       setLoading(false)
     }
 
@@ -250,14 +258,10 @@ export function FinancePriceListsPage() {
 
   const updatePriceListField = <Field extends keyof PriceListFormState>(field: Field, value: PriceListFormState[Field]) => {
     setPriceListForm((currentFormState) => ({ ...currentFormState, [field]: value }))
-    setSaveError('')
-    setSuccessMessage('')
   }
 
   const updateItemField = <Field extends keyof PriceListItemFormState>(field: Field, value: PriceListItemFormState[Field]) => {
     setItemForm((currentFormState) => ({ ...currentFormState, [field]: value }))
-    setSaveError('')
-    setSuccessMessage('')
   }
 
   const startCreatePriceList = () => {
@@ -265,31 +269,35 @@ export function FinancePriceListsPage() {
     setSelectedItemId(null)
     setPriceListForm(emptyPriceListForm)
     setItemForm(emptyPriceListItemForm)
-    setSaveError('')
-    setSuccessMessage('')
+    setIsCreatingPriceList(true)
+    setIsCreatingItem(false)
+    setIsPriceListEditing(true)
+    setIsItemEditing(false)
   }
 
-  const startEditPriceList = (priceList: PriceListRow) => {
+  const viewPriceList = (priceList: PriceListRow) => {
     setSelectedPriceListId(priceList.id)
     setSelectedItemId(null)
     setPriceListForm(formFromPriceList(priceList))
     setItemForm(emptyPriceListItemForm)
-    setSaveError('')
-    setSuccessMessage('')
+    setIsCreatingPriceList(false)
+    setIsCreatingItem(false)
+    setIsPriceListEditing(false)
+    setIsItemEditing(false)
   }
 
   const startCreateItem = () => {
     setSelectedItemId(null)
     setItemForm(emptyPriceListItemForm)
-    setSaveError('')
-    setSuccessMessage('')
+    setIsCreatingItem(true)
+    setIsItemEditing(true)
   }
 
-  const startEditItem = (item: PriceListItemRow) => {
+  const viewItem = (item: PriceListItemRow) => {
     setSelectedItemId(item.id)
     setItemForm(formFromPriceListItem(item))
-    setSaveError('')
-    setSuccessMessage('')
+    setIsCreatingItem(false)
+    setIsItemEditing(false)
   }
 
   const clearOtherDefaults = async (currentPriceListId?: string) => {
@@ -312,18 +320,16 @@ export function FinancePriceListsPage() {
     if (!activeTenant?.id || !supabase || !canEditPriceLists) return
 
     if (!priceListForm.name.trim()) {
-      setSaveError('Price list name is required.')
+      showErrorNotice('Price list name is required.')
       return
     }
 
     setSavingPriceList(true)
-    setSaveError('')
-    setSuccessMessage('')
 
     if (priceListForm.is_default) {
       const clearResult = await clearOtherDefaults(selectedPriceList?.id)
       if (clearResult.error) {
-        setSaveError(`Could not clear the previous default list: ${clearResult.error.message}`)
+        showErrorNotice(`Could not clear the previous default list: ${clearResult.error.message}`)
         setSavingPriceList(false)
         return
       }
@@ -346,7 +352,7 @@ export function FinancePriceListsPage() {
           .single()
 
     if (result.error) {
-      setSaveError(result.error.message)
+      showErrorNotice(result.error.message)
       setSavingPriceList(false)
       return
     }
@@ -370,7 +376,9 @@ export function FinancePriceListsPage() {
     })
     setSelectedPriceListId(savedPriceList.id)
     setPriceListForm(formFromPriceList(savedPriceList))
-    setSuccessMessage(selectedPriceList?.id ? 'Price list updated.' : 'Price list created.')
+    showSuccessNotice(selectedPriceList?.id ? 'Price list updated.' : 'Price list created.')
+    setIsCreatingPriceList(false)
+    setIsPriceListEditing(false)
     setSavingPriceList(false)
   }
 
@@ -390,13 +398,11 @@ export function FinancePriceListsPage() {
 
     const validationError = validateItem()
     if (validationError) {
-      setSaveError(validationError)
+      showErrorNotice(validationError)
       return
     }
 
     setSavingItem(true)
-    setSaveError('')
-    setSuccessMessage('')
 
     const payload = toPriceListItemPayload(itemForm, selectedPriceListId)
 
@@ -415,7 +421,7 @@ export function FinancePriceListsPage() {
           .single()
 
     if (result.error) {
-      setSaveError(result.error.message)
+      showErrorNotice(result.error.message)
       setSavingItem(false)
       return
     }
@@ -430,7 +436,9 @@ export function FinancePriceListsPage() {
     })
     setSelectedItemId(savedItem.id)
     setItemForm(formFromPriceListItem(savedItem))
-    setSuccessMessage(selectedItem?.id ? 'Procedure line item updated.' : 'Procedure line item created.')
+    showSuccessNotice(selectedItem?.id ? 'Procedure line item updated.' : 'Procedure line item created.')
+    setIsCreatingItem(false)
+    setIsItemEditing(false)
     setSavingItem(false)
   }
 
@@ -450,21 +458,7 @@ export function FinancePriceListsPage() {
 
   return (
     <div className="finance-price-lists-page">
-      <Card className="practice-profile-summary">
-        <div>
-          <span>Price lists</span>
-          <h3>{activeTenant?.practice_name ?? 'Finance price lists'}</h3>
-          <p>
-            Configure tenant price lists and procedure line items. Bookings, invoices and patient ICD-10 are intentionally not connected yet.
-          </p>
-        </div>
-        <div className="practice-profile-summary-actions">
-          <StatusBadge tone="info">{priceLists.length} lists</StatusBadge>
-          {!canEditPriceLists && <StatusBadge tone="warning">Read only</StatusBadge>}
-        </div>
-      </Card>
-
-      <div className="practice-locations-layout">
+      <div className={`practice-locations-layout${!isCreatingPriceList && !selectedPriceList ? ' is-list-only' : ''}`}>
         <Card className="practice-locations-list-card">
           <div className="practice-locations-list-header">
             <div>
@@ -473,7 +467,7 @@ export function FinancePriceListsPage() {
             </div>
             {canEditPriceLists && (
               <Button variant="secondary" onClick={startCreatePriceList}>
-                New Price List
+                Add Price List
               </Button>
             )}
           </div>
@@ -486,7 +480,7 @@ export function FinancePriceListsPage() {
                 <button
                   className={selectedPriceListId === priceList.id ? 'active' : ''}
                   type="button"
-                  onClick={() => startEditPriceList(priceList)}
+                  onClick={() => viewPriceList(priceList)}
                   key={priceList.id}
                 >
                   <div>
@@ -505,14 +499,24 @@ export function FinancePriceListsPage() {
           )}
         </Card>
 
-        <div className="practice-therapist-editor-stack">
+        {(isCreatingPriceList || selectedPriceList) && <div className="practice-therapist-editor-stack">
           <Card className="practice-profile-form-card">
             <div className="practice-profile-form-header">
               <div>
-                <span>{selectedPriceList ? 'Edit price list' : 'Create price list'}</span>
+                <span>{selectedPriceList ? (isPriceListEditing ? 'Edit price list' : 'Saved price list') : 'Create price list'}</span>
                 <h3>{selectedPriceList ? priceListForm.name : 'New price list'}</h3>
               </div>
-              {canEditPriceLists && (
+              {canEditPriceLists && selectedPriceList && (
+                <EditSaveControls
+                  isEditing={isPriceListEditing}
+                  isSaving={savingPriceList}
+                  onEdit={() => setIsPriceListEditing(true)}
+                  onSave={savePriceList}
+                  editLabel="Edit price list"
+                  saveLabel="Save price list"
+                />
+              )}
+              {canEditPriceLists && !selectedPriceList && (
                 <Button disabled={savingPriceList} onClick={savePriceList}>
                   {savingPriceList ? 'Saving' : 'Save Price List'}
                 </Button>
@@ -520,33 +524,31 @@ export function FinancePriceListsPage() {
             </div>
 
             <div className="settings-form-grid finance-price-list-form">
-              <label>
-                <span>Name</span>
+              <EditableField label="Name" isEditing={showPriceListFields} value={priceListForm.name}>
                 <input value={priceListForm.name} disabled={isPriceListReadOnly} onChange={(event) => updatePriceListField('name', event.target.value)} />
-              </label>
-              <label>
-                <span>List type</span>
+              </EditableField>
+              <EditableField label="List type" isEditing={showPriceListFields} value={priceListForm.list_type || 'No type'}>
                 <select value={priceListForm.list_type} disabled={isPriceListReadOnly} onChange={(event) => updatePriceListField('list_type', event.target.value)}>
                   {priceListTypeOptions.map((option) => (
                     <option value={option} key={option}>{option || 'No type'}</option>
                   ))}
                 </select>
-              </label>
-              <label>
-                <span>Status</span>
+              </EditableField>
+              <EditableField label="Status" isEditing={showPriceListFields} value={priceListForm.is_active ? 'Active' : 'Inactive'}>
                 <select value={priceListForm.is_active ? 'active' : 'inactive'} disabled={isPriceListReadOnly} onChange={(event) => updatePriceListField('is_active', event.target.value === 'active')}>
                   <option value="active">Active</option>
                   <option value="inactive">Inactive</option>
                 </select>
-              </label>
-              <label className="wide-field">
-                <span>Description</span>
+              </EditableField>
+              <EditableField className="wide-field" label="Description" isEditing={showPriceListFields} value={priceListForm.description}>
                 <textarea value={priceListForm.description} disabled={isPriceListReadOnly} onChange={(event) => updatePriceListField('description', event.target.value)} />
-              </label>
-              <label className="practice-number-toggle">
-                <input type="checkbox" checked={priceListForm.is_default} disabled={isPriceListReadOnly} onChange={(event) => updatePriceListField('is_default', event.target.checked)} />
-                <span>Default price list</span>
-              </label>
+              </EditableField>
+              <EditableField label="Default price list" isEditing={showPriceListFields} value={priceListForm.is_default ? 'Yes' : 'No'}>
+                <div className="practice-number-toggle">
+                  <input type="checkbox" checked={priceListForm.is_default} disabled={isPriceListReadOnly} onChange={(event) => updatePriceListField('is_default', event.target.checked)} />
+                  <span>Default price list</span>
+                </div>
+              </EditableField>
             </div>
           </Card>
 
@@ -558,7 +560,7 @@ export function FinancePriceListsPage() {
               </div>
               {canEditPriceLists && selectedPriceListId && (
                 <Button variant="secondary" onClick={startCreateItem}>
-                  New Procedure
+                  Add Procedure
                 </Button>
               )}
             </div>
@@ -573,7 +575,7 @@ export function FinancePriceListsPage() {
                       <button
                         className={selectedItemId === item.id ? 'active' : ''}
                         type="button"
-                        onClick={() => startEditItem(item)}
+                        onClick={() => viewItem(item)}
                         key={item.id}
                       >
                         <strong>{item.procedure_name}</strong>
@@ -589,41 +591,49 @@ export function FinancePriceListsPage() {
                   )}
                 </div>
 
-                <div className="settings-form-grid finance-procedure-form">
-                  <label>
-                    <span>Procedure name</span>
+                {(isCreatingItem || selectedItem) && <div className="practice-registration-editor-header">
+                  <span>{selectedItem ? (isItemEditing ? 'Edit procedure' : 'Saved procedure') : 'New procedure'}</span>
+                  {canEditPriceLists && selectedItem && (
+                    <EditSaveControls
+                      isEditing={isItemEditing}
+                      isSaving={savingItem}
+                      onEdit={() => setIsItemEditing(true)}
+                      onSave={saveItem}
+                      editLabel="Edit procedure"
+                      saveLabel="Save procedure"
+                    />
+                  )}
+                </div>}
+
+                {(isCreatingItem || selectedItem) && <div className="settings-form-grid finance-procedure-form">
+                  <EditableField label="Procedure name" isEditing={showItemFields} value={itemForm.procedure_name}>
                     <input value={itemForm.procedure_name} disabled={isItemReadOnly} onChange={(event) => updateItemField('procedure_name', event.target.value)} />
-                  </label>
-                  <label>
-                    <span>Procedure code</span>
+                  </EditableField>
+                  <EditableField label="Procedure code" isEditing={showItemFields} value={itemForm.procedure_code}>
                     <input value={itemForm.procedure_code} disabled={isItemReadOnly} onChange={(event) => updateItemField('procedure_code', event.target.value)} />
-                  </label>
-                  <label>
-                    <span>Price</span>
+                  </EditableField>
+                  <EditableField label="Price" isEditing={showItemFields} value={formatMoney(Number(itemForm.price || 0))}>
                     <input type="number" min="0" step="0.01" value={itemForm.price} disabled={isItemReadOnly} onChange={(event) => updateItemField('price', event.target.value)} />
-                  </label>
-                  <label>
-                    <span>Duration minutes</span>
+                  </EditableField>
+                  <EditableField label="Duration" isEditing={showItemFields} value={itemForm.duration_minutes ? `${itemForm.duration_minutes} min` : 'No duration'}>
                     <select value={itemForm.duration_minutes} disabled={isItemReadOnly} onChange={(event) => updateItemField('duration_minutes', event.target.value)}>
                       {durationOptions.map((option) => (
                         <option value={option} key={option}>{option || 'N/A'}</option>
                       ))}
                     </select>
-                  </label>
-                  <label>
-                    <span>Status</span>
+                  </EditableField>
+                  <EditableField label="Status" isEditing={showItemFields} value={itemForm.is_active ? 'Active' : 'Inactive'}>
                     <select value={itemForm.is_active ? 'active' : 'inactive'} disabled={isItemReadOnly} onChange={(event) => updateItemField('is_active', event.target.value === 'active')}>
                       <option value="active">Active</option>
                       <option value="inactive">Inactive</option>
                     </select>
-                  </label>
-                  <label className="wide-field">
-                    <span>Description</span>
+                  </EditableField>
+                  <EditableField className="wide-field" label="Description" isEditing={showItemFields} value={itemForm.description}>
                     <textarea value={itemForm.description} disabled={isItemReadOnly} onChange={(event) => updateItemField('description', event.target.value)} />
-                  </label>
-                </div>
+                  </EditableField>
+                </div>}
 
-                {canEditPriceLists && (
+                {canEditPriceLists && isCreatingItem && !selectedItem && (
                   <div className="practice-registration-actions">
                     <Button disabled={savingItem || !selectedPriceListId} onClick={saveItem}>
                       {savingItem ? 'Saving' : selectedItem ? 'Save Procedure' : 'Add Procedure'}
@@ -636,12 +646,7 @@ export function FinancePriceListsPage() {
             )}
           </Card>
 
-          {(saveError || successMessage) && (
-            <div className={`practice-profile-message ${saveError ? 'error' : 'success'}`}>
-              {saveError || successMessage}
-            </div>
-          )}
-        </div>
+        </div>}
       </div>
     </div>
   )

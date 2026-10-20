@@ -1,8 +1,11 @@
 import { useEffect, useMemo, useState } from 'react'
 import { useAuth } from '../auth/AuthContext'
 import { useAuthorization } from '../auth/permissions'
+import { EditableField } from '../components/EditableField'
+import { EditSaveControls } from '../components/EditSaveControls'
 import { EmptyState, ErrorState, LoadingState } from '../components/UiState'
 import { Button, Card, StatusBadge } from '../components/ui'
+import { showErrorNotice, showSuccessNotice } from '../lib/appNotice'
 import { isSupabaseConfigured, supabase } from '../lib/supabase'
 import type { Database } from '../lib/database.types'
 
@@ -117,16 +120,16 @@ export function PracticeLocationsPage() {
   const [formState, setFormState] = useState<PracticeLocationFormState>(emptyLocationForm)
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
+  const [isCreating, setIsCreating] = useState(false)
+  const [isEditing, setIsEditing] = useState(true)
   const [loadError, setLoadError] = useState('')
-  const [saveError, setSaveError] = useState('')
-  const [successMessage, setSuccessMessage] = useState('')
 
   const selectedLocation = useMemo(
     () => locations.find((location) => location.id === selectedLocationId) ?? null,
     [locations, selectedLocationId],
   )
-  const isCreating = !selectedLocationId
-  const isReadOnly = !canEditLocations || saving
+  const showEditableFields = isCreating || isEditing
+  const isReadOnly = !canEditLocations || saving || (!isCreating && !isEditing)
 
   useEffect(() => {
     if (!activeTenant?.id) {
@@ -148,8 +151,6 @@ export function PracticeLocationsPage() {
     async function loadLocations() {
       setLoading(true)
       setLoadError('')
-      setSaveError('')
-      setSuccessMessage('')
 
       const { data, error } = await supabaseClient
         .from('practice_locations')
@@ -195,6 +196,8 @@ export function PracticeLocationsPage() {
       setLocations((data ?? []) as PracticeLocationRow[])
       setSelectedLocationId(null)
       setFormState(emptyLocationForm)
+      setIsCreating(false)
+      setIsEditing(false)
       setLoading(false)
     }
 
@@ -207,35 +210,31 @@ export function PracticeLocationsPage() {
 
   const updateField = <Field extends keyof PracticeLocationFormState>(field: Field, value: PracticeLocationFormState[Field]) => {
     setFormState((currentFormState) => ({ ...currentFormState, [field]: value }))
-    setSaveError('')
-    setSuccessMessage('')
   }
 
   const startCreateLocation = () => {
     setSelectedLocationId(null)
     setFormState(emptyLocationForm)
-    setSaveError('')
-    setSuccessMessage('')
+    setIsCreating(true)
+    setIsEditing(true)
   }
 
-  const startEditLocation = (location: PracticeLocationRow) => {
+  const viewLocation = (location: PracticeLocationRow) => {
     setSelectedLocationId(location.id)
     setFormState(formFromLocation(location))
-    setSaveError('')
-    setSuccessMessage('')
+    setIsCreating(false)
+    setIsEditing(false)
   }
 
   const saveLocation = async () => {
     if (!activeTenant?.id || !supabase || !canEditLocations) return
 
     if (!formState.location_name.trim()) {
-      setSaveError('Location name is required.')
+      showErrorNotice('Location name is required.')
       return
     }
 
     setSaving(true)
-    setSaveError('')
-    setSuccessMessage('')
 
     const payload = toLocationPayload(formState)
 
@@ -254,7 +253,7 @@ export function PracticeLocationsPage() {
           .single()
 
     if (result.error) {
-      setSaveError(result.error.message)
+      showErrorNotice(result.error.message)
       setSaving(false)
       return
     }
@@ -269,7 +268,9 @@ export function PracticeLocationsPage() {
     })
     setSelectedLocationId(savedLocation.id)
     setFormState(formFromLocation(savedLocation))
-    setSuccessMessage(selectedLocation?.id ? 'Location updated.' : 'Location created.')
+    showSuccessNotice(selectedLocation?.id ? 'Location updated.' : 'Location created.')
+    setIsCreating(false)
+    setIsEditing(false)
     setSaving(false)
   }
 
@@ -289,22 +290,7 @@ export function PracticeLocationsPage() {
 
   return (
     <div className="practice-locations-page">
-      <Card className="practice-profile-summary">
-        <div>
-          <span>Practice locations</span>
-          <h3>{activeTenant?.practice_name ?? 'Tenant workspace'}</h3>
-          <p>
-            Manage the tenant locations used by future booking, calendar, document and billing workflows.
-            Rooms remain simple notes for now and are not a separate module in this step.
-          </p>
-        </div>
-        <div className="practice-profile-summary-actions">
-          <StatusBadge tone="info">{locations.length} locations</StatusBadge>
-          {!canEditLocations && <StatusBadge tone="warning">Read only</StatusBadge>}
-        </div>
-      </Card>
-
-      <div className="practice-locations-layout">
+      <div className={`practice-locations-layout${!isCreating && !selectedLocation ? ' is-list-only' : ''}`}>
         <Card className="practice-locations-list-card">
           <div className="practice-locations-list-header">
             <div>
@@ -313,7 +299,7 @@ export function PracticeLocationsPage() {
             </div>
             {canEditLocations && (
               <Button variant="secondary" onClick={startCreateLocation}>
-                New Location
+                Add Location
               </Button>
             )}
           </div>
@@ -329,7 +315,7 @@ export function PracticeLocationsPage() {
                 <button
                   className={selectedLocationId === location.id ? 'active' : ''}
                   type="button"
-                  onClick={() => startEditLocation(location)}
+                  onClick={() => viewLocation(location)}
                   key={location.id}
                 >
                   <div>
@@ -348,13 +334,23 @@ export function PracticeLocationsPage() {
           )}
         </Card>
 
-        <Card className="practice-profile-form-card">
+        {(isCreating || selectedLocation) && <Card className="practice-profile-form-card">
           <div className="practice-profile-form-header">
             <div>
-              <span>{isCreating ? 'Create location' : 'Edit location'}</span>
+              <span>{isCreating ? 'Create location' : isEditing ? 'Edit location' : 'Saved location'}</span>
               <h3>{isCreating ? 'New location' : formState.location_name || 'Location details'}</h3>
             </div>
-            {canEditLocations && (
+            {canEditLocations && !isCreating && (
+              <EditSaveControls
+                isEditing={isEditing}
+                isSaving={saving}
+                onEdit={() => setIsEditing(true)}
+                onSave={saveLocation}
+                editLabel="Edit location"
+                saveLabel="Save location"
+              />
+            )}
+            {canEditLocations && isCreating && (
               <Button disabled={saving} onClick={saveLocation}>
                 {saving ? 'Saving' : 'Save Location'}
               </Button>
@@ -362,79 +358,62 @@ export function PracticeLocationsPage() {
           </div>
 
           <div className="settings-form-grid practice-location-form">
-            <label>
-              <span>Location name</span>
+            <EditableField label="Location name" isEditing={showEditableFields} value={formState.location_name}>
               <input value={formState.location_name} disabled={isReadOnly} onChange={(event) => updateField('location_name', event.target.value)} />
-            </label>
-            <label>
-              <span>Location type</span>
+            </EditableField>
+            <EditableField label="Location type" isEditing={showEditableFields} value={formatLocationType(formState.location_type)}>
               <select value={formState.location_type} disabled={isReadOnly} onChange={(event) => updateField('location_type', event.target.value)}>
                 {locationTypeOptions.map((locationType) => (
                   <option value={locationType} key={locationType}>{formatLocationType(locationType)}</option>
                 ))}
               </select>
-            </label>
-            <label>
-              <span>Contact email</span>
+            </EditableField>
+            <EditableField label="Contact email" isEditing={showEditableFields} value={formState.contact_email}>
               <input type="email" value={formState.contact_email} disabled={isReadOnly} onChange={(event) => updateField('contact_email', event.target.value)} />
-            </label>
-            <label>
-              <span>Contact phone</span>
+            </EditableField>
+            <EditableField label="Contact phone" isEditing={showEditableFields} value={formState.contact_phone}>
               <input value={formState.contact_phone} disabled={isReadOnly} onChange={(event) => updateField('contact_phone', event.target.value)} />
-            </label>
-            <label>
-              <span>Address line 1</span>
+            </EditableField>
+            <EditableField label="Address line 1" isEditing={showEditableFields} value={formState.address_line_1}>
               <input value={formState.address_line_1} disabled={isReadOnly} onChange={(event) => updateField('address_line_1', event.target.value)} />
-            </label>
-            <label>
-              <span>Address line 2</span>
+            </EditableField>
+            <EditableField label="Address line 2" isEditing={showEditableFields} value={formState.address_line_2}>
               <input value={formState.address_line_2} disabled={isReadOnly} onChange={(event) => updateField('address_line_2', event.target.value)} />
-            </label>
-            <label>
-              <span>Suburb / area</span>
+            </EditableField>
+            <EditableField label="Suburb / area" isEditing={showEditableFields} value={formState.suburb}>
               <input value={formState.suburb} disabled={isReadOnly} onChange={(event) => updateField('suburb', event.target.value)} />
-            </label>
-            <label>
-              <span>City</span>
+            </EditableField>
+            <EditableField label="City" isEditing={showEditableFields} value={formState.city}>
               <input value={formState.city} disabled={isReadOnly} onChange={(event) => updateField('city', event.target.value)} />
-            </label>
-            <label>
-              <span>Province</span>
+            </EditableField>
+            <EditableField label="Province" isEditing={showEditableFields} value={formState.province}>
               <input value={formState.province} disabled={isReadOnly} onChange={(event) => updateField('province', event.target.value)} />
-            </label>
-            <label>
-              <span>Postal code</span>
+            </EditableField>
+            <EditableField label="Postal code" isEditing={showEditableFields} value={formState.postal_code}>
               <input value={formState.postal_code} disabled={isReadOnly} onChange={(event) => updateField('postal_code', event.target.value)} />
-            </label>
-            <label>
-              <span>Country</span>
+            </EditableField>
+            <EditableField label="Country" isEditing={showEditableFields} value={formState.country}>
               <select value={formState.country} disabled={isReadOnly} onChange={(event) => updateField('country', event.target.value)}>
                 {countryOptions.map((country) => <option value={country} key={country}>{country}</option>)}
               </select>
-            </label>
-            <label>
-              <span>Status</span>
+            </EditableField>
+            <EditableField label="Status" isEditing={showEditableFields} value={formState.is_active ? 'Active' : 'Inactive'}>
               <select value={formState.is_active ? 'active' : 'inactive'} disabled={isReadOnly} onChange={(event) => updateField('is_active', event.target.value === 'active')}>
                 <option value="active">Active</option>
                 <option value="inactive">Inactive</option>
               </select>
-            </label>
-            <label className="practice-number-toggle">
-              <input type="checkbox" checked={formState.is_main_location} disabled={isReadOnly} onChange={(event) => updateField('is_main_location', event.target.checked)} />
-              <span>Main location</span>
-            </label>
-            <label className="wide-field">
-              <span>Room / venue notes</span>
+            </EditableField>
+            <EditableField label="Main location" isEditing={showEditableFields} value={formState.is_main_location ? 'Yes' : 'No'}>
+              <div className="practice-number-toggle">
+                <input type="checkbox" checked={formState.is_main_location} disabled={isReadOnly} onChange={(event) => updateField('is_main_location', event.target.checked)} />
+                <span>Main location</span>
+              </div>
+            </EditableField>
+            <EditableField className="wide-field" label="Room / venue notes" isEditing={showEditableFields} value={formState.room_venue_notes}>
               <textarea value={formState.room_venue_notes} disabled={isReadOnly} onChange={(event) => updateField('room_venue_notes', event.target.value)} />
-            </label>
+            </EditableField>
           </div>
-
-          {(saveError || successMessage) && (
-            <div className={`practice-profile-message ${saveError ? 'error' : 'success'}`}>
-              {saveError || successMessage}
-            </div>
-          )}
-        </Card>
+        </Card>}
       </div>
     </div>
   )

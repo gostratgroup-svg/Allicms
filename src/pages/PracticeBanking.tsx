@@ -1,8 +1,11 @@
 import { useEffect, useMemo, useState } from 'react'
 import { useAuth } from '../auth/AuthContext'
 import { useAuthorization } from '../auth/permissions'
+import { EditableField } from '../components/EditableField'
+import { EditSaveControls } from '../components/EditSaveControls'
 import { EmptyState, ErrorState, LoadingState } from '../components/UiState'
 import { Button, Card, StatusBadge } from '../components/ui'
+import { showErrorNotice, showSuccessNotice } from '../lib/appNotice'
 import { isSupabaseConfigured, supabase } from '../lib/supabase'
 import type { Database } from '../lib/database.types'
 
@@ -74,16 +77,16 @@ export function PracticeBankingPage() {
   const [formState, setFormState] = useState<BankAccountFormState>(emptyBankAccountForm)
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
+  const [isCreating, setIsCreating] = useState(false)
+  const [isEditing, setIsEditing] = useState(true)
   const [loadError, setLoadError] = useState('')
-  const [saveError, setSaveError] = useState('')
-  const [successMessage, setSuccessMessage] = useState('')
 
   const selectedAccount = useMemo(
     () => accounts.find((account) => account.id === selectedAccountId) ?? null,
     [accounts, selectedAccountId],
   )
-  const isCreating = !selectedAccountId
-  const isReadOnly = !canEditBanking || saving
+  const showEditableFields = isCreating || isEditing
+  const isReadOnly = !canEditBanking || saving || (!isCreating && !isEditing)
 
   useEffect(() => {
     if (!activeTenant?.id) {
@@ -105,8 +108,6 @@ export function PracticeBankingPage() {
     async function loadBankAccounts() {
       setLoading(true)
       setLoadError('')
-      setSaveError('')
-      setSuccessMessage('')
 
       const { data, error } = await supabaseClient
         .from('bank_accounts')
@@ -149,6 +150,8 @@ export function PracticeBankingPage() {
       setAccounts((data ?? []) as BankAccountRow[])
       setSelectedAccountId(null)
       setFormState(emptyBankAccountForm)
+      setIsCreating(false)
+      setIsEditing(false)
       setLoading(false)
     }
 
@@ -161,22 +164,20 @@ export function PracticeBankingPage() {
 
   const updateField = <Field extends keyof BankAccountFormState>(field: Field, value: BankAccountFormState[Field]) => {
     setFormState((currentFormState) => ({ ...currentFormState, [field]: value }))
-    setSaveError('')
-    setSuccessMessage('')
   }
 
   const startCreateAccount = () => {
     setSelectedAccountId(null)
     setFormState(emptyBankAccountForm)
-    setSaveError('')
-    setSuccessMessage('')
+    setIsCreating(true)
+    setIsEditing(true)
   }
 
-  const startEditAccount = (account: BankAccountRow) => {
+  const viewAccount = (account: BankAccountRow) => {
     setSelectedAccountId(account.id)
     setFormState(formFromBankAccount(account))
-    setSaveError('')
-    setSuccessMessage('')
+    setIsCreating(false)
+    setIsEditing(false)
   }
 
   const clearOtherDefaults = async (tenantId: string, currentAccountId?: string) => {
@@ -201,13 +202,11 @@ export function PracticeBankingPage() {
     if (!activeTenant?.id || !supabase || !canEditBanking) return
 
     if (!formState.bank_name.trim() || !formState.account_holder.trim() || !formState.account_number.trim()) {
-      setSaveError('Bank name, account holder and account number are required.')
+      showErrorNotice('Bank name, account holder and account number are required.')
       return
     }
 
     setSaving(true)
-    setSaveError('')
-    setSuccessMessage('')
 
     const tenantId = activeTenant.id
     const payload = toBankAccountPayload(formState)
@@ -216,7 +215,7 @@ export function PracticeBankingPage() {
       const clearResult = await clearOtherDefaults(tenantId, selectedAccount?.id)
 
       if (clearResult.error) {
-        setSaveError(`Could not clear the previous default account: ${clearResult.error.message}`)
+        showErrorNotice(`Could not clear the previous default account: ${clearResult.error.message}`)
         setSaving(false)
         return
       }
@@ -239,7 +238,7 @@ export function PracticeBankingPage() {
           .single()
 
     if (result.error) {
-      setSaveError(result.error.message)
+      showErrorNotice(result.error.message)
       setSaving(false)
       return
     }
@@ -254,7 +253,9 @@ export function PracticeBankingPage() {
     })
     setSelectedAccountId(savedAccount.id)
     setFormState(formFromBankAccount(savedAccount))
-    setSuccessMessage(selectedAccount?.id ? 'Bank account updated.' : 'Bank account created.')
+    showSuccessNotice(selectedAccount?.id ? 'Bank account updated.' : 'Bank account created.')
+    setIsCreating(false)
+    setIsEditing(false)
     setSaving(false)
   }
 
@@ -274,22 +275,7 @@ export function PracticeBankingPage() {
 
   return (
     <div className="practice-banking-page">
-      <Card className="practice-profile-summary">
-        <div>
-          <span>Tenant-owned banking</span>
-          <h3>{activeTenant?.practice_name ?? 'Practice banking details'}</h3>
-          <p>
-            Manage practice bank accounts used by future invoices, statements and payment instructions.
-            Therapist-owned and location-owned accounts are intentionally not connected yet.
-          </p>
-        </div>
-        <div className="practice-profile-summary-actions">
-          <StatusBadge tone="info">{accounts.length} accounts</StatusBadge>
-          {!canEditBanking && <StatusBadge tone="warning">Read only</StatusBadge>}
-        </div>
-      </Card>
-
-      <div className="practice-locations-layout">
+      <div className={`practice-locations-layout${!isCreating && !selectedAccount ? ' is-list-only' : ''}`}>
         <Card className="practice-locations-list-card">
           <div className="practice-locations-list-header">
             <div>
@@ -298,7 +284,7 @@ export function PracticeBankingPage() {
             </div>
             {canEditBanking && (
               <Button variant="secondary" onClick={startCreateAccount}>
-                New Account
+                Add Account
               </Button>
             )}
           </div>
@@ -314,7 +300,7 @@ export function PracticeBankingPage() {
                 <button
                   className={selectedAccountId === account.id ? 'active' : ''}
                   type="button"
-                  onClick={() => startEditAccount(account)}
+                  onClick={() => viewAccount(account)}
                   key={account.id}
                 >
                   <div>
@@ -333,13 +319,23 @@ export function PracticeBankingPage() {
           )}
         </Card>
 
-        <Card className="practice-profile-form-card">
+        {(isCreating || selectedAccount) && <Card className="practice-profile-form-card">
           <div className="practice-profile-form-header">
             <div>
-              <span>{isCreating ? 'Create account' : 'Edit account'}</span>
+              <span>{isCreating ? 'Create account' : isEditing ? 'Edit account' : 'Saved account'}</span>
               <h3>{isCreating ? 'New bank account' : formState.bank_name || 'Bank account details'}</h3>
             </div>
-            {canEditBanking && (
+            {canEditBanking && !isCreating && (
+              <EditSaveControls
+                isEditing={isEditing}
+                isSaving={saving}
+                onEdit={() => setIsEditing(true)}
+                onSave={saveBankAccount}
+                editLabel="Edit bank account"
+                saveLabel="Save bank account"
+              />
+            )}
+            {canEditBanking && isCreating && (
               <Button disabled={saving} onClick={saveBankAccount}>
                 {saving ? 'Saving' : 'Save Account'}
               </Button>
@@ -347,49 +343,39 @@ export function PracticeBankingPage() {
           </div>
 
           <div className="settings-form-grid practice-location-form">
-            <label>
-              <span>Bank name</span>
+            <EditableField label="Bank name" isEditing={showEditableFields} value={formState.bank_name}>
               <input value={formState.bank_name} disabled={isReadOnly} onChange={(event) => updateField('bank_name', event.target.value)} />
-            </label>
-            <label>
-              <span>Account holder</span>
+            </EditableField>
+            <EditableField label="Account holder" isEditing={showEditableFields} value={formState.account_holder}>
               <input value={formState.account_holder} disabled={isReadOnly} onChange={(event) => updateField('account_holder', event.target.value)} />
-            </label>
-            <label>
-              <span>Account number</span>
+            </EditableField>
+            <EditableField label="Account number" isEditing={showEditableFields} value={formState.account_number}>
               <input value={formState.account_number} disabled={isReadOnly} onChange={(event) => updateField('account_number', event.target.value)} />
-            </label>
-            <label>
-              <span>Branch code</span>
+            </EditableField>
+            <EditableField label="Branch code" isEditing={showEditableFields} value={formState.branch_code}>
               <input value={formState.branch_code} disabled={isReadOnly} onChange={(event) => updateField('branch_code', event.target.value)} />
-            </label>
-            <label>
-              <span>Account type</span>
+            </EditableField>
+            <EditableField label="Account type" isEditing={showEditableFields} value={formState.account_type || 'Not specified'}>
               <select value={formState.account_type} disabled={isReadOnly} onChange={(event) => updateField('account_type', event.target.value)}>
                 {accountTypeOptions.map((accountType) => (
                   <option value={accountType} key={accountType}>{accountType || 'Not specified'}</option>
                 ))}
               </select>
-            </label>
-            <label>
-              <span>Status</span>
+            </EditableField>
+            <EditableField label="Status" isEditing={showEditableFields} value={formState.is_active ? 'Active' : 'Inactive'}>
               <select value={formState.is_active ? 'active' : 'inactive'} disabled={isReadOnly} onChange={(event) => updateField('is_active', event.target.value === 'active')}>
                 <option value="active">Active</option>
                 <option value="inactive">Inactive</option>
               </select>
-            </label>
-            <label className="practice-number-toggle">
-              <input type="checkbox" checked={formState.is_default} disabled={isReadOnly} onChange={(event) => updateField('is_default', event.target.checked)} />
-              <span>Default account</span>
-            </label>
+            </EditableField>
+            <EditableField label="Default account" isEditing={showEditableFields} value={formState.is_default ? 'Yes' : 'No'}>
+              <div className="practice-number-toggle">
+                <input type="checkbox" checked={formState.is_default} disabled={isReadOnly} onChange={(event) => updateField('is_default', event.target.checked)} />
+                <span>Default account</span>
+              </div>
+            </EditableField>
           </div>
-
-          {(saveError || successMessage) && (
-            <div className={`practice-profile-message ${saveError ? 'error' : 'success'}`}>
-              {saveError || successMessage}
-            </div>
-          )}
-        </Card>
+        </Card>}
       </div>
     </div>
   )

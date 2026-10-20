@@ -1,8 +1,11 @@
 import { useEffect, useMemo, useState } from 'react'
 import { useAuth } from '../auth/AuthContext'
 import { useAuthorization } from '../auth/permissions'
+import { EditableField } from '../components/EditableField'
+import { EditSaveControls } from '../components/EditSaveControls'
 import { EmptyState, ErrorState, LoadingState } from '../components/UiState'
 import { Button, Card, StatusBadge } from '../components/ui'
+import { showErrorNotice, showSuccessNotice } from '../lib/appNotice'
 import { isSupabaseConfigured, supabase } from '../lib/supabase'
 import type { Database } from '../lib/database.types'
 
@@ -82,16 +85,16 @@ export function PracticeCommunicationTemplatesPage() {
   const [formState, setFormState] = useState<CommunicationTemplateFormState>(emptyTemplateForm)
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
+  const [isEditing, setIsEditing] = useState(true)
   const [loadError, setLoadError] = useState('')
-  const [saveError, setSaveError] = useState('')
-  const [successMessage, setSuccessMessage] = useState('')
 
   const selectedTemplate = useMemo(
     () => templates.find((template) => template.id === selectedTemplateId) ?? null,
     [templates, selectedTemplateId],
   )
   const isCreating = !selectedTemplateId
-  const isReadOnly = !canEditTemplates || saving
+  const showEditableFields = isCreating || isEditing
+  const isReadOnly = !canEditTemplates || saving || (!isCreating && !isEditing)
 
   useEffect(() => {
     if (!activeTenant?.id) {
@@ -113,8 +116,6 @@ export function PracticeCommunicationTemplatesPage() {
     async function loadTemplates() {
       setLoading(true)
       setLoadError('')
-      setSaveError('')
-      setSuccessMessage('')
 
       const { data, error } = await supabaseClient
         .from('communication_templates')
@@ -152,6 +153,7 @@ export function PracticeCommunicationTemplatesPage() {
       setTemplates((data ?? []) as CommunicationTemplateRow[])
       setSelectedTemplateId(null)
       setFormState(emptyTemplateForm)
+      setIsEditing(true)
       setLoading(false)
     }
 
@@ -164,35 +166,29 @@ export function PracticeCommunicationTemplatesPage() {
 
   const updateField = <Field extends keyof CommunicationTemplateFormState>(field: Field, value: CommunicationTemplateFormState[Field]) => {
     setFormState((currentFormState) => ({ ...currentFormState, [field]: value }))
-    setSaveError('')
-    setSuccessMessage('')
   }
 
   const startCreateTemplate = () => {
     setSelectedTemplateId(null)
     setFormState(emptyTemplateForm)
-    setSaveError('')
-    setSuccessMessage('')
+    setIsEditing(true)
   }
 
-  const startEditTemplate = (template: CommunicationTemplateRow) => {
+  const viewTemplate = (template: CommunicationTemplateRow) => {
     setSelectedTemplateId(template.id)
     setFormState(formFromTemplate(template))
-    setSaveError('')
-    setSuccessMessage('')
+    setIsEditing(false)
   }
 
   const saveTemplate = async () => {
     if (!activeTenant?.id || !supabase || !canEditTemplates) return
 
     if (!formState.template_key.trim() || !formState.title.trim() || !formState.message_body.trim()) {
-      setSaveError('Template key, title and message body are required.')
+      showErrorNotice('Template key, title and message body are required.')
       return
     }
 
     setSaving(true)
-    setSaveError('')
-    setSuccessMessage('')
 
     const payload = toTemplatePayload(formState)
 
@@ -211,7 +207,7 @@ export function PracticeCommunicationTemplatesPage() {
           .single()
 
     if (result.error) {
-      setSaveError(result.error.message)
+      showErrorNotice(result.error.message)
       setSaving(false)
       return
     }
@@ -226,7 +222,8 @@ export function PracticeCommunicationTemplatesPage() {
     })
     setSelectedTemplateId(savedTemplate.id)
     setFormState(formFromTemplate(savedTemplate))
-    setSuccessMessage(selectedTemplate?.id ? 'Communication template updated.' : 'Communication template created.')
+    showSuccessNotice(selectedTemplate?.id ? 'Communication template updated.' : 'Communication template created.')
+    setIsEditing(false)
     setSaving(false)
   }
 
@@ -286,7 +283,7 @@ export function PracticeCommunicationTemplatesPage() {
                 <button
                   className={selectedTemplateId === template.id ? 'active' : ''}
                   type="button"
-                  onClick={() => startEditTemplate(template)}
+                  onClick={() => viewTemplate(template)}
                   key={template.id}
                 >
                   <div>
@@ -307,10 +304,20 @@ export function PracticeCommunicationTemplatesPage() {
         <Card className="practice-profile-form-card">
           <div className="practice-profile-form-header">
             <div>
-              <span>{isCreating ? 'Create template' : 'Edit template'}</span>
+              <span>{isCreating ? 'Create template' : isEditing ? 'Edit template' : 'Saved template'}</span>
               <h3>{isCreating ? 'New communication template' : formState.title || 'Template details'}</h3>
             </div>
-            {canEditTemplates && (
+            {canEditTemplates && !isCreating && (
+              <EditSaveControls
+                isEditing={isEditing}
+                isSaving={saving}
+                onEdit={() => setIsEditing(true)}
+                onSave={saveTemplate}
+                editLabel="Edit communication template"
+                saveLabel="Save communication template"
+              />
+            )}
+            {canEditTemplates && isCreating && (
               <Button disabled={saving} onClick={saveTemplate}>
                 {saving ? 'Saving' : 'Save Template'}
               </Button>
@@ -318,41 +325,35 @@ export function PracticeCommunicationTemplatesPage() {
           </div>
 
           <div className="settings-form-grid practice-communication-form">
-            <label>
-              <span>Template key</span>
+            <EditableField label="Template key" isEditing={showEditableFields} value={formatTemplateLabel(formState.template_key)}>
               <select value={formState.template_key} disabled={isReadOnly} onChange={(event) => updateField('template_key', event.target.value)}>
                 {recommendedTemplateKeys.map((templateKey) => (
                   <option value={templateKey} key={templateKey}>{formatTemplateLabel(templateKey)}</option>
                 ))}
               </select>
-            </label>
-            <label>
-              <span>Channel</span>
+            </EditableField>
+            <EditableField label="Channel" isEditing={showEditableFields} value={formatTemplateLabel(formState.channel)}>
               <select value={formState.channel} disabled={isReadOnly} onChange={(event) => updateField('channel', event.target.value)}>
                 {channelOptions.map((channel) => (
                   <option value={channel} key={channel}>{formatTemplateLabel(channel)}</option>
                 ))}
               </select>
-            </label>
-            <label>
-              <span>Automation trigger key</span>
+            </EditableField>
+            <EditableField label="Automation trigger key" isEditing={showEditableFields} value={formState.automation_trigger_key}>
               <input value={formState.automation_trigger_key} disabled={isReadOnly} onChange={(event) => updateField('automation_trigger_key', event.target.value)} />
-            </label>
-            <label>
-              <span>Status</span>
+            </EditableField>
+            <EditableField label="Status" isEditing={showEditableFields} value={formState.is_active ? 'Active' : 'Inactive'}>
               <select value={formState.is_active ? 'active' : 'inactive'} disabled={isReadOnly} onChange={(event) => updateField('is_active', event.target.value === 'active')}>
                 <option value="active">Active</option>
                 <option value="inactive">Inactive</option>
               </select>
-            </label>
-            <label className="wide-field">
-              <span>Title</span>
+            </EditableField>
+            <EditableField className="wide-field" label="Title" isEditing={showEditableFields} value={formState.title}>
               <input value={formState.title} disabled={isReadOnly} onChange={(event) => updateField('title', event.target.value)} />
-            </label>
-            <label className="wide-field">
-              <span>Message body</span>
+            </EditableField>
+            <EditableField className="wide-field" label="Message body" isEditing={showEditableFields} value={formState.message_body}>
               <textarea value={formState.message_body} disabled={isReadOnly} onChange={(event) => updateField('message_body', event.target.value)} />
-            </label>
+            </EditableField>
           </div>
 
           <Card className="practice-template-preview">
@@ -361,11 +362,6 @@ export function PracticeCommunicationTemplatesPage() {
             <p>{formState.message_body || 'Message body will preview here.'}</p>
           </Card>
 
-          {(saveError || successMessage) && (
-            <div className={`practice-profile-message ${saveError ? 'error' : 'success'}`}>
-              {saveError || successMessage}
-            </div>
-          )}
         </Card>
       </div>
     </div>

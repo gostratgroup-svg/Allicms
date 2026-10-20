@@ -3,6 +3,7 @@ import { Link, useSearchParams } from 'react-router-dom'
 import { useAuth } from '../auth/AuthContext'
 import { useAuthorization } from '../auth/permissions'
 import { EmptyState, ErrorState, LoadingState } from '../components/UiState'
+import { showErrorNotice, showSuccessNotice } from '../lib/appNotice'
 import {
   ClinicalDocumentationWorkspace,
   type ClinicalCopyForwardEvent,
@@ -613,6 +614,14 @@ export function ClinicalPage() {
   const [goalReviewRating, setGoalReviewRating] = useState('')
   const [diagnosisForm, setDiagnosisForm] = useState<DiagnosisForm>(emptyDiagnosisForm)
   const [attachmentForm, setAttachmentForm] = useState<AttachmentForm>(emptyAttachmentForm)
+
+  useEffect(() => {
+    if (actionError) showErrorNotice(actionError)
+  }, [actionError])
+
+  useEffect(() => {
+    if (successMessage) showSuccessNotice(successMessage)
+  }, [successMessage])
   const [attachmentFile, setAttachmentFile] = useState<File | null>(null)
   const [publicationForm, setPublicationForm] = useState<PublicationForm>(emptyPublicationForm)
 
@@ -654,6 +663,36 @@ export function ClinicalPage() {
     const patientId = searchParams.get('patient') ?? ''
     if (patientId && patientId !== selectedPatientId) setSelectedPatientId(patientId)
   }, [searchParams, selectedPatientId])
+
+  useEffect(() => {
+    const intent = searchParams.get('intent')
+    const sessionId = searchParams.get('session')
+    if (!intent || !selectedPatientId) return
+
+    const linkedEncounter = sessionId ? encounters.find((encounter) => encounter.session_id === sessionId) : null
+    if (sessionId && encounters.length > 0 && !linkedEncounter) {
+      setActionError('No clinical encounter is linked to this session yet. Create the encounter before adding its session note.')
+      return
+    }
+    if (sessionId && encounters.length === 0) return
+
+    setSelectedSection('notes')
+    setSelectedEncounterId(linkedEncounter?.id ?? '')
+    setSelectedNoteId('')
+    setNoteForm((current) => ({
+      ...emptyNoteForm,
+      clinical_encounter_id: linkedEncounter?.id ?? '',
+      note_type: intent === 'session_feedback' ? 'session_feedback' : 'process_note',
+      note_title: intent === 'session_feedback' ? 'Session Feedback' : 'Session Process Note',
+      clinical_visibility: intent === 'session_feedback' ? 'patient_facing' : 'internal',
+      patient_visible_allowed: intent === 'session_feedback',
+      structured_content: current.structured_content || '{}',
+    }))
+
+    const nextParams = new URLSearchParams()
+    nextParams.set('patient', selectedPatientId)
+    setSearchParams(nextParams, { replace: true })
+  }, [encounters, searchParams, selectedPatientId, setSearchParams])
 
   const clearPatientClinicalState = () => {
     setBookings([])
@@ -1941,11 +1980,6 @@ export function ClinicalPage() {
             </>
           )}
 
-          {(actionError || successMessage) && (
-            <div className={`practice-profile-message ${actionError ? 'error' : 'success'}`}>
-              {actionError || successMessage}
-            </div>
-          )}
         </div>
       </div>
     </div>

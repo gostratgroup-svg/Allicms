@@ -1,9 +1,10 @@
-import { useEffect, useMemo, useState } from 'react'
-import { Link } from 'react-router-dom'
+import { useEffect, useMemo, useRef, useState } from 'react'
+import { Link, useNavigate, useSearchParams } from 'react-router-dom'
 import { useAuth } from '../auth/AuthContext'
 import { useAuthorization } from '../auth/permissions'
 import { EmptyState, ErrorState, LoadingState } from '../components/UiState'
 import { Button, Card, SearchBar, StatusBadge } from '../components/ui'
+import { showErrorNotice, showSuccessNotice } from '../lib/appNotice'
 import { isSupabaseConfigured, supabase } from '../lib/supabase'
 import type { Database } from '../lib/database.types'
 
@@ -386,6 +387,8 @@ function toPatientPayload(formState: PatientFormState, actorProfileId: string | 
 }
 
 export function PatientsPage() {
+  const [searchParams] = useSearchParams()
+  const navigate = useNavigate()
   const { activeTenant, profile } = useAuth()
   const authorization = useAuthorization()
   const canEditPatients = authorization.hasPermission('tenant.patients.manage')
@@ -420,6 +423,15 @@ export function PatientsPage() {
   const [loadError, setLoadError] = useState('')
   const [saveError, setSaveError] = useState('')
   const [successMessage, setSuccessMessage] = useState('')
+  const createRequestHandled = useRef(false)
+
+  useEffect(() => {
+    if (saveError) showErrorNotice(saveError)
+  }, [saveError])
+
+  useEffect(() => {
+    if (successMessage) showSuccessNotice(successMessage)
+  }, [successMessage])
 
   const selectedPatient = useMemo(
     () => patients.find((patient) => patient.id === selectedPatientId) ?? null,
@@ -596,6 +608,13 @@ export function PatientsPage() {
   }, [activeTenant?.id, canReadCareDetails])
 
   useEffect(() => {
+    const requestedPatientId = searchParams.get('patient')
+    if (requestedPatientId && patients.some((patient) => patient.id === requestedPatientId)) {
+      setSelectedPatientId(requestedPatientId)
+    }
+  }, [patients, searchParams])
+
+  useEffect(() => {
     setPatientForm(formFromPatient(selectedPatient))
     setResponsiblePartyForm(formFromResponsibleParty(selectedResponsibleParty))
     setAddressForm(formFromAddress(selectedAddress))
@@ -626,6 +645,12 @@ export function PatientsPage() {
     setSaveError('')
     setSuccessMessage('')
   }
+
+  useEffect(() => {
+    if (loading || searchParams.get('new') !== '1' || createRequestHandled.current) return
+    createRequestHandled.current = true
+    startCreatePatient()
+  }, [loading, searchParams])
 
   const selectPatient = (patient: PatientRow) => {
     setSelectedPatientId(patient.id)
@@ -682,6 +707,7 @@ export function PatientsPage() {
     setSaveError('')
     setSuccessMessage('')
 
+    const isCreatingPatient = !selectedPatient?.id
     const previousStatus = selectedPatient?.patient_status ?? null
     const payload = toPatientPayload(patientForm, profile?.id ?? null)
     if (selectedPatient && valuesMatch(payload.patient_number, selectedPatient.patient_number)
@@ -747,6 +773,12 @@ export function PatientsPage() {
       metadata: {},
     })
     setSavingPatient(false)
+
+    const returnTo = searchParams.get('returnTo')
+    if (isCreatingPatient && returnTo?.startsWith('/bookings')) {
+      const separator = returnTo.includes('?') ? '&' : '?'
+      navigate(`${returnTo}${separator}patient=${encodeURIComponent(savedPatient.id)}`)
+    }
   }
 
   const archivePatient = async () => {
@@ -1618,11 +1650,6 @@ export function PatientsPage() {
             <EmptyState title="Create or select a patient" description="Patient details and related foundation records appear here." />
           )}
 
-          {(saveError || successMessage) && (
-            <div className={`practice-profile-message ${saveError ? 'error' : 'success'}`}>
-              {saveError || successMessage}
-            </div>
-          )}
         </div>
       </div>
     </div>

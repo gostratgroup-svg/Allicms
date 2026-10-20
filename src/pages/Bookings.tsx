@@ -1,11 +1,15 @@
-import { useEffect, useMemo, useState } from 'react'
-import { Link } from 'react-router-dom'
+import { useCallback, useEffect, useId, useMemo, useRef, useState } from 'react'
+import type { KeyboardEvent as ReactKeyboardEvent } from 'react'
+import { useSearchParams } from 'react-router-dom'
 import { useAuth } from '../auth/AuthContext'
 import { useAuthorization } from '../auth/permissions'
 import { EmptyState, ErrorState, LoadingState } from '../components/UiState'
+import { FinanceIcon } from '../components/icons'
 import { Button, Card, StatusBadge } from '../components/ui'
 import { isSupabaseConfigured, supabase } from '../lib/supabase'
+import { showErrorNotice, showSuccessNotice } from '../lib/appNotice'
 import type { Database, Json } from '../lib/database.types'
+import { SessionsPage } from './Sessions'
 
 type BookingRow = Database['public']['Tables']['bookings']['Row']
 type BookingInsert = Database['public']['Tables']['bookings']['Insert']
@@ -20,12 +24,18 @@ type BookingNoteUpdate = Database['public']['Tables']['booking_notes']['Update']
 type BookingWorkflowEventInsert = Database['public']['Tables']['booking_workflow_events']['Insert']
 type BookingWorkflowEventRow = Database['public']['Tables']['booking_workflow_events']['Row']
 type PatientRow = Database['public']['Tables']['patients']['Row']
+type PatientInsert = Database['public']['Tables']['patients']['Insert']
 type PatientHistoryEventInsert = Database['public']['Tables']['patient_history_events']['Insert']
 type ResponsiblePartyRow = Database['public']['Tables']['responsible_parties']['Row']
+type ResponsiblePartyInsert = Database['public']['Tables']['responsible_parties']['Insert']
 type TherapistRow = Database['public']['Tables']['therapist_profiles']['Row']
 type LocationRow = Database['public']['Tables']['practice_locations']['Row']
 type PriceListRow = Database['public']['Tables']['price_lists']['Row']
 type PriceListItemRow = Database['public']['Tables']['price_list_items']['Row']
+type SessionStatusRow = Pick<Database['public']['Tables']['sessions']['Row'], 'id' | 'booking_id' | 'session_status'>
+type InvoiceStatusRow = Pick<Database['public']['Tables']['invoices']['Row'], 'id' | 'session_id' | 'invoice_status' | 'confirmed_at' | 'issued_at'>
+type InvoiceLineStatusRow = Pick<Database['public']['Tables']['invoice_lines']['Row'], 'invoice_id' | 'source_session_procedure_id'>
+type SessionProcedureStatusRow = Pick<Database['public']['Tables']['session_procedures']['Row'], 'id' | 'session_id' | 'is_billable'>
 
 type CalendarMode = 'day' | 'week'
 
@@ -58,11 +68,29 @@ type ProcedureSelection = {
   currency_code?: string
 }
 
+type InlinePatientFormState = {
+  first_name: string
+  last_name: string
+  internal_note: string
+  guardian_first_name: string
+  guardian_last_name: string
+  guardian_email: string
+  guardian_phone: string
+}
+
 const bookingStatuses = ['draft', 'scheduled', 'confirmed', 'checked_in', 'in_progress', 'completed', 'cancelled', 'no_show', 'rescheduled']
 const blockingBookingStatuses = ['scheduled', 'confirmed', 'checked_in', 'in_progress']
 const bookingTypes = ['standard', 'assessment', 'review', 'group', 'admin', 'other']
 const bookingSources = ['internal', 'patient_link', 'phone', 'email', 'imported', 'external_calendar']
 const appointmentModes = ['in_person', 'telehealth', 'home_visit', 'school_visit', 'other']
+const bookingTimeOptions = Array.from({ length: 96 }, (_, index) => {
+  const minutes = index * 15
+  return `${String(Math.floor(minutes / 60)).padStart(2, '0')}:${String(minutes % 60).padStart(2, '0')}`
+})
+const bookingDurationOptions = Array.from({ length: 10 }, (_, index) => (index + 1) * 15)
+const defaultCalendarStartHour = 7
+const defaultCalendarEndHour = 19
+const calendarHourHeight = 72
 
 const emptyBookingForm: BookingFormState = {
   patient_id: '',
@@ -81,6 +109,16 @@ const emptyBookingForm: BookingFormState = {
   internal_admin_note: '',
 }
 
+const emptyInlinePatientForm: InlinePatientFormState = {
+  first_name: '',
+  last_name: '',
+  internal_note: '',
+  guardian_first_name: '',
+  guardian_last_name: '',
+  guardian_email: '',
+  guardian_phone: '',
+}
+
 function formatLabel(value: string) {
   return value.replaceAll('_', ' ')
 }
@@ -90,8 +128,184 @@ function formatPatientName(patient: PatientRow | null | undefined) {
   return `${patient.first_name} ${patient.last_name}`.trim()
 }
 
+type PatientComboboxProps = {
+  patients: PatientRow[]
+  selectedPatientId: string
+  canCreatePatient: boolean
+  disabled?: boolean
+  compact?: boolean
+  onSelectPatient: (patient: PatientRow) => void
+  onClearPatient?: () => void
+  onCreatePatient: () => void
+}
+
+function PatientCombobox({
+  patients,
+  selectedPatientId,
+  canCreatePatient,
+  disabled = false,
+  compact = false,
+  onSelectPatient,
+  onClearPatient,
+  onCreatePatient,
+}: PatientComboboxProps) {
+  const listId = useId()
+  const [search, setSearch] = useState(() => formatPatientName(patients.find((patient) => patient.id === selectedPatientId) ?? null).replace('Unknown patient', ''))
+  const [open, setOpen] = useState(false)
+  const [activeOptionIndex, setActiveOptionIndex] = useState(0)
+  const selectedPatient = patients.find((patient) => patient.id === selectedPatientId)
+  const filteredPatients = useMemo(() => {
+    const query = search.trim().toLowerCase()
+    if (!query) return patients
+    return patients.filter((patient) => [
+      patient.first_name,
+      patient.last_name,
+      patient.preferred_name,
+      patient.patient_number,
+      patient.email,
+      patient.phone,
+    ].some((value) => value?.toLowerCase().includes(query)))
+  }, [patients, search])
+  const optionCount = filteredPatients.length + 1
+
+  useEffect(() => {
+    if (selectedPatient) setSearch(formatPatientName(selectedPatient))
+  }, [selectedPatient])
+
+  const choosePatient = (patient: PatientRow) => {
+    onSelectPatient(patient)
+    setSearch(formatPatientName(patient))
+    setOpen(false)
+    setActiveOptionIndex(0)
+  }
+
+  const chooseActiveOption = () => {
+    if (activeOptionIndex === 0) {
+      onCreatePatient()
+      setSearch('')
+      setOpen(false)
+      return
+    }
+    const patient = filteredPatients[activeOptionIndex - 1]
+    if (patient) choosePatient(patient)
+  }
+
+  const handleKeyDown = (event: ReactKeyboardEvent<HTMLInputElement>) => {
+    if (event.key === 'ArrowDown') {
+      event.preventDefault()
+      setOpen(true)
+      setActiveOptionIndex((current) => (current + 1) % optionCount)
+    } else if (event.key === 'ArrowUp') {
+      event.preventDefault()
+      setOpen(true)
+      setActiveOptionIndex((current) => (current - 1 + optionCount) % optionCount)
+    } else if (event.key === 'Enter' && open) {
+      event.preventDefault()
+      chooseActiveOption()
+    } else if (event.key === 'Escape') {
+      setOpen(false)
+    }
+  }
+
+  return (
+    <div
+      className={`booking-patient-combobox${compact ? ' compact' : ''}`}
+      onBlur={(event) => {
+        if (!event.currentTarget.contains(event.relatedTarget)) setOpen(false)
+      }}
+    >
+      {!compact && <span>Patient</span>}
+      <div className="booking-patient-combobox-input">
+        <input
+          type="search"
+          role="combobox"
+          aria-label={compact ? 'Find patient for new booking' : 'Patient'}
+          aria-expanded={open}
+          aria-controls={listId}
+          aria-autocomplete="list"
+          aria-activedescendant={open ? `${listId}-option-${activeOptionIndex}` : undefined}
+          value={search}
+          disabled={disabled}
+          placeholder={compact ? 'Find patient' : 'Search or browse patients'}
+          onFocus={() => { setOpen(true); setActiveOptionIndex(0) }}
+          onClick={() => setOpen(true)}
+          onKeyDown={handleKeyDown}
+          onChange={(event) => {
+            setSearch(event.target.value)
+            setOpen(true)
+            setActiveOptionIndex(0)
+            if (selectedPatientId) onClearPatient?.()
+          }}
+        />
+        {search && (
+          <button
+            type="button"
+            aria-label="Clear patient search"
+            title="Clear patient search"
+            onClick={() => { setSearch(''); onClearPatient?.(); setOpen(true) }}
+          >x</button>
+        )}
+      </div>
+      {open && (
+        <div id={listId} className="booking-patient-options" role="listbox" aria-label="Patients">
+          <button
+            id={`${listId}-option-0`}
+            className={activeOptionIndex === 0 ? 'active new-patient' : 'new-patient'}
+            type="button"
+            role="option"
+            aria-selected={activeOptionIndex === 0}
+            disabled={!canCreatePatient}
+            onMouseDown={(event) => event.preventDefault()}
+            onClick={() => { onCreatePatient(); setSearch(''); setOpen(false) }}
+          >
+            <strong>+ New Patient</strong>
+            {!canCreatePatient && <small>Patient-management permission required.</small>}
+          </button>
+          {filteredPatients.map((patient, index) => (
+            <button
+              id={`${listId}-option-${index + 1}`}
+              className={activeOptionIndex === index + 1 ? 'active' : ''}
+              type="button"
+              role="option"
+              aria-selected={selectedPatientId === patient.id}
+              key={patient.id}
+              onMouseDown={(event) => event.preventDefault()}
+              onMouseEnter={() => setActiveOptionIndex(index + 1)}
+              onClick={() => choosePatient(patient)}
+            >
+              <strong>{formatPatientName(patient)}</strong>
+              <span>{patient.patient_number || 'No patient number'} · {formatLabel(patient.patient_status)}</span>
+              {(patient.email || patient.phone) && <small>{patient.email || patient.phone}</small>}
+            </button>
+          ))}
+          {filteredPatients.length === 0 && <p>No matching patients found.</p>}
+        </div>
+      )}
+    </div>
+  )
+}
+
 function formatDateInput(date: Date) {
-  return date.toISOString().slice(0, 10)
+  const year = date.getFullYear()
+  const month = String(date.getMonth() + 1).padStart(2, '0')
+  const day = String(date.getDate()).padStart(2, '0')
+  return `${year}-${month}-${day}`
+}
+
+function formatDateInTimeZone(date: Date, timeZone?: string) {
+  if (!timeZone) return formatDateInput(date)
+  try {
+    const parts = new Intl.DateTimeFormat('en', {
+      timeZone,
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit',
+    }).formatToParts(date)
+    const values = Object.fromEntries(parts.map((part) => [part.type, part.value]))
+    return `${values.year}-${values.month}-${values.day}`
+  } catch {
+    return formatDateInput(date)
+  }
 }
 
 function addDays(date: Date, days: number) {
@@ -143,6 +357,79 @@ function getBookingTone(status: string): 'neutral' | 'success' | 'warning' | 'da
   if (status === 'checked_in' || status === 'in_progress') return 'warning'
   if (status === 'confirmed') return 'info'
   return 'neutral'
+}
+
+type CalendarBookingLayout = {
+  booking: BookingRow
+  top: number
+  height: number
+  left: number
+  width: number
+}
+
+type CalendarHoverSlot = {
+  date: string
+  time: string
+  top: number
+}
+
+function getCalendarSlot(clientY: number, rect: DOMRect, calendarStartHour: number, calendarEndHour: number) {
+  const calendarMinutes = (calendarEndHour - calendarStartHour) * 60
+  const pointerMinutes = ((clientY - rect.top) / calendarHourHeight) * 60
+  const boundedMinutes = Math.max(0, Math.min(calendarMinutes - 15, pointerMinutes))
+  const intervalMinutes = Math.floor(boundedMinutes / 15) * 15
+  const absoluteMinutes = calendarStartHour * 60 + intervalMinutes
+
+  return {
+    time: `${String(Math.floor(absoluteMinutes / 60)).padStart(2, '0')}:${String(absoluteMinutes % 60).padStart(2, '0')}`,
+    top: (intervalMinutes / 60) * calendarHourHeight,
+  }
+}
+
+function layoutCalendarBookings(bookings: BookingRow[], calendarStartHour: number, calendarEndHour: number): CalendarBookingLayout[] {
+  const positioned: Array<{ booking: BookingRow; start: number; end: number; column: number }> = []
+  const columnEnds: number[] = []
+
+  bookings
+    .filter((booking) => booking.start_at && booking.end_at)
+    .filter((booking) => {
+      const startDate = new Date(booking.start_at as string)
+      const endDate = new Date(booking.end_at as string)
+      const start = startDate.getHours() * 60 + startDate.getMinutes()
+      const end = endDate.getHours() * 60 + endDate.getMinutes()
+      return end > calendarStartHour * 60 && start < calendarEndHour * 60
+    })
+    .sort((left, right) => (left.start_at ?? '').localeCompare(right.start_at ?? ''))
+    .forEach((booking) => {
+      const startDate = new Date(booking.start_at as string)
+      const endDate = new Date(booking.end_at as string)
+      const start = startDate.getHours() * 60 + startDate.getMinutes()
+      const end = endDate.getHours() * 60 + endDate.getMinutes()
+      let column = columnEnds.findIndex((columnEnd) => columnEnd <= start)
+      if (column === -1) column = columnEnds.length
+      columnEnds[column] = end
+      positioned.push({ booking, start, end, column })
+    })
+
+  return positioned.map((item) => {
+    const concurrent = positioned.filter((other) => other.start < item.end && other.end > item.start)
+    const columnCount = Math.max(1, ...concurrent.map((other) => other.column + 1))
+    const visibleStart = Math.max(item.start, calendarStartHour * 60)
+    const visibleEnd = Math.min(item.end, calendarEndHour * 60)
+    return {
+      booking: item.booking,
+      top: ((visibleStart - calendarStartHour * 60) / 60) * calendarHourHeight,
+      height: Math.max(1, ((visibleEnd - visibleStart) / 60) * calendarHourHeight),
+      left: (item.column / columnCount) * 100,
+      width: 100 / columnCount,
+    }
+  })
+}
+
+function formatCalendarHeading(date: Date, mode: CalendarMode) {
+  return date.toLocaleDateString([], mode === 'day'
+    ? { weekday: 'long', day: 'numeric', month: 'long' }
+    : { weekday: 'short', day: 'numeric' })
 }
 
 function isTerminalBooking(status: string) {
@@ -277,26 +564,33 @@ function formFromBooking(booking: BookingRow | null, note: BookingNoteRow | null
 export function BookingsPage() {
   const { activeTenant, profile } = useAuth()
   const authorization = useAuthorization()
+  const [searchParams, setSearchParams] = useSearchParams()
   const canManageBookings = authorization.hasPermission('tenant.bookings.manage')
+  const canManagePatients = authorization.hasPermission('tenant.patients.manage')
   const canReadPricing = authorization.hasPermission('tenant.finance.view', 'tenant.practice.configure')
   const canReadInternalNotes = authorization.hasRole('admin', 'receptionist', 'therapist')
+  const canReadInvoiceStatus = authorization.hasRole('admin', 'finance')
   const [patients, setPatients] = useState<PatientRow[]>([])
   const [therapists, setTherapists] = useState<TherapistRow[]>([])
   const [locations, setLocations] = useState<LocationRow[]>([])
   const [priceLists, setPriceLists] = useState<PriceListRow[]>([])
   const [priceListItems, setPriceListItems] = useState<PriceListItemRow[]>([])
   const [bookings, setBookings] = useState<BookingRow[]>([])
+  const [sessionStatuses, setSessionStatuses] = useState<SessionStatusRow[]>([])
+  const [invoiceStatuses, setInvoiceStatuses] = useState<InvoiceStatusRow[]>([])
+  const [invoiceLineStatuses, setInvoiceLineStatuses] = useState<InvoiceLineStatusRow[]>([])
+  const [sessionProcedureStatuses, setSessionProcedureStatuses] = useState<SessionProcedureStatusRow[]>([])
   const [bookingProcedures, setBookingProcedures] = useState<BookingProcedureRow[]>([])
   const [bookingNotes, setBookingNotes] = useState<BookingNoteRow[]>([])
   const [bookingStatusHistory, setBookingStatusHistory] = useState<BookingStatusHistoryRow[]>([])
   const [bookingWorkflowEvents, setBookingWorkflowEvents] = useState<BookingWorkflowEventRow[]>([])
   const [responsibleParties, setResponsibleParties] = useState<ResponsiblePartyRow[]>([])
   const [selectedBookingId, setSelectedBookingId] = useState<string | null>(null)
-  const [selectedDate, setSelectedDate] = useState(formatDateInput(new Date()))
-  const [calendarMode, setCalendarMode] = useState<CalendarMode>('day')
+  const [selectedDate, setSelectedDate] = useState(() => formatDateInTimeZone(new Date(), activeTenant?.time_zone))
+  const [calendarMode, setCalendarMode] = useState<CalendarMode>('week')
   const [therapistFilter, setTherapistFilter] = useState('all')
   const [locationFilter, setLocationFilter] = useState('all')
-  const [statusFilter, setStatusFilter] = useState('active')
+  const [statusFilter, setStatusFilter] = useState('all')
   const [formState, setFormState] = useState<BookingFormState>(emptyBookingForm)
   const [procedureSelections, setProcedureSelections] = useState<ProcedureSelection[]>([])
   const [loading, setLoading] = useState(true)
@@ -304,6 +598,41 @@ export function BookingsPage() {
   const [loadError, setLoadError] = useState('')
   const [saveError, setSaveError] = useState('')
   const [successMessage, setSuccessMessage] = useState('')
+  const [isEditorOpen, setIsEditorOpen] = useState(false)
+  const [isEditorDirty, setIsEditorDirty] = useState(false)
+  const [sessionPanelBookingId, setSessionPanelBookingId] = useState<string | null>(null)
+  const [filtersOpen, setFiltersOpen] = useState(false)
+  const [hoveredCalendarSlot, setHoveredCalendarSlot] = useState<CalendarHoverSlot | null>(null)
+  const [inlinePatientOpen, setInlinePatientOpen] = useState(false)
+  const [includeGuardian, setIncludeGuardian] = useState(false)
+  const [includePatientNote, setIncludePatientNote] = useState(false)
+  const [inlinePatientForm, setInlinePatientForm] = useState<InlinePatientFormState>(emptyInlinePatientForm)
+  const [savingInlinePatient, setSavingInlinePatient] = useState(false)
+  const [pendingGuardianPatientId, setPendingGuardianPatientId] = useState<string | null>(null)
+  const [inlinePatientError, setInlinePatientError] = useState('')
+  const [inlinePatientSuccess, setInlinePatientSuccess] = useState('')
+  const pendingCreatedBookingId = useRef<string | null>(null)
+  const lastPublishedNotice = useRef('')
+
+  useEffect(() => {
+    const message = saveError || inlinePatientError || successMessage || inlinePatientSuccess
+    if (!message) {
+      lastPublishedNotice.current = ''
+      return
+    }
+    const tone = saveError || inlinePatientError ? 'error' : 'success'
+    const noticeKey = `${tone}:${message}`
+    if (lastPublishedNotice.current === noticeKey) return
+    lastPublishedNotice.current = noticeKey
+    if (tone === 'error') showErrorNotice(message)
+    else showSuccessNotice(message)
+  }, [inlinePatientError, inlinePatientSuccess, saveError, successMessage])
+
+  const handleSessionStatusChange = useCallback((session: SessionStatusRow) => {
+    setSessionStatuses((current) => current.some((item) => item.id === session.id)
+      ? current.map((item) => (item.id === session.id ? session : item))
+      : [...current, session])
+  }, [])
 
   const selectedBooking = useMemo(
     () => bookings.find((booking) => booking.id === selectedBookingId) ?? null,
@@ -350,6 +679,7 @@ export function BookingsPage() {
     const weekStart = startOfWeek(baseDate)
     return Array.from({ length: 6 }, (_, index) => addDays(weekStart, index))
   }, [calendarMode, selectedDate])
+  const practiceToday = formatDateInTimeZone(new Date(), activeTenant?.time_zone)
   const filteredBookings = useMemo(() => {
     const dateKeys = new Set(visibleDates.map((date) => formatDateInput(date)))
 
@@ -367,6 +697,40 @@ export function BookingsPage() {
       })
       .sort((left, right) => (left.start_at ?? '').localeCompare(right.start_at ?? ''))
   }, [bookings, locationFilter, statusFilter, therapistFilter, visibleDates])
+  const visibleCalendarHours = useMemo(() => {
+    const starts = filteredBookings.filter((booking) => booking.start_at).map((booking) => new Date(booking.start_at as string).getHours())
+    const ends = filteredBookings.filter((booking) => booking.end_at).map((booking) => {
+      const end = new Date(booking.end_at as string)
+      return Math.min(24, end.getHours() + (end.getMinutes() > 0 ? 1 : 0))
+    })
+    return {
+      start: Math.max(0, Math.min(defaultCalendarStartHour, ...starts)),
+      end: Math.min(24, Math.max(defaultCalendarEndHour, ...ends)),
+    }
+  }, [filteredBookings])
+  const billableSessionIds = useMemo(
+    () => new Set(sessionProcedureStatuses.filter((procedure) => procedure.is_billable).map((procedure) => procedure.session_id)),
+    [sessionProcedureStatuses],
+  )
+  const invoicedSessionIds = useMemo(() => {
+    const issuedInvoices = invoiceStatuses.filter((invoice) => (
+      Boolean(invoice.confirmed_at)
+      && Boolean(invoice.issued_at)
+      && invoice.invoice_status !== 'cancelled'
+      && invoice.invoice_status !== 'voided'
+    ))
+    const issuedInvoiceIds = new Set(issuedInvoices.map((invoice) => invoice.id))
+    const sessionProcedureById = new Map(sessionProcedureStatuses.map((procedure) => [procedure.id, procedure]))
+    const sessionIds = new Set(issuedInvoices.flatMap((invoice) => invoice.session_id ? [invoice.session_id] : []))
+
+    invoiceLineStatuses.forEach((line) => {
+      if (!issuedInvoiceIds.has(line.invoice_id) || !line.source_session_procedure_id) return
+      const procedure = sessionProcedureById.get(line.source_session_procedure_id)
+      if (procedure?.is_billable) sessionIds.add(procedure.session_id)
+    })
+
+    return sessionIds
+  }, [invoiceLineStatuses, invoiceStatuses, sessionProcedureStatuses])
   const procedureTotal = useMemo(() => {
     return procedureSelections.reduce((total, selection) => {
       const item = priceListItems.find((priceItem) => priceItem.id === selection.price_list_item_id)
@@ -401,6 +765,7 @@ export function BookingsPage() {
     const supabaseClient = supabase
     const pricingEmptyResult = Promise.resolve({ data: [], error: null })
     const notesEmptyResult = Promise.resolve({ data: [], error: null })
+    const financeEmptyResult = Promise.resolve({ data: [], error: null })
 
     async function loadBookingWorkspace() {
       setLoading(true)
@@ -416,6 +781,10 @@ export function BookingsPage() {
         priceListsResult,
         priceListItemsResult,
         bookingsResult,
+        sessionsResult,
+        invoiceStatusesResult,
+        invoiceLineStatusesResult,
+        sessionProcedureStatusesResult,
         proceduresResult,
         statusHistoryResult,
         workflowEventsResult,
@@ -472,6 +841,32 @@ export function BookingsPage() {
           .is('deleted_at', null)
           .order('start_at', { ascending: true }),
         supabaseClient
+          .from('sessions')
+          .select('id, booking_id, session_status')
+          .eq('tenant_id', tenantId)
+          .is('deleted_at', null),
+        canReadInvoiceStatus
+          ? supabaseClient
+              .from('invoices')
+              .select('id, session_id, invoice_status, confirmed_at, issued_at')
+              .eq('tenant_id', tenantId)
+              .is('deleted_at', null)
+          : financeEmptyResult,
+        canReadInvoiceStatus
+          ? supabaseClient
+              .from('invoice_lines')
+              .select('invoice_id, source_session_procedure_id')
+              .eq('tenant_id', tenantId)
+              .is('deleted_at', null)
+          : financeEmptyResult,
+        canReadInvoiceStatus
+          ? supabaseClient
+              .from('session_procedures')
+              .select('id, session_id, is_billable')
+              .eq('tenant_id', tenantId)
+              .is('deleted_at', null)
+          : financeEmptyResult,
+        supabaseClient
           .from('booking_procedures')
           .select('id, tenant_id, booking_id, price_list_id, price_list_item_id, procedure_name, procedure_code, description, unit_price, quantity, discount_amount, adjustment_amount, line_total, duration_minutes, currency_code, is_billable, metadata, created_by_profile_id, updated_by_profile_id, deleted_at, created_at, updated_at')
           .eq('tenant_id', tenantId)
@@ -499,7 +894,7 @@ export function BookingsPage() {
 
       if (!isMounted) return
 
-      const firstError = patientsResult.error || responsiblePartiesResult.error || therapistsResult.error || locationsResult.error || priceListsResult.error || priceListItemsResult.error || bookingsResult.error || proceduresResult.error || statusHistoryResult.error || workflowEventsResult.error || notesResult.error
+      const firstError = patientsResult.error || responsiblePartiesResult.error || therapistsResult.error || locationsResult.error || priceListsResult.error || priceListItemsResult.error || bookingsResult.error || sessionsResult.error || invoiceStatusesResult.error || invoiceLineStatusesResult.error || sessionProcedureStatusesResult.error || proceduresResult.error || statusHistoryResult.error || workflowEventsResult.error || notesResult.error
       if (firstError) {
         setLoadError(firstError.message)
         setLoading(false)
@@ -515,6 +910,10 @@ export function BookingsPage() {
       setPriceListItems((priceListItemsResult.data ?? []) as PriceListItemRow[])
       const nextBookings = (bookingsResult.data ?? []) as BookingRow[]
       setBookings(nextBookings)
+      setSessionStatuses((sessionsResult.data ?? []) as SessionStatusRow[])
+      setInvoiceStatuses((invoiceStatusesResult.data ?? []) as InvoiceStatusRow[])
+      setInvoiceLineStatuses((invoiceLineStatusesResult.data ?? []) as InvoiceLineStatusRow[])
+      setSessionProcedureStatuses((sessionProcedureStatusesResult.data ?? []) as SessionProcedureStatusRow[])
       setBookingProcedures((proceduresResult.data ?? []) as BookingProcedureRow[])
       setBookingStatusHistory((statusHistoryResult.data ?? []) as BookingStatusHistoryRow[])
       setBookingWorkflowEvents((workflowEventsResult.data ?? []) as BookingWorkflowEventRow[])
@@ -534,28 +933,28 @@ export function BookingsPage() {
     return () => {
       isMounted = false
     }
-  }, [activeTenant?.id, canReadInternalNotes, canReadPricing])
+  }, [activeTenant?.id, canReadInternalNotes, canReadInvoiceStatus, canReadPricing])
 
   useEffect(() => {
+    if (!selectedBookingId) return
     const note = bookingNotes.find((bookingNote) => bookingNote.booking_id === selectedBookingId && bookingNote.note_type === 'internal_admin') ?? null
     const booking = bookings.find((currentBooking) => currentBooking.id === selectedBookingId) ?? null
+    if (!booking) return
     setFormState(formFromBooking(booking, note))
     setProcedureSelections(
-      booking
-        ? bookingProcedures
-            .filter((procedure) => procedure.booking_id === booking.id && procedure.price_list_item_id)
-            .map((procedure) => ({
-              booking_procedure_id: procedure.id,
-              price_list_item_id: procedure.price_list_item_id ?? '',
-              quantity: String(procedure.quantity),
-              procedure_name: procedure.procedure_name,
-              procedure_code: procedure.procedure_code,
-              description: procedure.description,
-              unit_price: procedure.unit_price,
-              duration_minutes: procedure.duration_minutes,
-              currency_code: procedure.currency_code,
-            }))
-      : [],
+      bookingProcedures
+        .filter((procedure) => procedure.booking_id === booking.id && procedure.price_list_item_id)
+        .map((procedure) => ({
+          booking_procedure_id: procedure.id,
+          price_list_item_id: procedure.price_list_item_id ?? '',
+          quantity: String(procedure.quantity),
+          procedure_name: procedure.procedure_name,
+          procedure_code: procedure.procedure_code,
+          description: procedure.description,
+          unit_price: procedure.unit_price,
+          duration_minutes: procedure.duration_minutes,
+          currency_code: procedure.currency_code,
+        })),
     )
   }, [bookingNotes, bookingProcedures, bookings, selectedBookingId])
 
@@ -565,27 +964,300 @@ export function BookingsPage() {
     setSelectedBookingId(filteredBookings[0]?.id ?? null)
   }, [filteredBookings, selectedBookingId])
 
-  const startNewBooking = () => {
+  const startNewBooking = (requestedDate?: string, requestedTime?: string, requestedPatientId?: string) => {
+    if (isEditorOpen && isEditorDirty && !window.confirm('Discard unsaved booking changes?')) return false
     const defaultPriceList = priceLists.find((priceList) => priceList.is_default) ?? priceLists[0] ?? null
+    const linkedTherapist = therapists.find((therapist) => therapist.user_id === profile?.id && therapist.is_active)
+    const activeLocations = locations.filter((location) => location.is_active)
+    const defaultLocation = activeLocations.find((location) => location.is_main_location)
+      ?? (activeLocations.length === 1 ? activeLocations[0] : null)
+    const requestedPatient = requestedPatientId ? patients.find((patient) => patient.id === requestedPatientId) ?? null : null
     setSelectedBookingId(null)
+    pendingCreatedBookingId.current = null
     setFormState({
       ...emptyBookingForm,
-      booking_date: selectedDate,
+      patient_id: requestedPatient?.id ?? '',
+      therapist_profile_id: linkedTherapist?.id ?? '',
+      practice_location_id: defaultLocation?.id ?? '',
+      booking_date: requestedDate ?? selectedDate,
+      start_time: requestedTime ?? emptyBookingForm.start_time,
       price_list_id: defaultPriceList?.id ?? '',
     })
     setProcedureSelections([])
+    setInlinePatientOpen(false)
+    setIncludeGuardian(false)
+    setIncludePatientNote(false)
+    setInlinePatientForm(emptyInlinePatientForm)
+    setPendingGuardianPatientId(null)
+    setInlinePatientError('')
+    setInlinePatientSuccess('')
     setSaveError('')
     setSuccessMessage('')
+    setIsEditorDirty(false)
+    setSessionPanelBookingId(null)
+    setIsEditorOpen(true)
+    return true
   }
 
+  useEffect(() => {
+    if (loading || searchParams.get('new') !== '1') return
+
+    const requestedDate = searchParams.get('date')
+    const requestedPatientId = searchParams.get('patient')
+    if (requestedDate) setSelectedDate(requestedDate)
+    startNewBooking(requestedDate ?? undefined, searchParams.get('time') ?? undefined, requestedPatientId ?? undefined)
+
+    const nextParams = new URLSearchParams(searchParams)
+    nextParams.delete('new')
+    nextParams.delete('date')
+    nextParams.delete('time')
+    nextParams.delete('patient')
+    setSearchParams(nextParams, { replace: true })
+  }, [loading, searchParams, setSearchParams])
+
   const selectBooking = (booking: BookingRow) => {
+    if (isEditorOpen && isEditorDirty && !window.confirm('Discard unsaved booking changes?')) return
     setSelectedBookingId(booking.id)
+    pendingCreatedBookingId.current = null
     setSaveError('')
     setSuccessMessage('')
+    setIsEditorDirty(false)
+    setSessionPanelBookingId(null)
+    setInlinePatientOpen(false)
+    setIsEditorOpen(true)
   }
+
+  const selectPatientForBooking = (patient: PatientRow) => {
+    updateFormField('patient_id', patient.id)
+    setInlinePatientOpen(false)
+  }
+
+  const openInlinePatientForm = () => {
+    if (!canManagePatients || selectedBooking) return
+    updateFormField('patient_id', '')
+    setInlinePatientOpen(true)
+    setIncludeGuardian(false)
+    setIncludePatientNote(false)
+    setInlinePatientForm(emptyInlinePatientForm)
+    setPendingGuardianPatientId(null)
+    setInlinePatientError('')
+    setInlinePatientSuccess('')
+  }
+
+  const updateInlinePatientField = <Field extends keyof InlinePatientFormState>(field: Field, value: InlinePatientFormState[Field]) => {
+    setInlinePatientForm((current) => ({ ...current, [field]: value }))
+    setInlinePatientError('')
+    setInlinePatientSuccess('')
+    setIsEditorDirty(true)
+  }
+
+  const saveInlinePatient = async () => {
+    if (!activeTenant?.id || !supabase || !canManagePatients || savingInlinePatient) return
+
+    const firstName = inlinePatientForm.first_name.trim()
+    const lastName = inlinePatientForm.last_name.trim()
+    const guardianFirstName = inlinePatientForm.guardian_first_name.trim()
+    const guardianLastName = inlinePatientForm.guardian_last_name.trim()
+    const guardianEmail = inlinePatientForm.guardian_email.trim()
+    const guardianPhone = inlinePatientForm.guardian_phone.trim()
+    const internalNote = inlinePatientForm.internal_note.trim()
+
+    if (!pendingGuardianPatientId && (!firstName || !lastName)) {
+      setInlinePatientError('Patient first name and surname are required.')
+      return
+    }
+    if (includeGuardian && (!guardianFirstName || !guardianLastName)) {
+      setInlinePatientError('Guardian first name and surname are required.')
+      return
+    }
+    if (includeGuardian && guardianEmail && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(guardianEmail)) {
+      setInlinePatientError('Please enter a valid guardian email address.')
+      return
+    }
+    if (includeGuardian && guardianPhone && !/^[0-9+\-()\s]{7,}$/.test(guardianPhone)) {
+      setInlinePatientError('Please enter a valid guardian cellphone number.')
+      return
+    }
+
+    setSavingInlinePatient(true)
+    setInlinePatientError('')
+    setInlinePatientSuccess('')
+
+    let savedPatient = pendingGuardianPatientId
+      ? patients.find((patient) => patient.id === pendingGuardianPatientId) ?? null
+      : null
+
+    if (!savedPatient) {
+      const patientPayload: PatientInsert = {
+        tenant_id: activeTenant.id,
+        first_name: firstName,
+        last_name: lastName,
+        patient_status: 'prospective',
+        patient_type: 'unspecified',
+        created_by_profile_id: profile?.id ?? null,
+        updated_by_profile_id: profile?.id ?? null,
+      }
+      const patientResult = await supabase.from('patients').insert(patientPayload).select().single()
+      if (patientResult.error) {
+        setInlinePatientError(patientResult.error.message)
+        setSavingInlinePatient(false)
+        return
+      }
+
+      savedPatient = patientResult.data as PatientRow
+      setPatients((current) => [...current, savedPatient as PatientRow].sort((left, right) => left.last_name.localeCompare(right.last_name) || left.first_name.localeCompare(right.first_name)))
+      setPendingGuardianPatientId(savedPatient.id)
+      updateFormField('patient_id', savedPatient.id)
+
+      await supabase.from('patient_history_events').insert({
+        tenant_id: activeTenant.id,
+        patient_id: savedPatient.id,
+        event_type: 'patient_created',
+        event_title: 'Patient created',
+        event_body: `${formatPatientName(savedPatient)} was created from New Booking.`,
+        source_table: 'patients',
+        source_id: savedPatient.id,
+        is_patient_visible: false,
+        metadata: { source: 'booking_panel' },
+        created_by_profile_id: profile?.id ?? null,
+      } satisfies PatientHistoryEventInsert)
+    }
+
+    if (internalNote) {
+      const existingNoteResult = await supabase
+        .from('patient_history_events')
+        .select('id')
+        .eq('tenant_id', activeTenant.id)
+        .eq('patient_id', savedPatient.id)
+        .eq('event_type', 'internal_patient_note')
+        .eq('source_table', 'patients')
+        .eq('source_id', savedPatient.id)
+        .is('deleted_at', null)
+        .maybeSingle()
+
+      if (existingNoteResult.error) {
+        setInlinePatientError(`Patient created and selected, but the internal note could not be checked: ${existingNoteResult.error.message}. Try again; the patient will not be duplicated.`)
+        setSavingInlinePatient(false)
+        return
+      }
+
+      if (!existingNoteResult.data) {
+        const noteResult = await supabase.from('patient_history_events').insert({
+          tenant_id: activeTenant.id,
+          patient_id: savedPatient.id,
+          event_type: 'internal_patient_note',
+          event_title: 'Internal patient note',
+          event_body: internalNote,
+          source_table: 'patients',
+          source_id: savedPatient.id,
+          is_patient_visible: false,
+          metadata: {
+            source: 'booking_panel',
+            note_kind: 'initial_patient_note',
+            visibility: 'internal',
+          },
+          created_by_profile_id: profile?.id ?? null,
+        } satisfies PatientHistoryEventInsert)
+
+        if (noteResult.error) {
+          setInlinePatientError(`Patient created and selected, but the internal note could not be saved: ${noteResult.error.message}. Try again; the patient and note will not be duplicated.`)
+          setSavingInlinePatient(false)
+          return
+        }
+      }
+    }
+
+    if (includeGuardian) {
+      const guardianPayload: ResponsiblePartyInsert = {
+        tenant_id: activeTenant.id,
+        patient_id: savedPatient.id,
+        party_type: 'person',
+        relationship_to_patient: 'parent_guardian',
+        full_name: `${guardianFirstName} ${guardianLastName}`,
+        email: guardianEmail || null,
+        phone: guardianPhone || null,
+        is_primary: true,
+        is_billing_contact: true,
+        account_responsibility_status: 'active',
+        metadata: { source: 'booking_panel' },
+        created_by_profile_id: profile?.id ?? null,
+        updated_by_profile_id: profile?.id ?? null,
+      }
+      const guardianResult = await supabase.from('responsible_parties').insert(guardianPayload).select().single()
+      if (guardianResult.error) {
+        setInlinePatientError(`Patient created and selected, but the guardian could not be saved: ${guardianResult.error.message}. Correct the details and try again; the patient will not be duplicated.`)
+        setSavingInlinePatient(false)
+        return
+      }
+      const savedGuardian = guardianResult.data as ResponsiblePartyRow
+      setResponsibleParties((current) => [...current, savedGuardian])
+      await supabase.from('patient_history_events').insert({
+        tenant_id: activeTenant.id,
+        patient_id: savedPatient.id,
+        event_type: 'responsible_party_added',
+        event_title: 'Responsible party added',
+        event_body: `${savedGuardian.full_name} was added as parent or guardian.`,
+        source_table: 'responsible_parties',
+        source_id: savedGuardian.id,
+        is_patient_visible: false,
+        metadata: { source: 'booking_panel' },
+        created_by_profile_id: profile?.id ?? null,
+      } satisfies PatientHistoryEventInsert)
+    }
+
+    setPendingGuardianPatientId(null)
+    setInlinePatientOpen(false)
+    setIncludeGuardian(false)
+    setIncludePatientNote(false)
+    setInlinePatientForm(emptyInlinePatientForm)
+    setInlinePatientSuccess(`${formatPatientName(savedPatient)} was created and selected.`)
+    setSuccessMessage(`${formatPatientName(savedPatient)} was created and selected. Save the booking when the appointment details are ready.`)
+    setSavingInlinePatient(false)
+  }
+
+  const closeBookingEditor = () => {
+    if (saving || savingInlinePatient) return
+    if (isEditorDirty && !window.confirm('Discard unsaved booking changes?')) return
+    setIsEditorOpen(false)
+    setIsEditorDirty(false)
+  }
+
+  const openSessionPanel = (booking: BookingRow) => {
+    if (isEditorOpen && isEditorDirty && !window.confirm('Discard unsaved booking changes?')) return
+    setIsEditorOpen(false)
+    setIsEditorDirty(false)
+    setSessionPanelBookingId(booking.id)
+  }
+
+  const closeSessionPanel = () => {
+    if (!window.confirm('Close the session workspace? Any unsaved session edits will be lost.')) return
+    setSessionPanelBookingId(null)
+  }
+
+  useEffect(() => {
+    if (!isEditorOpen && !sessionPanelBookingId) return
+
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key !== 'Escape') return
+      if (isEditorOpen) closeBookingEditor()
+      if (sessionPanelBookingId) closeSessionPanel()
+    }
+    const handleBeforeUnload = (event: BeforeUnloadEvent) => {
+      if (!isEditorDirty) return
+      event.preventDefault()
+    }
+
+    document.addEventListener('keydown', handleKeyDown)
+    window.addEventListener('beforeunload', handleBeforeUnload)
+    return () => {
+      document.removeEventListener('keydown', handleKeyDown)
+      window.removeEventListener('beforeunload', handleBeforeUnload)
+    }
+  }, [isEditorDirty, isEditorOpen, saving, savingInlinePatient, sessionPanelBookingId])
 
   const updateFormField = <Field extends keyof BookingFormState>(field: Field, value: BookingFormState[Field]) => {
     setFormState((current) => ({ ...current, [field]: value }))
+    setIsEditorDirty(true)
     setSaveError('')
     setSuccessMessage('')
   }
@@ -599,16 +1271,19 @@ export function BookingsPage() {
     const firstItem = activePriceListItems[0]
     if (!firstItem) return
     setProcedureSelections((current) => [...current, { price_list_item_id: firstItem.id, quantity: '1' }])
+    setIsEditorDirty(true)
   }
 
   const updateProcedureSelection = (index: number, nextSelection: Partial<ProcedureSelection>) => {
     setProcedureSelections((current) => current.map((selection, currentIndex) => (
       currentIndex === index ? { ...selection, ...nextSelection } : selection
     )))
+    setIsEditorDirty(true)
   }
 
   const removeProcedureSelection = (index: number) => {
     setProcedureSelections((current) => current.filter((_, currentIndex) => currentIndex !== index))
+    setIsEditorDirty(true)
   }
 
   const createPatientHistoryEvent = async (eventType: string, booking: BookingRow, sourceTable: string, sourceId: string, description?: string) => {
@@ -804,6 +1479,7 @@ export function BookingsPage() {
     setSaving(true)
     setSaveError('')
     setSuccessMessage('')
+    const isNewBooking = !selectedBooking
 
     const duration = Number(formState.duration_minutes)
     const start = combineDateTime(formState.booking_date, formState.start_time)
@@ -839,11 +1515,12 @@ export function BookingsPage() {
       updated_by_profile_id: profile?.id ?? null,
     }
 
-    const bookingResult = selectedBooking
+    const bookingIdToUpdate = selectedBooking?.id ?? pendingCreatedBookingId.current
+    const bookingResult = bookingIdToUpdate
       ? await supabase
           .from('bookings')
-          .update(bookingPayload satisfies BookingUpdate)
-          .eq('id', selectedBooking.id)
+          .update({ ...bookingPayload, patient_id: formState.patient_id } satisfies BookingUpdate)
+          .eq('id', bookingIdToUpdate)
           .eq('tenant_id', activeTenant.id)
           .select()
           .single()
@@ -865,6 +1542,7 @@ export function BookingsPage() {
     }
 
     const savedBooking = bookingResult.data as BookingRow
+    if (isNewBooking) pendingCreatedBookingId.current = savedBooking.id
 
     let savedProcedures: BookingProcedureRow[] = bookingProcedures.filter((procedure) => procedure.booking_id === savedBooking.id)
     if (canReadPricing) {
@@ -1021,7 +1699,8 @@ export function BookingsPage() {
     }
 
     setBookings((currentBookings) => {
-      const nextBookings = selectedBooking
+      const bookingAlreadyLoaded = currentBookings.some((booking) => booking.id === savedBooking.id)
+      const nextBookings = bookingAlreadyLoaded
         ? currentBookings.map((booking) => (booking.id === savedBooking.id ? savedBooking : booking))
         : [...currentBookings, savedBooking]
       return nextBookings.sort((left, right) => (left.start_at ?? '').localeCompare(right.start_at ?? ''))
@@ -1031,8 +1710,11 @@ export function BookingsPage() {
       ...savedProcedures,
     ])
     setSelectedBookingId(savedBooking.id)
-    setSuccessMessage(selectedBooking ? 'Booking updated.' : 'Booking created.')
+    setSuccessMessage(isNewBooking ? 'Booking created.' : 'Booking updated.')
+    setIsEditorDirty(false)
+    pendingCreatedBookingId.current = null
     setSaving(false)
+    if (isNewBooking) setIsEditorOpen(false)
   }
 
   const updateStatus = async (nextStatus: string) => {
@@ -1142,100 +1824,230 @@ export function BookingsPage() {
 
   return (
     <div className="booking-engine-page">
-      <Card className="practice-profile-summary">
-        <div>
-          <span>Booking Engine</span>
-          <h3>{activeTenant?.practice_name ?? 'Bookings workspace'}</h3>
-          <p>Manage tenant bookings, calendar visibility, procedure snapshots and booking workflow readiness. Sessions and invoices remain deferred.</p>
-        </div>
-        <div className="practice-profile-summary-actions">
-          <StatusBadge tone="info">{bookings.length} bookings</StatusBadge>
-          {!canManageBookings && <StatusBadge tone="warning">Read only</StatusBadge>}
-        </div>
-      </Card>
-
-      <div className="booking-toolbar">
-        <div className="booking-toolbar-group">
-          <button type="button" onClick={() => setSelectedDate(formatDateInput(addDays(new Date(`${selectedDate}T00:00:00`), calendarMode === 'day' ? -1 : -7)))}>&lt;</button>
-          <button type="button" onClick={() => setSelectedDate(formatDateInput(new Date()))}>Today</button>
-          <button type="button" onClick={() => setSelectedDate(formatDateInput(addDays(new Date(`${selectedDate}T00:00:00`), calendarMode === 'day' ? 1 : 7)))}>&gt;</button>
-          <input type="date" value={selectedDate} onChange={(event) => setSelectedDate(event.target.value)} />
-        </div>
-        <div className="booking-toolbar-group">
-          <button className={calendarMode === 'day' ? 'active' : ''} type="button" onClick={() => setCalendarMode('day')}>Day</button>
-          <button className={calendarMode === 'week' ? 'active' : ''} type="button" onClick={() => setCalendarMode('week')}>Week</button>
-        </div>
-        {canManageBookings && <Button onClick={startNewBooking}>New Booking</Button>}
-      </div>
-
-      <div className="booking-filter-row">
-        <label><span>Therapist</span><select value={therapistFilter} onChange={(event) => setTherapistFilter(event.target.value)}><option value="all">All therapists</option>{therapists.map((therapist) => <option value={therapist.id} key={therapist.id}>{therapist.display_name}</option>)}</select></label>
-        <label><span>Location</span><select value={locationFilter} onChange={(event) => setLocationFilter(event.target.value)}><option value="all">All locations</option>{locations.map((location) => <option value={location.id} key={location.id}>{location.location_name}</option>)}</select></label>
-        <label><span>Status</span><select value={statusFilter} onChange={(event) => setStatusFilter(event.target.value)}><option value="active">Active bookings</option><option value="all">All statuses</option>{bookingStatuses.map((status) => <option value={status} key={status}>{formatLabel(status)}</option>)}</select></label>
-      </div>
-
-      <div className="booking-workspace-layout">
-        <Card className="booking-calendar-card">
-          <div className="practice-locations-list-header">
-            <div>
-              <span>{calendarMode === 'day' ? 'Day view' : 'Week view'}</span>
-              <h3>{calendarMode === 'day' ? selectedDate : `${formatDateInput(visibleDates[0])} to ${formatDateInput(visibleDates[visibleDates.length - 1])}`}</h3>
-            </div>
-            <StatusBadge tone="neutral">{filteredBookings.length} shown</StatusBadge>
+      <header className="practice-calendar-header">
+        <div className="practice-calendar-heading">
+          <h1>{new Date(`${selectedDate}T00:00:00`).toLocaleDateString([], { month: 'long', year: 'numeric' })}</h1>
+          <div className="practice-calendar-period-navigation" aria-label="Calendar date navigation">
+            <button type="button" onClick={() => setSelectedDate(formatDateInput(addDays(new Date(`${selectedDate}T00:00:00`), calendarMode === 'day' ? -1 : -7)))} aria-label="Previous period" title="Previous period">&lsaquo;</button>
+            <button type="button" onClick={() => setSelectedDate(formatDateInput(addDays(new Date(`${selectedDate}T00:00:00`), calendarMode === 'day' ? 1 : 7)))} aria-label="Next period" title="Next period">&rsaquo;</button>
           </div>
+        </div>
+        <div className="practice-calendar-actions">
+          <div className="practice-calendar-segmented" aria-label="Calendar view">
+            <button className={calendarMode === 'day' ? 'active' : ''} type="button" onClick={() => setCalendarMode('day')}>Day</button>
+            <button className={calendarMode === 'week' ? 'active' : ''} type="button" onClick={() => setCalendarMode('week')}>Week</button>
+          </div>
+          <button className={filtersOpen ? 'active' : ''} type="button" onClick={() => setFiltersOpen((current) => !current)}>Filters</button>
+          {canManageBookings && <Button onClick={() => startNewBooking()}>Add Booking</Button>}
+        </div>
+        {!canManageBookings && <span className="practice-calendar-readonly">Read only</span>}
+      </header>
 
-          {filteredBookings.length === 0 ? (
-            <EmptyState title="No bookings for this view" description="Adjust the filters or create a new booking for this date range." />
-          ) : (
-            <div className="booking-agenda-list">
-              {filteredBookings.map((booking) => {
-                const patient = patients.find((currentPatient) => currentPatient.id === booking.patient_id)
-                const therapist = therapists.find((currentTherapist) => currentTherapist.id === booking.therapist_profile_id)
-                const location = locations.find((currentLocation) => currentLocation.id === booking.practice_location_id)
-                return (
-                  <button className={selectedBookingId === booking.id ? 'active' : ''} type="button" onClick={() => selectBooking(booking)} key={booking.id}>
-                    <div className="booking-agenda-time">
-                      <strong>{formatTime(booking.start_at)}</strong>
-                      <span>{booking.duration_minutes ?? 0} min</span>
-                    </div>
-                    <div>
-                      <strong>{formatPatientName(patient)}</strong>
-                      <span>{therapist?.display_name ?? 'No therapist'} · {location?.location_name ?? 'No location'}</span>
-                    </div>
-                    <StatusBadge tone={getBookingTone(booking.booking_status)}>{formatLabel(booking.booking_status)}</StatusBadge>
-                  </button>
-                )
-              })}
+      {filtersOpen && (
+        <div className="practice-calendar-filters">
+          <label><span>Therapist</span><select value={therapistFilter} onChange={(event) => setTherapistFilter(event.target.value)}><option value="all">All therapists</option>{therapists.map((therapist) => <option value={therapist.id} key={therapist.id}>{therapist.display_name}</option>)}</select></label>
+          <label><span>Location</span><select value={locationFilter} onChange={(event) => setLocationFilter(event.target.value)}><option value="all">All locations</option>{locations.map((location) => <option value={location.id} key={location.id}>{location.location_name}</option>)}</select></label>
+          <label><span>Status</span><select value={statusFilter} onChange={(event) => setStatusFilter(event.target.value)}><option value="active">Active bookings</option><option value="all">All statuses</option>{bookingStatuses.map((status) => <option value={status} key={status}>{formatLabel(status)}</option>)}</select></label>
+        </div>
+      )}
+
+      <section className="practice-time-calendar" aria-label={`${calendarMode} calendar`}>
+        <div className="practice-calendar-days" style={{ gridTemplateColumns: `60px repeat(${visibleDates.length}, minmax(${calendarMode === 'day' ? '520px' : '150px'}, 1fr))` }}>
+          <div className="practice-calendar-corner" />
+          {visibleDates.map((date) => {
+            const dateKey = formatDateInput(date)
+            const isToday = dateKey === practiceToday
+            return (
+              <div className={`practice-calendar-day-heading${isToday ? ' today' : ''}`} key={dateKey}>
+                <span>{date.toLocaleDateString([], { weekday: 'short' })}</span>
+                <div className="practice-calendar-date-number">
+                  <strong>{date.getDate()}</strong>
+                  {isToday && <span className="practice-calendar-today-line" aria-hidden="true" />}
+                </div>
+              </div>
+            )
+          })}
+        </div>
+        <div className="practice-calendar-scroll">
+          <div className="practice-calendar-grid" style={{ gridTemplateColumns: `60px repeat(${visibleDates.length}, minmax(${calendarMode === 'day' ? '520px' : '150px'}, 1fr))`, height: `${(visibleCalendarHours.end - visibleCalendarHours.start) * calendarHourHeight}px` }}>
+            <div className="practice-calendar-times">
+              {Array.from({ length: visibleCalendarHours.end - visibleCalendarHours.start + 1 }, (_, index) => visibleCalendarHours.start + index).map((hour) => (
+                <span style={{ top: `${(hour - visibleCalendarHours.start) * calendarHourHeight}px` }} key={hour}>{String(hour).padStart(2, '0')}:00</span>
+              ))}
             </div>
-          )}
-        </Card>
+            {visibleDates.map((date) => {
+              const dateKey = formatDateInput(date)
+              const dayBookings = filteredBookings.filter((booking) => booking.start_at && formatDateInput(new Date(booking.start_at)) === dateKey)
+              const layout = layoutCalendarBookings(dayBookings, visibleCalendarHours.start, visibleCalendarHours.end)
+              return (
+                <div className="practice-calendar-day-column" key={dateKey}>
+                  <button
+                    className="practice-calendar-empty-space"
+                    type="button"
+                    aria-label={`Create booking on ${formatCalendarHeading(date, 'day')}`}
+                    onMouseMove={(event) => {
+                      if (!canManageBookings) return
+                      const slot = getCalendarSlot(event.clientY, event.currentTarget.getBoundingClientRect(), visibleCalendarHours.start, visibleCalendarHours.end)
+                      setHoveredCalendarSlot({ date: dateKey, ...slot })
+                    }}
+                    onMouseLeave={() => setHoveredCalendarSlot((current) => current?.date === dateKey ? null : current)}
+                    onClick={(event) => {
+                      if (!canManageBookings || event.detail > 1) return
+                      const slot = getCalendarSlot(event.clientY, event.currentTarget.getBoundingClientRect(), visibleCalendarHours.start, visibleCalendarHours.end)
+                      setSelectedDate(dateKey)
+                      startNewBooking(dateKey, slot.time)
+                    }}
+                  >
+                    {hoveredCalendarSlot?.date === dateKey && (
+                      <span className="practice-calendar-hover-slot" style={{ top: `${hoveredCalendarSlot.top}px` }} aria-hidden="true">
+                        <span>{hoveredCalendarSlot.time}</span>
+                      </span>
+                    )}
+                  </button>
+                  {layout.map(({ booking, top, height, left, width }) => {
+                    const patient = patients.find((item) => item.id === booking.patient_id)
+                    const procedure = bookingProcedures.find((item) => item.booking_id === booking.id)
+                    const linkedSession = sessionStatuses.find((session) => session.booking_id === booking.id)
+                    const isCompletedSession = linkedSession?.session_status === 'completed'
+                    const isBillableSession = Boolean(linkedSession && billableSessionIds.has(linkedSession.id))
+                    const isSessionInvoiced = Boolean(linkedSession && invoicedSessionIds.has(linkedSession.id))
+                    const terminalStatusLabel = isCompletedSession
+                      ? 'Completed'
+                      : booking.booking_status === 'cancelled'
+                        ? 'Cancelled'
+                        : booking.booking_status === 'no_show'
+                          ? 'No show'
+                          : null
+                    const renderedMinutes = Math.round((height / calendarHourHeight) * 60)
+                    const density = renderedMinutes < 30
+                      ? 'single-line'
+                      : renderedMinutes < 45
+                        ? 'two-line'
+                        : renderedMinutes < 60
+                          ? 'three-line'
+                          : 'full'
+                    const showTime = renderedMinutes >= 30
+                    const showService = renderedMinutes >= 45
+                    const showControls = renderedMinutes >= 60
+                    const patientName = formatPatientName(patient)
+                    const serviceName = procedure?.procedure_name ?? booking.patient_facing_title ?? formatLabel(booking.booking_type)
+                    const appointmentLabel = `${patientName}, ${formatTime(booking.start_at)} to ${formatTime(booking.end_at)}, ${serviceName}, ${terminalStatusLabel ?? formatLabel(booking.booking_status)}`
+                    return (
+                      <article className={`practice-calendar-event density-${density} status-${booking.booking_status}${isCompletedSession ? ' completed-session' : ''}${terminalStatusLabel && showControls ? ' has-status-label' : ''}`} style={{ top, height, left: `calc(${left}% + 3px)`, width: `calc(${width}% - 6px)` }} title={appointmentLabel} key={booking.id}>
+                        <button className="practice-calendar-event-open" type="button" onClick={() => { setSelectedDate(dateKey); openSessionPanel(booking) }} aria-label={`Open session for ${appointmentLabel}`}>
+                          <strong>{patientName}</strong>
+                          {showTime && <span className="practice-calendar-event-time">{formatTime(booking.start_at)} – {formatTime(booking.end_at)}</span>}
+                          {showService && <small className="practice-calendar-event-service">{serviceName}</small>}
+                        </button>
+                        {showControls && (terminalStatusLabel
+                          ? <span className="practice-calendar-event-status-label">{terminalStatusLabel}</span>
+                          : canManageBookings && <button className="practice-calendar-event-edit" type="button" onClick={() => { setSelectedDate(dateKey); selectBooking(booking) }} aria-label={`Edit booking for ${patientName}`} title="Edit booking">Edit</button>)}
+                        {showControls && isCompletedSession && isBillableSession && canReadInvoiceStatus && (
+                          <span className="practice-calendar-event-indicators">
+                            <span
+                              className={`practice-calendar-finance-indicator ${isSessionInvoiced ? 'invoiced' : 'not-invoiced'}`}
+                              role="img"
+                              aria-label={isSessionInvoiced ? 'Session invoiced' : 'Session not yet invoiced'}
+                              title={isSessionInvoiced ? 'Session invoiced' : 'Session not yet invoiced'}
+                            >
+                              <FinanceIcon size={13} />
+                            </span>
+                          </span>
+                        )}
+                      </article>
+                    )
+                  })}
+                </div>
+              )
+            })}
+          </div>
+        </div>
+      </section>
 
-        <div className="booking-editor-stack">
+      {isEditorOpen && (
+        <div className="practice-side-panel-backdrop" role="presentation" onMouseDown={(event) => { if (event.currentTarget === event.target) closeBookingEditor() }}>
+          <section className="practice-side-panel practice-booking-panel" role="dialog" aria-modal="true" aria-label={selectedBooking ? 'Edit booking' : 'New booking'}>
+            <div className="modal-header">
+              <div><h2>{selectedBooking ? 'Edit Booking' : 'New Booking'}</h2></div>
+              <button type="button" className="modal-close" onClick={closeBookingEditor} disabled={saving || savingInlinePatient} aria-label="Close booking editor">x</button>
+            </div>
+            <div className="modal-body booking-editor-stack">
           <Card className="practice-profile-form-card">
-            <div className="practice-profile-form-header">
-              <div>
-                <span>{selectedBooking ? 'Booking detail' : 'Create booking'}</span>
-                <h3>{selectedBooking ? formatPatientName(patients.find((patient) => patient.id === selectedBooking.patient_id)) : 'New Booking'}</h3>
+            <div className="practice-profile-form-header booking-editor-header">
+              <div className="booking-editor-patient-search">
+                <PatientCombobox
+                  patients={patients}
+                  selectedPatientId={formState.patient_id}
+                  canCreatePatient={canManagePatients && !Boolean(selectedBooking)}
+                  disabled={!canEditSelectedBooking || saving}
+                  onSelectPatient={selectPatientForBooking}
+                  onClearPatient={() => updateFormField('patient_id', '')}
+                  onCreatePatient={openInlinePatientForm}
+                />
               </div>
               <div className="patients-action-row">
-                {canManageBookings && <Button disabled={saving || !canEditSelectedBooking} onClick={saveBooking}>{saving ? 'Saving' : selectedBooking ? 'Save Booking' : 'Create Booking'}</Button>}
+                {canManageBookings && <Button disabled={saving || savingInlinePatient || inlinePatientOpen || !canEditSelectedBooking} onClick={saveBooking}>{saving ? 'Saving' : selectedBooking ? 'Save Booking' : 'Create Booking'}</Button>}
               </div>
             </div>
 
             <div className="settings-form-grid booking-form-grid">
-              <label><span>Patient</span><select value={formState.patient_id} disabled={!canEditSelectedBooking || saving} onChange={(event) => updateFormField('patient_id', event.target.value)}><option value="">Select patient</option>{patients.map((patient) => <option value={patient.id} key={patient.id}>{formatPatientName(patient)} · {formatLabel(patient.patient_status)}</option>)}</select></label>
+              {inlinePatientOpen && (
+                <section className="wide-field booking-inline-patient" aria-label="New patient">
+                  <div className="booking-inline-patient-heading">
+                    <div><span>New patient</span><strong>Basic patient details</strong></div>
+                    <button type="button" disabled={savingInlinePatient} onClick={() => { setInlinePatientOpen(false); setIncludeGuardian(false); setIncludePatientNote(false); setPendingGuardianPatientId(null); setInlinePatientError('') }}>Cancel</button>
+                  </div>
+                  <div className="booking-inline-patient-grid">
+                    <label><span>First name *</span><input autoFocus value={inlinePatientForm.first_name} disabled={savingInlinePatient || Boolean(pendingGuardianPatientId)} onChange={(event) => updateInlinePatientField('first_name', event.target.value)} /></label>
+                    <label><span>Surname *</span><input value={inlinePatientForm.last_name} disabled={savingInlinePatient || Boolean(pendingGuardianPatientId)} onChange={(event) => updateInlinePatientField('last_name', event.target.value)} /></label>
+                  </div>
+                  <div className="booking-inline-optional-actions">
+                    {!includeGuardian && <button className="booking-add-guardian" type="button" disabled={savingInlinePatient} onClick={() => { setIncludeGuardian(true); setIsEditorDirty(true) }}>+ Add Parent / Guardian</button>}
+                    {!includePatientNote && <button className="booking-add-guardian" type="button" disabled={savingInlinePatient} onClick={() => { setIncludePatientNote(true); setIsEditorDirty(true) }}>+ Add Note</button>}
+                  </div>
+                  {includeGuardian && (
+                    <div className="booking-inline-guardian">
+                      <div className="booking-inline-patient-heading"><strong>Parent / Guardian</strong><button type="button" disabled={savingInlinePatient} onClick={() => { setIncludeGuardian(false); setInlinePatientError('') }}>Remove</button></div>
+                      <div className="booking-inline-patient-grid">
+                        <label><span>Guardian first name *</span><input value={inlinePatientForm.guardian_first_name} disabled={savingInlinePatient} onChange={(event) => updateInlinePatientField('guardian_first_name', event.target.value)} /></label>
+                        <label><span>Guardian surname *</span><input value={inlinePatientForm.guardian_last_name} disabled={savingInlinePatient} onChange={(event) => updateInlinePatientField('guardian_last_name', event.target.value)} /></label>
+                        <label><span>Guardian email</span><input type="email" value={inlinePatientForm.guardian_email} disabled={savingInlinePatient} onChange={(event) => updateInlinePatientField('guardian_email', event.target.value)} /></label>
+                        <label><span>Guardian cellphone</span><input type="tel" value={inlinePatientForm.guardian_phone} disabled={savingInlinePatient} onChange={(event) => updateInlinePatientField('guardian_phone', event.target.value)} /></label>
+                      </div>
+                    </div>
+                  )}
+                  {includePatientNote && (
+                    <div className="booking-inline-note">
+                      <label>
+                        <span>Internal patient note</span>
+                        <textarea
+                          rows={3}
+                          value={inlinePatientForm.internal_note}
+                          disabled={savingInlinePatient}
+                          placeholder="Add a quick internal note"
+                          onChange={(event) => updateInlinePatientField('internal_note', event.target.value)}
+                        />
+                      </label>
+                      <button type="button" disabled={savingInlinePatient} onClick={() => { setIncludePatientNote(false); updateInlinePatientField('internal_note', '') }}>Remove note</button>
+                    </div>
+                  )}
+                  <div className="booking-inline-patient-actions">
+                    <Button disabled={savingInlinePatient} onClick={saveInlinePatient}>{savingInlinePatient ? 'Saving Patient' : pendingGuardianPatientId && includeGuardian ? 'Retry Guardian' : pendingGuardianPatientId ? 'Continue' : 'Save New Patient'}</Button>
+                  </div>
+                </section>
+              )}
               <label><span>Therapist</span><select value={formState.therapist_profile_id} disabled={!canEditSelectedBooking || saving} onChange={(event) => updateFormField('therapist_profile_id', event.target.value)}><option value="">Select therapist</option>{therapists.map((therapist) => <option value={therapist.id} key={therapist.id}>{therapist.display_name}{therapist.is_active ? '' : ' · inactive'}</option>)}</select></label>
               <label><span>Location</span><select value={formState.practice_location_id} disabled={!canEditSelectedBooking || saving} onChange={(event) => updateFormField('practice_location_id', event.target.value)}><option value="">Select location</option>{locations.map((location) => <option value={location.id} key={location.id}>{location.location_name}{location.is_active ? '' : ' · inactive'}</option>)}</select></label>
               <label><span>Date</span><input type="date" value={formState.booking_date} disabled={!canEditSelectedBooking || saving} onChange={(event) => updateFormField('booking_date', event.target.value)} /></label>
-              <label><span>Start time</span><input type="time" value={formState.start_time} disabled={!canEditSelectedBooking || saving} onChange={(event) => updateFormField('start_time', event.target.value)} /></label>
-              <label><span>Duration minutes</span><input type="number" min="15" step="15" value={formState.duration_minutes} disabled={!canEditSelectedBooking || saving} onChange={(event) => updateFormField('duration_minutes', event.target.value)} /></label>
-              <label><span>Status</span><select value={formState.booking_status} disabled={!canEditSelectedBooking || saving} onChange={(event) => updateFormField('booking_status', event.target.value)}>{editableStatusOptions.map((status) => <option value={status} key={status}>{formatLabel(status)}</option>)}</select></label>
-              <label><span>Booking type</span><select value={formState.booking_type} disabled={!canEditSelectedBooking || saving} onChange={(event) => updateFormField('booking_type', event.target.value)}>{bookingTypes.map((type) => <option value={type} key={type}>{formatLabel(type)}</option>)}</select></label>
-              <label><span>Source</span><select value={formState.booking_source} disabled={!canEditSelectedBooking || saving} onChange={(event) => updateFormField('booking_source', event.target.value)}>{bookingSources.map((source) => <option value={source} key={source}>{formatLabel(source)}</option>)}</select></label>
+              <label><span>Start time</span><select value={formState.start_time} disabled={!canEditSelectedBooking || saving} onChange={(event) => updateFormField('start_time', event.target.value)}>{bookingTimeOptions.map((time) => <option value={time} key={time}>{time}</option>)}</select></label>
+              <label><span>Duration</span><select value={formState.duration_minutes} disabled={!canEditSelectedBooking || saving} onChange={(event) => updateFormField('duration_minutes', event.target.value)}>{bookingDurationOptions.map((duration) => <option value={duration} key={duration}>{duration} minutes</option>)}</select></label>
               <label><span>Mode</span><select value={formState.appointment_mode} disabled={!canEditSelectedBooking || saving} onChange={(event) => updateFormField('appointment_mode', event.target.value)}>{appointmentModes.map((mode) => <option value={mode} key={mode}>{formatLabel(mode)}</option>)}</select></label>
-              <label className="wide-field"><span>Patient-facing title</span><input value={formState.patient_facing_title} disabled={!canEditSelectedBooking || saving} onChange={(event) => updateFormField('patient_facing_title', event.target.value)} /></label>
-              <label className="wide-field"><span>Patient-facing notes</span><textarea value={formState.patient_facing_notes} disabled={!canEditSelectedBooking || saving} onChange={(event) => updateFormField('patient_facing_notes', event.target.value)} /></label>
-              {canReadInternalNotes && <label className="wide-field"><span>Internal administrative note</span><textarea value={formState.internal_admin_note} disabled={!canEditSelectedBooking || saving} onChange={(event) => updateFormField('internal_admin_note', event.target.value)} /></label>}
+              {selectedBooking && <label><span>Status</span><select value={formState.booking_status} disabled={!canEditSelectedBooking || saving} onChange={(event) => updateFormField('booking_status', event.target.value)}>{editableStatusOptions.map((status) => <option value={status} key={status}>{formatLabel(status)}</option>)}</select></label>}
+              {selectedBooking && <label><span>Booking type</span><select value={formState.booking_type} disabled={!canEditSelectedBooking || saving} onChange={(event) => updateFormField('booking_type', event.target.value)}>{bookingTypes.map((type) => <option value={type} key={type}>{formatLabel(type)}</option>)}</select></label>}
+              {selectedBooking && <label><span>Source</span><select value={formState.booking_source} disabled={!canEditSelectedBooking || saving} onChange={(event) => updateFormField('booking_source', event.target.value)}>{bookingSources.map((source) => <option value={source} key={source}>{formatLabel(source)}</option>)}</select></label>}
+              {selectedBooking && <label className="wide-field"><span>Patient-facing title</span><input value={formState.patient_facing_title} disabled={!canEditSelectedBooking || saving} onChange={(event) => updateFormField('patient_facing_title', event.target.value)} /></label>}
+              {selectedBooking && <label className="wide-field"><span>Patient-facing notes</span><textarea value={formState.patient_facing_notes} disabled={!canEditSelectedBooking || saving} onChange={(event) => updateFormField('patient_facing_notes', event.target.value)} /></label>}
+              {selectedBooking && canReadInternalNotes && <label className="wide-field"><span>Internal administrative note</span><textarea value={formState.internal_admin_note} disabled={!canEditSelectedBooking || saving} onChange={(event) => updateFormField('internal_admin_note', event.target.value)} /></label>}
             </div>
           </Card>
 
@@ -1287,10 +2099,10 @@ export function BookingsPage() {
           <Card className="practice-profile-form-card">
             <div className="practice-profile-form-header">
               <div>
-                <span>Procedures and pricing</span>
-                <h3>{formatMoney(procedureTotal)}</h3>
+                <span>Services &amp; Expected Charges</span>
+                <h3>{procedureSelections.length > 0 ? formatMoney(procedureTotal) : 'No service selected'}</h3>
               </div>
-              {canReadPricing && canEditSelectedBooking && <Button variant="secondary" disabled={saving || activePriceListItems.length === 0} onClick={addProcedureSelection}>Add Procedure</Button>}
+              {canReadPricing && canEditSelectedBooking && procedureSelections.length > 0 && <Button variant="secondary" disabled={saving || activePriceListItems.length === 0} onClick={addProcedureSelection}>Add Service</Button>}
             </div>
             {!canReadPricing ? (
               <EmptyState title="Procedure pricing restricted" description="Your role can manage bookings without loading price list data." />
@@ -1300,10 +2112,12 @@ export function BookingsPage() {
               <>
                 <div className="settings-form-grid booking-form-grid">
                   <label><span>Price list</span><select value={formState.price_list_id} disabled={!canEditSelectedBooking || saving} onChange={(event) => { updateFormField('price_list_id', event.target.value); setProcedureSelections([]) }}><option value="">No price list</option>{priceLists.map((priceList) => <option value={priceList.id} key={priceList.id}>{priceList.name}</option>)}</select></label>
+                  {procedureSelections.length === 0 && <label className="wide-field"><span>Intended service</span><select value="" disabled={!canEditSelectedBooking || saving || activePriceListItems.length === 0} onChange={(event) => { if (event.target.value) setProcedureSelections([{ price_list_item_id: event.target.value, quantity: '1' }]); setIsEditorDirty(true) }}><option value="">Select a service</option>{activePriceListItems.map((priceItem) => <option value={priceItem.id} key={priceItem.id}>{priceItem.procedure_code ? `${priceItem.procedure_code} · ` : ''}{priceItem.procedure_name} · {formatMoney(priceItem.price)}</option>)}</select></label>}
                 </div>
+                {selectedPatient?.active_icd10_code && <div className="booking-diagnosis-context"><span>Patient ICD-10</span><strong>{selectedPatient.active_icd10_code}</strong><small>Clinical context only. It is not automatically applied to this service.</small></div>}
                 <div className="booking-procedure-list">
                   {procedureSelections.length === 0 ? (
-                    <EmptyState title="No procedures selected" description="Add procedures to snapshot booking pricing for future invoice readiness." />
+                    <EmptyState title="No service selected" description="Choose the intended service to show the expected charge. No invoice is created at booking." />
                   ) : procedureSelections.map((selection, index) => {
                     const item = priceListItems.find((priceItem) => priceItem.id === selection.price_list_item_id)
                     const quantity = Number(selection.quantity)
@@ -1328,7 +2142,7 @@ export function BookingsPage() {
                 {selectedBooking.booking_status === 'draft' && <Button variant="secondary" disabled={saving || !canManageBookings} onClick={() => updateStatus('scheduled')}>Schedule</Button>}
                 {selectedBooking.booking_status === 'scheduled' && <Button variant="secondary" disabled={saving || !canManageBookings} onClick={() => updateStatus('confirmed')}>Confirm</Button>}
                 {selectedBooking.booking_status === 'confirmed' && <Button variant="secondary" disabled={saving || !canManageBookings} onClick={() => updateStatus('checked_in')}>Check In</Button>}
-                {(selectedBooking.booking_status === 'confirmed' || selectedBooking.booking_status === 'checked_in' || selectedBooking.booking_status === 'in_progress') && <Link className="ui-button ui-button-secondary" to={`/bookings/sessions?booking=${selectedBooking.id}`}>Create/Open Session</Link>}
+                {(selectedBooking.booking_status === 'confirmed' || selectedBooking.booking_status === 'checked_in' || selectedBooking.booking_status === 'in_progress') && <Button variant="secondary" disabled={saving} onClick={() => openSessionPanel(selectedBooking)}>Create/Open Session</Button>}
                 {(selectedBooking.booking_status === 'scheduled' || selectedBooking.booking_status === 'confirmed') && <Button variant="secondary" disabled={saving || !canManageBookings} onClick={() => updateStatus('cancelled')}>Cancel</Button>}
                 {(selectedBooking.booking_status === 'scheduled' || selectedBooking.booking_status === 'confirmed') && <Button variant="secondary" disabled={saving || !canManageBookings} onClick={() => updateStatus('no_show')}>No Show</Button>}
                 {isTerminalBooking(selectedBooking.booking_status) && <StatusBadge tone="danger">Terminal booking</StatusBadge>}
@@ -1369,12 +2183,6 @@ export function BookingsPage() {
             </Card>
           )}
 
-          {(saveError || successMessage) && (
-            <div className={`practice-profile-message ${saveError ? 'error' : 'success'}`}>
-              {saveError || successMessage}
-            </div>
-          )}
-
           {(patients.length === 0 || therapists.length === 0 || locations.length === 0) && (
             <Card className="patients-foundation-card">
               <span>Setup needed</span>
@@ -1385,8 +2193,27 @@ export function BookingsPage() {
               </div>
             </Card>
           )}
+            </div>
+          </section>
         </div>
-      </div>
+      )}
+
+      {sessionPanelBookingId && (
+        <div className="practice-side-panel-backdrop" role="presentation" onMouseDown={(event) => { if (event.currentTarget === event.target) closeSessionPanel() }}>
+          <section className="practice-side-panel practice-session-panel" role="dialog" aria-modal="true" aria-label="Session workspace">
+            <div className="modal-header">
+              <div><p>Session</p><h2>Session Workspace</h2></div>
+              <button type="button" className="modal-close" onClick={closeSessionPanel} aria-label="Close session workspace">x</button>
+            </div>
+            <div className="practice-session-panel-body">
+              <SessionsPage
+                embeddedBookingId={sessionPanelBookingId}
+                onSessionStatusChange={handleSessionStatusChange}
+              />
+            </div>
+          </section>
+        </div>
+      )}
     </div>
   )
 }
