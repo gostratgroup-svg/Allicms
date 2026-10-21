@@ -2626,43 +2626,45 @@ button:disabled {
   display: flex;
   align-items: center;
   justify-content: center;
-  gap: 8px;
   color: var(--muted);
 }
 
-.practice-calendar-day-heading > span {
-  font-size: 0.72rem;
-  font-weight: 800;
-  text-transform: uppercase;
+.practice-calendar-day-label {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  min-width: 76px;
+  padding-bottom: 8px;
 }
 
-.practice-calendar-day-heading strong {
-  display: grid;
-  place-items: center;
-  width: 30px;
-  height: 30px;
-  border-radius: 50%;
+.practice-calendar-day-label span,
+.practice-calendar-day-label strong {
   color: var(--ink);
-  font-size: 0.9rem;
+  font-size: 0.82rem;
+  font-weight: 800;
+  line-height: 1;
+}
+
+.practice-calendar-day-label span {
+  color: var(--muted);
+  text-transform: uppercase;
 }
 
 .practice-calendar-day-heading.today strong {
   color: var(--ink);
 }
 
-.practice-calendar-date-number {
-  display: grid;
-  justify-items: center;
-  width: 30px;
-}
-
-.practice-calendar-today-line {
-  display: block;
-  width: 22px;
+.practice-calendar-day-heading.today .practice-calendar-day-label::after {
+  position: absolute;
+  right: 0;
+  bottom: 0;
+  left: 0;
+  content: '';
   height: 2px;
-  margin-top: -1px;
   border-radius: 2px;
-  background: var(--orange);
+  background: var(--coral);
 }
 
 .practice-calendar-scroll {
@@ -2769,6 +2771,19 @@ button:disabled {
   background: #f0f0f4;
 }
 
+.practice-calendar-event.past-or-completed {
+  border-color: rgba(108, 111, 127, 0.2);
+  border-left-color: #818493;
+  background: #f1f1f4;
+  box-shadow: none;
+  opacity: 0.7;
+}
+
+.practice-calendar-event.past-or-completed:hover,
+.practice-calendar-event.past-or-completed:focus-within {
+  opacity: 0.88;
+}
+
 .practice-calendar-event-open {
   display: grid;
   align-content: start;
@@ -2846,6 +2861,10 @@ button:disabled {
   font-weight: 900;
 }
 
+.practice-calendar-event.has-action-marker .practice-calendar-event-status-label {
+  right: 22px;
+}
+
 .practice-calendar-event.status-cancelled .practice-calendar-event-status-label,
 .practice-calendar-event.status-no_show .practice-calendar-event-status-label {
   color: #7f4641;
@@ -2873,8 +2892,27 @@ button:disabled {
   height: 18px;
 }
 
+.practice-calendar-action-indicator {
+  position: absolute;
+  top: 6px;
+  right: 6px;
+  z-index: 5;
+  display: block;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--coral);
+  box-shadow: 0 0 0 2px rgba(252, 132, 76, 0.16);
+}
+
+.practice-calendar-event.has-action-marker.density-single-line .practice-calendar-event-open,
+.practice-calendar-event.has-action-marker.density-two-line .practice-calendar-event-open,
+.practice-calendar-event.has-action-marker.density-three-line .practice-calendar-event-open {
+  padding-right: 20px;
+}
+
 .practice-calendar-finance-indicator.not-invoiced {
-  color: var(--orange);
+  color: var(--coral);
 }
 
 .practice-calendar-finance-indicator.invoiced {
@@ -2926,12 +2964,14 @@ button:disabled {
   grid-template-rows: auto minmax(0, 1fr);
 }
 
-.practice-session-panel {
-  width: min(1040px, calc(100vw - 20px));
-}
-
 .practice-side-panel .modal-header {
   position: relative;
+}
+
+.practice-session-panel .session-panel-close {
+  position: relative;
+  z-index: 3;
+  pointer-events: auto;
 }
 
 .practice-booking-panel .modal-body,
@@ -3098,6 +3138,425 @@ button:disabled {
   flex-wrap: wrap;
   gap: 8px;
   margin-top: 12px;
+}
+
+.session-header-actions {
+  display: grid;
+  justify-items: end;
+  gap: 5px;
+}
+
+.session-finance-summary-card .practice-profile-form-header {
+  justify-content: flex-end;
+}
+
+.session-booked-total-card {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: var(--space-3);
+}
+
+.session-charge-summary {
+  display: flex;
+  align-items: stretch;
+  flex-wrap: wrap;
+  gap: var(--space-4);
+}
+
+.session-booked-total-copy {
+  display: grid;
+  gap: 3px;
+  min-width: 150px;
+}
+
+.session-delivered-total-copy {
+  padding-left: var(--space-4);
+  border-left: 1px solid var(--line);
+}
+
+.session-booked-total-copy > span,
+.session-booked-total-copy > small {
+  color: var(--muted);
+  font-size: var(--font-size-small);
+  font-weight: 800;
+}
+
+.session-booked-total-copy > strong {
+  color: var(--ink);
+  font-size: 1.35rem;
+}
+
+.session-finance-actions {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+@media (max-width: 640px) {
+  .session-booked-total-card,
+  .session-charge-summary,
+  .session-finance-actions {
+    align-items: stretch;
+    width: 100%;
+  }
+
+  .session-charge-summary,
+  .session-finance-actions {
+    flex-direction: column;
+  }
+
+  .session-delivered-total-copy {
+    padding-top: var(--space-3);
+    padding-left: 0;
+    border-top: 1px solid var(--line);
+    border-left: 0;
+  }
+}
+
+.session-procedure-actions {
+  justify-content: flex-start;
+}
+
+.session-procedure-empty {
+  margin: 0;
+  color: var(--muted);
+  font-size: var(--font-size-small);
+  font-weight: 700;
+}
+
+.session-procedure-table-wrap {
+  width: 100%;
+  overflow-x: auto;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+}
+
+.session-procedure-table {
+  width: 100%;
+  min-width: 520px;
+  border-collapse: collapse;
+  table-layout: fixed;
+}
+
+.session-procedure-table th,
+.session-procedure-table td {
+  padding: 8px;
+  border-bottom: 1px solid var(--line);
+  text-align: left;
+  vertical-align: middle;
+}
+
+.session-procedure-table th {
+  color: var(--muted);
+  background: var(--surface-soft);
+  font-size: var(--font-size-small);
+  font-weight: 900;
+  text-transform: uppercase;
+}
+
+.session-procedure-table th:nth-child(1) { width: auto; }
+.session-procedure-table th:nth-child(2) { width: 72px; }
+.session-procedure-table th:nth-child(3) { width: 105px; }
+.session-procedure-table th:nth-child(4) { width: 105px; }
+.session-procedure-table th:nth-child(5) { width: 48px; }
+
+.session-procedure-table tbody tr:last-child td {
+  border-bottom: 0;
+}
+
+.session-procedure-table input,
+.session-procedure-table select {
+  width: 100%;
+  min-width: 0;
+  min-height: 34px;
+  padding: 6px 8px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: white;
+  color: var(--ink);
+  font: inherit;
+}
+
+.session-procedure-table input:disabled,
+.session-procedure-table select:disabled {
+  background: var(--surface-soft);
+}
+
+.session-procedure-price,
+.session-procedure-total {
+  color: var(--indigo);
+  font-size: var(--font-size-small);
+  font-weight: 900;
+  white-space: nowrap;
+}
+
+.session-procedure-remove-cell {
+  text-align: center !important;
+}
+
+.session-procedure-remove-cell .ui-icon-action {
+  width: 32px;
+  height: 32px;
+  color: var(--coral);
+}
+
+body:has(.practice-session-panel) .notification-menu,
+body:has(.practice-session-panel) .user-account-menu {
+  visibility: hidden;
+  pointer-events: none;
+}
+
+body:has(.practice-session-panel) .topbar-actions {
+  pointer-events: none;
+}
+
+body:has(.practice-session-panel) .topbar-notice {
+  pointer-events: auto;
+}
+
+.session-patient-heading {
+  display: grid;
+  justify-items: start;
+  gap: 4px;
+}
+
+.session-patient-heading .ui-status-badge {
+  min-height: 20px;
+  padding: 2px 7px;
+  font-size: 0.56rem;
+}
+
+.session-header-actions .ui-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  text-decoration: none;
+}
+
+.session-terminal-secondary-actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 6px;
+  color: var(--muted);
+  font-size: 0.62rem;
+  font-weight: 800;
+}
+
+.session-terminal-secondary-actions button {
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+}
+
+.session-workspace-tabs {
+  display: flex;
+  gap: 20px;
+  margin-top: 12px;
+  border-bottom: 1px solid var(--line);
+}
+
+.session-workspace-tabs button {
+  position: relative;
+  padding: 8px 0 10px;
+  border: 0;
+  background: transparent;
+  color: var(--muted);
+  font: inherit;
+  font-size: 0.72rem;
+  font-weight: 900;
+}
+
+.session-workspace-tabs button.active {
+  color: var(--ink);
+}
+
+.session-workspace-tabs button.active::after {
+  position: absolute;
+  right: 0;
+  bottom: -1px;
+  left: 0;
+  height: 2px;
+  border-radius: 2px;
+  background: var(--coral);
+  content: '';
+}
+
+.session-workspace-tabs .session-details-edit {
+  width: 32px;
+  min-height: 32px;
+  margin: 0;
+  padding: 0;
+  align-self: center;
+}
+
+.session-details-edit-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0 0 5px auto;
+}
+
+.session-workspace-tabs .session-details-edit-actions .ui-button {
+  min-height: 32px;
+  padding: 6px 14px;
+  border-radius: var(--radius-sm);
+  background: var(--indigo);
+  color: white;
+}
+
+.session-workspace-tabs .session-details-edit::after {
+  display: none;
+}
+
+.booking-detail-grid.session-detail-summary > div {
+  padding: 8px 0;
+  border: 0;
+  border-bottom: 1px solid rgba(222, 223, 240, 0.72);
+  border-radius: 0;
+  background: transparent;
+}
+
+.session-note-types {
+  display: grid;
+  gap: 0;
+}
+
+.session-note-types > section {
+  display: grid;
+  grid-template-columns: max-content minmax(0, 1fr);
+  align-items: center;
+  gap: 10px;
+  padding: 14px 0;
+  border-bottom: 1px solid var(--line);
+}
+
+.session-note-types > section:last-child {
+  border-bottom: 0;
+}
+
+.session-note-types > section > span {
+  color: var(--muted);
+  font-size: 0.64rem;
+  font-weight: 800;
+}
+
+.session-note-add {
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--indigo);
+  font: inherit;
+  font-weight: 900;
+  text-align: left;
+}
+
+.session-note-add:hover:not(:disabled) {
+  color: var(--coral);
+}
+
+.session-note-composer {
+  display: grid;
+  grid-column: 1 / -1;
+  gap: 10px;
+}
+
+.rich-text-composer {
+  overflow: hidden;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: white;
+}
+
+.rich-text-composer-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 4px;
+  padding: 6px 8px;
+  border-bottom: 1px solid var(--line);
+  background: rgba(246, 246, 252, 0.9);
+}
+
+.rich-text-composer-tools,
+.rich-text-composer-saved-actions {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.rich-text-composer-toolbar button {
+  width: 30px;
+  min-height: 28px;
+  padding: 0;
+  border: 0;
+  border-radius: 5px;
+  background: transparent;
+  color: var(--ink);
+  font: inherit;
+}
+
+.rich-text-composer-toolbar button:hover:not(:disabled) {
+  background: var(--lilac);
+}
+
+.rich-text-composer-toolbar .rich-text-composer-save,
+.rich-text-composer-toolbar .rich-text-composer-complete {
+  width: auto;
+  min-width: 68px;
+  padding: 0 12px;
+  background: var(--indigo);
+  color: white;
+  font-weight: 800;
+}
+
+.rich-text-composer-toolbar .rich-text-composer-edit {
+  margin-left: auto;
+}
+
+.rich-text-composer textarea {
+  width: 100%;
+  min-height: 150px;
+  padding: 12px;
+  border: 0;
+  outline: 0;
+  resize: vertical;
+  background: white;
+  color: var(--ink);
+  font: inherit;
+  line-height: 1.55;
+}
+
+.rich-text-composer-preview {
+  min-height: 96px;
+  padding: 12px;
+  color: var(--ink);
+  line-height: 1.55;
+  overflow-wrap: anywhere;
+}
+
+.rich-text-composer-preview p {
+  margin: 0 0 6px;
+}
+
+.rich-text-composer-preview a {
+  color: var(--indigo);
+  text-decoration: underline;
+}
+
+.formatted-note-list-line {
+  display: grid;
+  grid-template-columns: 20px minmax(0, 1fr);
+  gap: 4px;
+}
+
+.session-note-types .ui-button {
+  justify-self: start;
 }
 
 .session-billing-strip {

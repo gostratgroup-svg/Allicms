@@ -36,6 +36,7 @@ type SessionStatusRow = Pick<Database['public']['Tables']['sessions']['Row'], 'i
 type InvoiceStatusRow = Pick<Database['public']['Tables']['invoices']['Row'], 'id' | 'session_id' | 'invoice_status' | 'confirmed_at' | 'issued_at'>
 type InvoiceLineStatusRow = Pick<Database['public']['Tables']['invoice_lines']['Row'], 'invoice_id' | 'source_session_procedure_id'>
 type SessionProcedureStatusRow = Pick<Database['public']['Tables']['session_procedures']['Row'], 'id' | 'session_id' | 'is_billable'>
+type ClinicalNoteTaskRow = Pick<Database['public']['Tables']['clinical_notes']['Row'], 'booking_id' | 'session_id' | 'note_type' | 'note_status'>
 
 type CalendarMode = 'day' | 'week'
 
@@ -91,6 +92,7 @@ const bookingDurationOptions = Array.from({ length: 10 }, (_, index) => (index +
 const defaultCalendarStartHour = 7
 const defaultCalendarEndHour = 19
 const calendarHourHeight = 72
+const completedClinicalNoteStatuses = new Set(['finalised', 'signed', 'amended', 'locked'])
 
 const emptyBookingForm: BookingFormState = {
   patient_id: '',
@@ -570,6 +572,7 @@ export function BookingsPage() {
   const canReadPricing = authorization.hasPermission('tenant.finance.view', 'tenant.practice.configure')
   const canReadInternalNotes = authorization.hasRole('admin', 'receptionist', 'therapist')
   const canReadInvoiceStatus = authorization.hasRole('admin', 'finance')
+  const canReadClinicalTaskStatus = authorization.hasPermission('tenant.clinical.view') && !authorization.isSuperAdmin
   const [patients, setPatients] = useState<PatientRow[]>([])
   const [therapists, setTherapists] = useState<TherapistRow[]>([])
   const [locations, setLocations] = useState<LocationRow[]>([])
@@ -580,6 +583,7 @@ export function BookingsPage() {
   const [invoiceStatuses, setInvoiceStatuses] = useState<InvoiceStatusRow[]>([])
   const [invoiceLineStatuses, setInvoiceLineStatuses] = useState<InvoiceLineStatusRow[]>([])
   const [sessionProcedureStatuses, setSessionProcedureStatuses] = useState<SessionProcedureStatusRow[]>([])
+  const [clinicalNoteTaskStatuses, setClinicalNoteTaskStatuses] = useState<ClinicalNoteTaskRow[]>([])
   const [bookingProcedures, setBookingProcedures] = useState<BookingProcedureRow[]>([])
   const [bookingNotes, setBookingNotes] = useState<BookingNoteRow[]>([])
   const [bookingStatusHistory, setBookingStatusHistory] = useState<BookingStatusHistoryRow[]>([])
@@ -632,6 +636,18 @@ export function BookingsPage() {
     setSessionStatuses((current) => current.some((item) => item.id === session.id)
       ? current.map((item) => (item.id === session.id ? session : item))
       : [...current, session])
+  }, [])
+
+  const handleSessionBookingChange = useCallback((booking: BookingRow) => {
+    setBookings((current) => current.map((item) => (item.id === booking.id ? booking : item)))
+  }, [])
+
+  const handleSessionClinicalNoteChange = useCallback((note: ClinicalNoteTaskRow) => {
+    setClinicalNoteTaskStatuses((current) => {
+      const existingIndex = current.findIndex((item) => item.session_id === note.session_id && item.note_type === note.note_type)
+      if (existingIndex === -1) return [...current, note]
+      return current.map((item, index) => (index === existingIndex ? note : item))
+    })
   }, [])
 
   const selectedBooking = useMemo(
@@ -731,6 +747,33 @@ export function BookingsPage() {
 
     return sessionIds
   }, [invoiceLineStatuses, invoiceStatuses, sessionProcedureStatuses])
+  const confirmedInvoiceSessionIds = useMemo(() => {
+    const confirmedInvoices = invoiceStatuses.filter((invoice) => (
+      Boolean(invoice.confirmed_at)
+      && invoice.invoice_status !== 'cancelled'
+      && invoice.invoice_status !== 'voided'
+    ))
+    const confirmedInvoiceIds = new Set(confirmedInvoices.map((invoice) => invoice.id))
+    const sessionProcedureById = new Map(sessionProcedureStatuses.map((procedure) => [procedure.id, procedure]))
+    const sessionIds = new Set(confirmedInvoices.flatMap((invoice) => invoice.session_id ? [invoice.session_id] : []))
+
+    invoiceLineStatuses.forEach((line) => {
+      if (!confirmedInvoiceIds.has(line.invoice_id) || !line.source_session_procedure_id) return
+      const procedure = sessionProcedureById.get(line.source_session_procedure_id)
+      if (procedure?.is_billable) sessionIds.add(procedure.session_id)
+    })
+
+    return sessionIds
+  }, [invoiceLineStatuses, invoiceStatuses, sessionProcedureStatuses])
+  const completedClinicalTaskKeys = useMemo(() => {
+    const keys = new Set<string>()
+    clinicalNoteTaskStatuses.forEach((note) => {
+      if (!completedClinicalNoteStatuses.has(note.note_status)) return
+      if (note.session_id) keys.add(`session:${note.session_id}:${note.note_type}`)
+      if (note.booking_id) keys.add(`booking:${note.booking_id}:${note.note_type}`)
+    })
+    return keys
+  }, [clinicalNoteTaskStatuses])
   const procedureTotal = useMemo(() => {
     return procedureSelections.reduce((total, selection) => {
       const item = priceListItems.find((priceItem) => priceItem.id === selection.price_list_item_id)
@@ -789,6 +832,7 @@ export function BookingsPage() {
         statusHistoryResult,
         workflowEventsResult,
         notesResult,
+        clinicalNotesResult,
       ] = await Promise.all([
         supabaseClient
           .from('patients')
@@ -890,11 +934,19 @@ export function BookingsPage() {
               .eq('tenant_id', tenantId)
               .is('deleted_at', null)
           : notesEmptyResult,
+        canReadClinicalTaskStatus
+          ? supabaseClient
+              .from('clinical_notes')
+              .select('booking_id, session_id, note_type, note_status')
+              .eq('tenant_id', tenantId)
+              .is('deleted_at', null)
+              .in('note_type', ['process_note', 'session_feedback'])
+          : notesEmptyResult,
       ])
 
       if (!isMounted) return
 
-      const firstError = patientsResult.error || responsiblePartiesResult.error || therapistsResult.error || locationsResult.error || priceListsResult.error || priceListItemsResult.error || bookingsResult.error || sessionsResult.error || invoiceStatusesResult.error || invoiceLineStatusesResult.error || sessionProcedureStatusesResult.error || proceduresResult.error || statusHistoryResult.error || workflowEventsResult.error || notesResult.error
+      const firstError = patientsResult.error || responsiblePartiesResult.error || therapistsResult.error || locationsResult.error || priceListsResult.error || priceListItemsResult.error || bookingsResult.error || sessionsResult.error || invoiceStatusesResult.error || invoiceLineStatusesResult.error || sessionProcedureStatusesResult.error || proceduresResult.error || statusHistoryResult.error || workflowEventsResult.error || notesResult.error || clinicalNotesResult.error
       if (firstError) {
         setLoadError(firstError.message)
         setLoading(false)
@@ -918,6 +970,7 @@ export function BookingsPage() {
       setBookingStatusHistory((statusHistoryResult.data ?? []) as BookingStatusHistoryRow[])
       setBookingWorkflowEvents((workflowEventsResult.data ?? []) as BookingWorkflowEventRow[])
       setBookingNotes((notesResult.data ?? []) as BookingNoteRow[])
+      setClinicalNoteTaskStatuses((clinicalNotesResult.data ?? []) as ClinicalNoteTaskRow[])
 
       const defaultPriceList = nextPriceLists.find((priceList) => priceList.is_default) ?? nextPriceLists[0] ?? null
       const firstBooking = nextBookings.find((booking) => booking.start_at?.slice(0, 10) === selectedDate) ?? nextBookings[0] ?? null
@@ -1230,7 +1283,6 @@ export function BookingsPage() {
   }
 
   const closeSessionPanel = () => {
-    if (!window.confirm('Close the session workspace? Any unsaved session edits will be lost.')) return
     setSessionPanelBookingId(null)
   }
 
@@ -1859,10 +1911,9 @@ export function BookingsPage() {
             const isToday = dateKey === practiceToday
             return (
               <div className={`practice-calendar-day-heading${isToday ? ' today' : ''}`} key={dateKey}>
-                <span>{date.toLocaleDateString([], { weekday: 'short' })}</span>
-                <div className="practice-calendar-date-number">
+                <div className="practice-calendar-day-label">
+                  <span>{date.toLocaleDateString([], { weekday: 'short' })}</span>
                   <strong>{date.getDate()}</strong>
-                  {isToday && <span className="practice-calendar-today-line" aria-hidden="true" />}
                 </div>
               </div>
             )
@@ -1911,6 +1962,29 @@ export function BookingsPage() {
                     const isCompletedSession = linkedSession?.session_status === 'completed'
                     const isBillableSession = Boolean(linkedSession && billableSessionIds.has(linkedSession.id))
                     const isSessionInvoiced = Boolean(linkedSession && invoicedSessionIds.has(linkedSession.id))
+                    const isElapsedBooking = Boolean(booking.end_at && new Date(booking.end_at).getTime() < Date.now())
+                    const isPastOrCompleted = isCompletedSession
+                      || booking.booking_status === 'completed'
+                      || (isElapsedBooking && booking.booking_status !== 'cancelled' && booking.booking_status !== 'no_show')
+                    const isActionEligible = isElapsedBooking || isCompletedSession
+                    const hasCompletedClinicalTask = (noteType: 'process_note' | 'session_feedback') => Boolean(linkedSession && (
+                      completedClinicalTaskKeys.has(`session:${linkedSession.id}:${noteType}`)
+                      || completedClinicalTaskKeys.has(`booking:${booking.id}:${noteType}`)
+                    ))
+                    const outstandingTasks: string[] = []
+                    if (isActionEligible && !linkedSession && !isTerminalBooking(booking.booking_status)) {
+                      outstandingTasks.push('session completion')
+                    }
+                    if (isActionEligible && linkedSession && canReadClinicalTaskStatus) {
+                      if (!hasCompletedClinicalTask('process_note')) outstandingTasks.push('Process Note')
+                      if (!hasCompletedClinicalTask('session_feedback')) outstandingTasks.push('Session Feedback')
+                    }
+                    if (isActionEligible && linkedSession && isBillableSession && canReadInvoiceStatus && !confirmedInvoiceSessionIds.has(linkedSession.id)) {
+                      outstandingTasks.push('invoice confirmation')
+                    }
+                    const actionLabel = outstandingTasks.length > 0
+                      ? `Outstanding: ${outstandingTasks.join(', ')}`
+                      : null
                     const terminalStatusLabel = isCompletedSession
                       ? 'Completed'
                       : booking.booking_status === 'cancelled'
@@ -1933,15 +2007,21 @@ export function BookingsPage() {
                     const serviceName = procedure?.procedure_name ?? booking.patient_facing_title ?? formatLabel(booking.booking_type)
                     const appointmentLabel = `${patientName}, ${formatTime(booking.start_at)} to ${formatTime(booking.end_at)}, ${serviceName}, ${terminalStatusLabel ?? formatLabel(booking.booking_status)}`
                     return (
-                      <article className={`practice-calendar-event density-${density} status-${booking.booking_status}${isCompletedSession ? ' completed-session' : ''}${terminalStatusLabel && showControls ? ' has-status-label' : ''}`} style={{ top, height, left: `calc(${left}% + 3px)`, width: `calc(${width}% - 6px)` }} title={appointmentLabel} key={booking.id}>
+                      <article className={`practice-calendar-event density-${density} status-${booking.booking_status}${isCompletedSession ? ' completed-session' : ''}${isPastOrCompleted ? ' past-or-completed' : ''}${terminalStatusLabel && showControls ? ' has-status-label' : ''}${actionLabel ? ' has-action-marker' : ''}`} style={{ top, height, left: `calc(${left}% + 3px)`, width: `calc(${width}% - 6px)` }} title={appointmentLabel} key={booking.id}>
                         <button className="practice-calendar-event-open" type="button" onClick={() => { setSelectedDate(dateKey); openSessionPanel(booking) }} aria-label={`Open session for ${appointmentLabel}`}>
                           <strong>{patientName}</strong>
                           {showTime && <span className="practice-calendar-event-time">{formatTime(booking.start_at)} – {formatTime(booking.end_at)}</span>}
                           {showService && <small className="practice-calendar-event-service">{serviceName}</small>}
                         </button>
-                        {showControls && (terminalStatusLabel
-                          ? <span className="practice-calendar-event-status-label">{terminalStatusLabel}</span>
-                          : canManageBookings && <button className="practice-calendar-event-edit" type="button" onClick={() => { setSelectedDate(dateKey); selectBooking(booking) }} aria-label={`Edit booking for ${patientName}`} title="Edit booking">Edit</button>)}
+                        {showControls && terminalStatusLabel && <span className="practice-calendar-event-status-label">{terminalStatusLabel}</span>}
+                        {actionLabel && (
+                          <span
+                            className="practice-calendar-action-indicator"
+                            role="img"
+                            aria-label={actionLabel}
+                            title={actionLabel}
+                          />
+                        )}
                         {showControls && isCompletedSession && isBillableSession && canReadInvoiceStatus && (
                           <span className="practice-calendar-event-indicators">
                             <span
@@ -2203,12 +2283,22 @@ export function BookingsPage() {
           <section className="practice-side-panel practice-session-panel" role="dialog" aria-modal="true" aria-label="Session workspace">
             <div className="modal-header">
               <div><p>Session</p><h2>Session Workspace</h2></div>
-              <button type="button" className="modal-close" onClick={closeSessionPanel} aria-label="Close session workspace">x</button>
+              <button
+                type="button"
+                className="modal-close session-panel-close"
+                onClick={(event) => {
+                  event.stopPropagation()
+                  closeSessionPanel()
+                }}
+                aria-label="Close session workspace"
+              >x</button>
             </div>
             <div className="practice-session-panel-body">
               <SessionsPage
                 embeddedBookingId={sessionPanelBookingId}
                 onSessionStatusChange={handleSessionStatusChange}
+                onBookingChange={handleSessionBookingChange}
+                onClinicalNoteChange={handleSessionClinicalNoteChange}
               />
             </div>
           </section>
