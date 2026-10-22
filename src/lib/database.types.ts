@@ -14199,6 +14199,19 @@ export type Database = {
         Args: { cancellation_reason_input: string; target_execution_id: string }
         Returns: string
       }
+      cancel_session: {
+        Args: {
+          cancellation_reason_input: string
+          target_session_id: string
+        }
+        Returns: {
+          booking_id: string
+          cancelled_invoice_id: string | null
+          changed: boolean
+          session_id: string
+          terminal_outcome: string
+        }[]
+      }
       cancel_workflow_scheduled_job: {
         Args: { cancellation_reason_input: string; target_job_id: string }
         Returns: string
@@ -14723,6 +14736,16 @@ export type Database = {
           payment_status: string
           receipt_id: string
           unallocated_amount: number
+        }[]
+      }
+      record_session_no_show: {
+        Args: { target_session_id: string }
+        Returns: {
+          booking_id: string
+          cancelled_invoice_id: string | null
+          changed: boolean
+          session_id: string
+          terminal_outcome: string
         }[]
       }
       reopen_completed_session: {

@@ -3,6 +3,7 @@ import { useAuth } from '../auth/AuthContext'
 import { useAuthorization } from '../auth/permissions'
 import { EditableField } from '../components/EditableField'
 import { EditSaveControls } from '../components/EditSaveControls'
+import { FinanceIcon } from '../components/icons'
 import { ErrorState, LoadingState } from '../components/UiState'
 import { Button, Card } from '../components/ui'
 import { showErrorNotice, showSuccessNotice } from '../lib/appNotice'
@@ -13,6 +14,9 @@ type BillingSettingsRow = Database['public']['Tables']['billing_settings']['Row'
 type BillingSettingsInsert = Database['public']['Tables']['billing_settings']['Insert']
 type BillingSettingsUpdate = Database['public']['Tables']['billing_settings']['Update']
 type BankAccountRow = Database['public']['Tables']['bank_accounts']['Row']
+type BillingCycle = 'per_invoice' | 'per_statement'
+type StatementSchedule = 'monthly' | 'custom'
+const financeFlagCycleOptions = Array.from({ length: 12 }, (_, index) => String(index + 1))
 
 type BillingSettingsFormState = {
   invoice_prefix: string
@@ -24,6 +28,11 @@ type BillingSettingsFormState = {
   allow_therapist_billing: boolean
   allow_therapist_bank_accounts: boolean
   allow_therapist_practice_number_overrides: boolean
+  billing_cycle: BillingCycle
+  statement_schedule: StatementSchedule
+  orange_flag_cycles: string
+  red_flag_cycles: string
+  black_flag_cycles: string
 }
 
 const emptyBillingSettingsForm: BillingSettingsFormState = {
@@ -36,6 +45,11 @@ const emptyBillingSettingsForm: BillingSettingsFormState = {
   allow_therapist_billing: false,
   allow_therapist_bank_accounts: false,
   allow_therapist_practice_number_overrides: false,
+  billing_cycle: 'per_invoice',
+  statement_schedule: 'monthly',
+  orange_flag_cycles: '1',
+  red_flag_cycles: '2',
+  black_flag_cycles: '3',
 }
 
 function isJsonObject(value: Json): value is { [key: string]: Json | undefined } {
@@ -57,7 +71,19 @@ function formFromBillingSettings(settings: BillingSettingsRow | null): BillingSe
     allow_therapist_billing: settings.allow_therapist_billing,
     allow_therapist_bank_accounts: settings.allow_therapist_bank_accounts,
     allow_therapist_practice_number_overrides: metadata.allow_therapist_practice_number_overrides === true,
+    billing_cycle: metadata.billing_cycle === 'per_statement' ? 'per_statement' : 'per_invoice',
+    statement_schedule: metadata.statement_schedule === 'custom' ? 'custom' : 'monthly',
+    orange_flag_cycles: String(typeof metadata.orange_flag_cycles === 'number' ? metadata.orange_flag_cycles : 1),
+    red_flag_cycles: String(typeof metadata.red_flag_cycles === 'number' ? metadata.red_flag_cycles : 2),
+    black_flag_cycles: String(typeof metadata.black_flag_cycles === 'number' ? metadata.black_flag_cycles : 3),
   }
+}
+
+function formatBillingCycle(formState: BillingSettingsFormState) {
+  if (formState.billing_cycle === 'per_invoice') return 'Per invoice'
+  return formState.statement_schedule === 'monthly'
+    ? 'Per statement · Monthly on the 27th'
+    : 'Per statement · Custom'
 }
 
 function toPositiveInteger(value: string) {
@@ -69,12 +95,19 @@ function validateBillingSettings(formState: BillingSettingsFormState) {
   const nextInvoiceNumber = toPositiveInteger(formState.next_invoice_number)
   const nextStatementNumber = toPositiveInteger(formState.next_statement_number)
   const paymentTermsDays = toPositiveInteger(formState.payment_terms_days)
+  const orangeFlagCycles = toPositiveInteger(formState.orange_flag_cycles)
+  const redFlagCycles = toPositiveInteger(formState.red_flag_cycles)
+  const blackFlagCycles = toPositiveInteger(formState.black_flag_cycles)
 
   if (!formState.invoice_prefix.trim()) return 'Invoice prefix cannot be empty.'
   if (!formState.statement_prefix.trim()) return 'Statement prefix cannot be empty.'
   if (!Number.isInteger(nextInvoiceNumber) || nextInvoiceNumber <= 0) return 'Next invoice number must be a positive integer.'
   if (!Number.isInteger(nextStatementNumber) || nextStatementNumber <= 0) return 'Next statement number must be a positive integer.'
   if (!Number.isInteger(paymentTermsDays) || paymentTermsDays <= 0) return 'Payment terms days must be a positive integer.'
+  if (formState.billing_cycle === 'per_statement' && formState.statement_schedule === 'monthly') {
+    if (![orangeFlagCycles, redFlagCycles, blackFlagCycles].every((cycles) => Number.isInteger(cycles) && cycles > 0)) return 'Finance flag cycles must be positive integers.'
+    if (!(orangeFlagCycles < redFlagCycles && redFlagCycles < blackFlagCycles)) return 'Finance flag cycles must increase from orange to red to black.'
+  }
 
   return ''
 }
@@ -94,6 +127,12 @@ function toBillingSettingsPayload(formState: BillingSettingsFormState, existingS
     metadata: {
       ...existingMetadata,
       allow_therapist_practice_number_overrides: formState.allow_therapist_practice_number_overrides,
+      billing_cycle: formState.billing_cycle,
+      statement_schedule: formState.statement_schedule,
+      monthly_statement_day: formState.statement_schedule === 'monthly' ? 27 : null,
+      orange_flag_cycles: toPositiveInteger(formState.orange_flag_cycles),
+      red_flag_cycles: toPositiveInteger(formState.red_flag_cycles),
+      black_flag_cycles: toPositiveInteger(formState.black_flag_cycles),
     },
   }
 }
@@ -342,6 +381,43 @@ export function PracticeBillingPage() {
               ))}
             </select>
           </EditableField>
+          <EditableField label="Billing cycle" isEditing={showEditableFields} value={formatBillingCycle(formState)}>
+            <select value={formState.billing_cycle} disabled={isReadOnly} onChange={(event) => updateField('billing_cycle', event.target.value as BillingCycle)}>
+              <option value="per_invoice">Per invoice</option>
+              <option value="per_statement">Per statement</option>
+            </select>
+          </EditableField>
+          {showEditableFields && formState.billing_cycle === 'per_statement' && (
+            <EditableField label="Statement schedule" isEditing value={formatBillingCycle(formState)}>
+              <select value={formState.statement_schedule} disabled={isReadOnly} onChange={(event) => updateField('statement_schedule', event.target.value as StatementSchedule)}>
+                <option value="monthly">Monthly · available on the 27th</option>
+                <option value="custom">Custom · create manually</option>
+              </select>
+            </EditableField>
+          )}
+          {formState.billing_cycle === 'per_statement' && formState.statement_schedule === 'monthly' && (
+            <div className="billing-flag-rules" role="group" aria-label="Monthly finance flag rules">
+              {([
+                ['orange', 'Orange', 'orange_flag_cycles'],
+                ['red', 'Red', 'red_flag_cycles'],
+                ['black', 'Black', 'black_flag_cycles'],
+              ] as const).map(([tone, label, field]) => (
+                <div className="billing-flag-rule" key={tone}>
+                  <strong>{label} Flag</strong>
+                  <span className={`billing-flag-icon finance-flag-${tone}`} aria-hidden="true"><FinanceIcon size={16} /></span>
+                  <span>after</span>
+                  {showEditableFields ? (
+                    <select aria-label={`${label} flag monthly cycle`} value={formState[field]} disabled={isReadOnly} onChange={(event) => updateField(field, event.target.value)}>
+                      {financeFlagCycleOptions.map((cycle) => <option value={cycle} key={cycle}>{cycle}</option>)}
+                    </select>
+                  ) : (
+                    <strong className="billing-flag-cycle-value">{formState[field]}</strong>
+                  )}
+                  <span>{formState[field] === '1' ? 'Month' : 'Months'}</span>
+                </div>
+              ))}
+            </div>
+          )}
           {!showEditableFields && (
             <>
               <EditableField label="Therapist billing overrides" isEditing={false} value={formState.allow_therapist_billing ? 'Allowed' : 'Not allowed'}>{null}</EditableField>

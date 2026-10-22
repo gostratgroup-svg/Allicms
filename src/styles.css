@@ -2885,6 +2885,20 @@ button:disabled {
   pointer-events: none;
 }
 
+.practice-calendar-event-indicators.compact {
+  top: 2px;
+  right: 4px;
+}
+
+.practice-calendar-event.has-action-marker .practice-calendar-event-indicators.compact {
+  right: 18px;
+}
+
+.practice-calendar-event-indicators.compact .practice-calendar-finance-indicator {
+  width: 14px;
+  height: 14px;
+}
+
 .practice-calendar-finance-indicator {
   display: grid;
   place-items: center;
@@ -2911,12 +2925,36 @@ button:disabled {
   padding-right: 20px;
 }
 
+.practice-calendar-event.has-finance-flag.density-single-line .practice-calendar-event-open,
+.practice-calendar-event.has-finance-flag.density-two-line .practice-calendar-event-open,
+.practice-calendar-event.has-finance-flag.density-three-line .practice-calendar-event-open {
+  padding-right: 20px;
+}
+
+.practice-calendar-event.has-action-marker.has-finance-flag.density-single-line .practice-calendar-event-open,
+.practice-calendar-event.has-action-marker.has-finance-flag.density-two-line .practice-calendar-event-open,
+.practice-calendar-event.has-action-marker.has-finance-flag.density-three-line .practice-calendar-event-open {
+  padding-right: 34px;
+}
+
 .practice-calendar-finance-indicator.not-invoiced {
   color: var(--coral);
 }
 
 .practice-calendar-finance-indicator.invoiced {
   color: #16856b;
+}
+
+.practice-calendar-finance-indicator.finance-flag-orange {
+  color: var(--coral);
+}
+
+.practice-calendar-finance-indicator.finance-flag-red {
+  color: #b42318;
+}
+
+.practice-calendar-finance-indicator.finance-flag-black {
+  color: #191823;
 }
 
 @container (max-width: 130px) {
@@ -3070,6 +3108,10 @@ button:disabled {
   gap: var(--space-3);
 }
 
+.booking-editor-stack {
+  align-content: start;
+}
+
 .booking-calendar-card {
   padding: var(--space-5);
 }
@@ -3146,10 +3188,6 @@ button:disabled {
   gap: 5px;
 }
 
-.session-finance-summary-card .practice-profile-form-header {
-  justify-content: flex-end;
-}
-
 .session-booked-total-card {
   display: flex;
   align-items: center;
@@ -3216,7 +3254,9 @@ button:disabled {
 }
 
 .session-procedure-actions {
-  justify-content: flex-start;
+  align-items: end;
+  justify-content: space-between;
+  gap: var(--space-3);
 }
 
 .session-procedure-empty {
@@ -3235,7 +3275,7 @@ button:disabled {
 
 .session-procedure-table {
   width: 100%;
-  min-width: 520px;
+  min-width: 560px;
   border-collapse: collapse;
   table-layout: fixed;
 }
@@ -3256,11 +3296,11 @@ button:disabled {
   text-transform: uppercase;
 }
 
-.session-procedure-table th:nth-child(1) { width: auto; }
-.session-procedure-table th:nth-child(2) { width: 72px; }
-.session-procedure-table th:nth-child(3) { width: 105px; }
-.session-procedure-table th:nth-child(4) { width: 105px; }
-.session-procedure-table th:nth-child(5) { width: 48px; }
+.session-procedure-table th:nth-child(1) { width: 110px; }
+.session-procedure-table th:nth-child(2) { width: auto; }
+.session-procedure-table th:nth-child(3) { width: 115px; }
+.session-procedure-table th:nth-child(4) { width: 95px; }
+.session-procedure-table th:nth-child(5) { width: 44px; }
 
 .session-procedure-table tbody tr:last-child td {
   border-bottom: 0;
@@ -3284,8 +3324,9 @@ button:disabled {
   background: var(--surface-soft);
 }
 
-.session-procedure-price,
-.session-procedure-total {
+.session-procedure-code,
+.session-procedure-icd10,
+.session-procedure-price {
   color: var(--indigo);
   font-size: var(--font-size-small);
   font-weight: 900;
@@ -3328,6 +3369,31 @@ body:has(.practice-session-panel) .topbar-notice {
   font-size: 0.56rem;
 }
 
+.session-patient-status-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.session-finance-account-flag {
+  display: grid;
+  width: 24px;
+  height: 24px;
+  place-items: center;
+}
+
+.session-finance-account-flag.finance-flag-orange {
+  color: var(--coral);
+}
+
+.session-finance-account-flag.finance-flag-red {
+  color: #b42318;
+}
+
+.session-finance-account-flag.finance-flag-black {
+  color: #191823;
+}
+
 .session-header-actions .ui-button {
   display: inline-flex;
   align-items: center;
@@ -3363,13 +3429,25 @@ body:has(.practice-session-panel) .topbar-notice {
 
 .session-workspace-tabs button {
   position: relative;
-  padding: 8px 0 10px;
+  padding: 8px 5px 10px 0;
   border: 0;
   background: transparent;
   color: var(--muted);
   font: inherit;
   font-size: 0.72rem;
   font-weight: 900;
+}
+
+.session-tab-task-dot {
+  position: absolute;
+  top: 3px;
+  right: -3px;
+  width: 7px;
+  height: 7px;
+  border: 1px solid white;
+  border-radius: 50%;
+  background: var(--coral);
+  box-shadow: 0 0 0 1px rgb(255 126 78 / 20%);
 }
 
 .session-workspace-tabs button.active {
@@ -3427,6 +3505,27 @@ body:has(.practice-session-panel) .topbar-notice {
   gap: 0;
 }
 
+.session-initial-patient-note {
+  margin-bottom: 16px;
+  padding: 12px 14px;
+  border-left: 3px solid var(--coral);
+  border-radius: 4px;
+  background: rgb(255 126 78 / 7%);
+}
+
+.session-initial-patient-note span,
+.session-initial-patient-note small {
+  color: var(--muted);
+  font-size: 0.68rem;
+  font-weight: 800;
+}
+
+.session-initial-patient-note p {
+  margin: 6px 0;
+  color: var(--ink);
+  white-space: pre-wrap;
+}
+
 .session-note-types > section {
   display: grid;
   grid-template-columns: max-content minmax(0, 1fr);
@@ -3458,6 +3557,33 @@ body:has(.practice-session-panel) .topbar-notice {
 
 .session-note-add:hover:not(:disabled) {
   color: var(--coral);
+}
+
+.session-note-action-line {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.session-note-skip {
+  min-height: 30px;
+  padding: 5px 12px;
+  border: 1px solid var(--coral);
+  border-radius: 6px;
+  background: var(--coral);
+  color: #fff;
+  font: inherit;
+  font-size: 0.72rem;
+  font-weight: 900;
+}
+
+.session-note-skip:hover:not(:disabled) {
+  filter: brightness(0.94);
+}
+
+.session-note-skip:disabled {
+  cursor: not-allowed;
+  opacity: 0.48;
 }
 
 .session-note-composer {
@@ -3557,28 +3683,6 @@ body:has(.practice-session-panel) .topbar-notice {
 
 .session-note-types .ui-button {
   justify-self: start;
-}
-
-.session-billing-strip {
-  display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
-  gap: 8px;
-}
-
-.session-billing-strip > div {
-  display: grid;
-  gap: 4px;
-  padding: 10px;
-  border: 1px solid var(--line);
-  border-radius: 8px;
-  background: rgba(255, 255, 255, 0.82);
-}
-
-.session-billing-strip span {
-  color: var(--muted);
-  font-size: var(--font-size-small);
-  font-weight: var(--font-weight-strong);
-  text-transform: uppercase;
 }
 
 .session-service-summary-list {
@@ -3882,6 +3986,102 @@ body:has(.practice-session-panel) .topbar-notice {
 .booking-procedure-list {
   display: grid;
   gap: 8px;
+}
+
+.booking-procedure-search {
+  width: min(420px, 100%);
+  display: grid;
+  gap: 4px;
+}
+
+.booking-procedure-search > span {
+  color: var(--muted);
+  font-size: 0.68rem;
+  font-weight: 900;
+}
+
+.booking-procedure-search input {
+  width: 100%;
+  min-height: 42px;
+  padding: 8px 10px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: white;
+  color: var(--ink);
+  font: inherit;
+}
+
+.booking-procedure-table {
+  margin: 0;
+}
+
+.booking-procedure-table th:nth-child(1) {
+  width: 150px;
+}
+
+.booking-procedure-table .session-procedure-remove-cell .ui-icon-action {
+  border-color: rgba(252, 132, 76, 0.42);
+  background: rgba(255, 238, 225, 0.72);
+  color: var(--coral);
+}
+
+.booking-procedure-combobox {
+  position: relative;
+}
+
+.booking-procedure-options {
+  position: absolute;
+  z-index: 20;
+  top: calc(100% + 4px);
+  right: 0;
+  left: 0;
+  min-width: 280px;
+  max-height: 220px;
+  overflow-y: auto;
+  border: 1px solid var(--line);
+  border-radius: 7px;
+  background: white;
+  box-shadow: var(--shadow-popover);
+}
+
+.booking-procedure-options button {
+  width: 100%;
+  min-height: 48px;
+  display: grid;
+  gap: 2px;
+  padding: 8px 10px;
+  border: 0;
+  border-bottom: 1px solid var(--line);
+  background: white;
+  color: var(--ink);
+  text-align: left;
+  cursor: pointer;
+}
+
+.booking-procedure-options button:last-of-type {
+  border-bottom: 0;
+}
+
+.booking-procedure-options button:hover,
+.booking-procedure-options button.active {
+  background: var(--surface-soft);
+}
+
+.booking-procedure-options button strong {
+  color: var(--ink);
+  font-size: 0.82rem;
+}
+
+.booking-procedure-options button span,
+.booking-procedure-options p {
+  margin: 0;
+  color: var(--muted);
+  font-size: var(--font-size-small);
+  font-weight: 700;
+}
+
+.booking-procedure-options p {
+  padding: 10px;
 }
 
 .booking-procedure-list article {
@@ -4612,6 +4812,63 @@ body:has(.practice-session-panel) .topbar-notice {
 
 .practice-billing-form {
   grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.billing-flag-rules {
+  grid-column: 1 / -1;
+  display: grid;
+  gap: 8px;
+  padding-top: 4px;
+}
+
+.billing-flag-rule {
+  display: flex;
+  min-height: 42px;
+  align-items: center;
+  gap: 8px;
+  border-bottom: 1px solid var(--line);
+  color: var(--muted);
+  font-size: 0.82rem;
+}
+
+.billing-flag-rule:last-child {
+  border-bottom: 0;
+}
+
+.billing-flag-rule > strong:first-of-type {
+  min-width: 82px;
+  color: var(--ink);
+}
+
+.billing-flag-rule select {
+  width: 68px;
+  min-height: 34px;
+  padding: 4px 26px 4px 10px;
+}
+
+.billing-flag-icon {
+  display: grid;
+  width: 20px;
+  height: 20px;
+  place-items: center;
+}
+
+.billing-flag-icon.finance-flag-orange {
+  color: var(--coral);
+}
+
+.billing-flag-icon.finance-flag-red {
+  color: #b42318;
+}
+
+.billing-flag-icon.finance-flag-black {
+  color: #191823;
+}
+
+.billing-flag-cycle-value {
+  min-width: 16px;
+  color: var(--ink);
+  text-align: center;
 }
 
 .finance-price-list-form {
@@ -10527,6 +10784,21 @@ body:has(.practice-session-panel) .topbar-notice {
   background: rgba(21, 18, 51, 0.46);
 }
 
+.session-completion-modal {
+  width: min(680px, calc(100vw - 36px));
+  max-height: calc(100vh - 36px);
+  overflow-y: auto;
+}
+
+.session-completion-modal h2 {
+  margin: 0 0 var(--space-4);
+}
+
+.session-completion-modal .finance-actions-row {
+  justify-content: flex-end;
+  margin-top: var(--space-4);
+}
+
 .modal-window {
   width: min(760px, 100%);
   max-height: calc(100vh - 36px);
@@ -12403,10 +12675,6 @@ input[type="checkbox"] {
     align-items: center;
   }
 
-  .session-billing-strip {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-  }
-
   .clinical-template-layout,
   .clinical-template-filter-row {
     grid-template-columns: 1fr;
@@ -12613,6 +12881,10 @@ input[type="checkbox"] {
   .workflow-table-row,
   .practice-location-cards button {
     grid-template-columns: 1fr;
+  }
+
+  .billing-flag-rule {
+    flex-wrap: wrap;
   }
 
   .workflow-panel-header,

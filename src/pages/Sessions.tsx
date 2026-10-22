@@ -1,12 +1,14 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useEffect, useId, useMemo, useRef, useState } from 'react'
+import type { KeyboardEvent as ReactKeyboardEvent } from 'react'
 import { Link, useSearchParams } from 'react-router-dom'
 import { useAuth } from '../auth/AuthContext'
 import { useAuthorization } from '../auth/permissions'
 import { EmptyState, ErrorState, LoadingState } from '../components/UiState'
 import { Button, Card, StatusBadge, SearchBar } from '../components/ui'
-import { PencilIcon, TrashIcon } from '../components/icons'
+import { FinanceIcon, PencilIcon, TrashIcon } from '../components/icons'
 import { RichTextComposer } from '../components/RichTextComposer'
 import { showErrorNotice, showSuccessNotice } from '../lib/appNotice'
+import { getMonthlyFinanceFlagsByPatient } from '../lib/financeFlags'
 import type { Database, Json } from '../lib/database.types'
 import { supabase } from '../lib/supabase'
 
@@ -31,6 +33,7 @@ type SessionNoteRow = Database['public']['Tables']['session_notes']['Row']
 type SessionNoteInsert = Database['public']['Tables']['session_notes']['Insert']
 type SessionNoteUpdate = Database['public']['Tables']['session_notes']['Update']
 type PatientHistoryEventInsert = Database['public']['Tables']['patient_history_events']['Insert']
+type PatientHistoryEventRow = Database['public']['Tables']['patient_history_events']['Row']
 type InvoiceRow = Database['public']['Tables']['invoices']['Row']
 type ClinicalEncounterRow = Database['public']['Tables']['clinical_encounters']['Row']
 type ClinicalNoteRow = Database['public']['Tables']['clinical_notes']['Row']
@@ -45,6 +48,7 @@ type ProcedureDraft = {
   price_list_item_id?: string
   procedure_name: string
   procedure_code: string
+  icd10_code: string
   description: string
   unit_price: string
   quantity: string
@@ -116,6 +120,28 @@ function formatMoney(value: number) {
   return `R ${value.toFixed(2)}`
 }
 
+function jsonObject(value: Json): { [key: string]: Json | undefined } {
+  return value && typeof value === 'object' && !Array.isArray(value) ? value : {}
+}
+
+function icd10CodeFromMetadata(metadata: Json) {
+  const value = jsonObject(metadata).icd10_code
+  return typeof value === 'string' ? value : ''
+}
+
+function metadataWithIcd10Code(metadata: Json, value: string): Json {
+  const nextMetadata = { ...jsonObject(metadata) }
+  const icd10Code = value.trim().toUpperCase()
+
+  if (icd10Code) {
+    nextMetadata.icd10_code = icd10Code
+  } else {
+    delete nextMetadata.icd10_code
+  }
+
+  return nextMetadata
+}
+
 function getSessionTone(status: string): 'neutral' | 'success' | 'warning' | 'danger' | 'info' {
   if (status === 'completed') return 'success'
   if (status === 'cancelled' || status === 'no_show') return 'danger'
@@ -150,6 +176,7 @@ function getProcedureDraft(procedure: SessionProcedureRow): ProcedureDraft {
     price_list_item_id: procedure.price_list_item_id ?? undefined,
     procedure_name: procedure.procedure_name,
     procedure_code: procedure.procedure_code ?? '',
+    icd10_code: icd10CodeFromMetadata(procedure.metadata),
     description: procedure.description ?? '',
     unit_price: String(procedure.unit_price),
     quantity: String(procedure.quantity),
@@ -165,6 +192,7 @@ function getEmptyProcedureDraft(priceItem?: PriceListItemRow): ProcedureDraft {
     price_list_item_id: priceItem?.id,
     procedure_name: priceItem?.procedure_name ?? '',
     procedure_code: priceItem?.procedure_code ?? '',
+    icd10_code: priceItem ? icd10CodeFromMetadata(priceItem.metadata) : '',
     description: priceItem?.description ?? '',
     unit_price: String(priceItem?.price ?? 0),
     quantity: '1',
@@ -175,6 +203,104 @@ function getEmptyProcedureDraft(priceItem?: PriceListItemRow): ProcedureDraft {
   }
 }
 
+type SessionProcedureComboboxProps = {
+  items: PriceListItemRow[]
+  disabled?: boolean
+  onSelect: (item: PriceListItemRow) => void
+}
+
+function SessionProcedureCombobox({ items, disabled = false, onSelect }: SessionProcedureComboboxProps) {
+  const listId = useId()
+  const [search, setSearch] = useState('')
+  const [open, setOpen] = useState(false)
+  const [activeOptionIndex, setActiveOptionIndex] = useState(0)
+  const filteredItems = useMemo(() => {
+    const query = search.trim().toLowerCase()
+    if (!query) return items
+    return items.filter((item) => [
+      item.procedure_code,
+      item.procedure_name,
+      icd10CodeFromMetadata(item.metadata),
+    ].some((value) => value?.toLowerCase().includes(query)))
+  }, [items, search])
+
+  const chooseItem = (item: PriceListItemRow) => {
+    onSelect(item)
+    setSearch('')
+    setOpen(false)
+    setActiveOptionIndex(0)
+  }
+
+  const handleKeyDown = (event: ReactKeyboardEvent<HTMLInputElement>) => {
+    if (event.key === 'ArrowDown') {
+      event.preventDefault()
+      setOpen(true)
+      setActiveOptionIndex((current) => filteredItems.length === 0 ? 0 : (current + 1) % filteredItems.length)
+    } else if (event.key === 'ArrowUp') {
+      event.preventDefault()
+      setOpen(true)
+      setActiveOptionIndex((current) => filteredItems.length === 0 ? 0 : (current - 1 + filteredItems.length) % filteredItems.length)
+    } else if (event.key === 'Enter' && open) {
+      event.preventDefault()
+      const item = filteredItems[activeOptionIndex]
+      if (item) chooseItem(item)
+    } else if (event.key === 'Escape') {
+      setOpen(false)
+    }
+  }
+
+  return (
+    <div
+      className="booking-procedure-combobox"
+      onBlur={(event) => {
+        if (!event.currentTarget.contains(event.relatedTarget)) setOpen(false)
+      }}
+    >
+      <input
+        type="search"
+        role="combobox"
+        aria-label="Add procedure"
+        aria-expanded={open}
+        aria-controls={listId}
+        aria-autocomplete="list"
+        aria-activedescendant={open && filteredItems.length > 0 ? `${listId}-option-${activeOptionIndex}` : undefined}
+        value={search}
+        disabled={disabled}
+        placeholder="Add procedure"
+        onFocus={() => { setOpen(true); setActiveOptionIndex(0) }}
+        onClick={() => setOpen(true)}
+        onKeyDown={handleKeyDown}
+        onChange={(event) => {
+          setSearch(event.target.value)
+          setOpen(true)
+          setActiveOptionIndex(0)
+        }}
+      />
+      {open && (
+        <div id={listId} className="booking-procedure-options" role="listbox" aria-label="Configured procedures">
+          {filteredItems.map((item, index) => (
+            <button
+              id={`${listId}-option-${index}`}
+              className={activeOptionIndex === index ? 'active' : ''}
+              type="button"
+              role="option"
+              aria-selected={false}
+              key={item.id}
+              onMouseDown={(event) => event.preventDefault()}
+              onMouseEnter={() => setActiveOptionIndex(index)}
+              onClick={() => chooseItem(item)}
+            >
+              <strong>{item.procedure_code || 'No code'} · {item.procedure_name}</strong>
+              <span>{icd10CodeFromMetadata(item.metadata) ? `ICD-10 ${icd10CodeFromMetadata(item.metadata)} · ` : ''}{formatMoney(item.price)}</span>
+            </button>
+          ))}
+          {filteredItems.length === 0 && <p>No matching configured procedures.</p>}
+        </div>
+      )}
+    </div>
+  )
+}
+
 function getPatientHistoryCopy(eventType: string, patientName: string) {
   if (eventType === 'session_started') return { title: 'Session started', body: `${patientName}'s session was started.` }
   if (eventType === 'session_completed') return { title: 'Session completed', body: `${patientName}'s session was completed.` }
@@ -182,6 +308,7 @@ function getPatientHistoryCopy(eventType: string, patientName: string) {
   if (eventType === 'session_cancelled') return { title: 'Session cancelled', body: `${patientName}'s session was cancelled.` }
   if (eventType === 'session_no_show_recorded') return { title: 'No show recorded', body: `${patientName}'s session was marked as no show.` }
   if (eventType === 'session_procedures_changed') return { title: 'Session procedures updated', body: `${patientName}'s delivered procedure set was updated.` }
+  if (eventType === 'process_note_skipped') return { title: 'Process Note skipped', body: `${patientName}'s Process Note was explicitly skipped.` }
   return { title: formatLabel(eventType), body: `${patientName}'s session was updated.` }
 }
 
@@ -190,9 +317,11 @@ type SessionsPageProps = {
   onSessionStatusChange?: (session: Pick<SessionRow, 'id' | 'booking_id' | 'session_status'>) => void
   onBookingChange?: (booking: BookingRow) => void
   onClinicalNoteChange?: (note: Pick<ClinicalNoteRow, 'booking_id' | 'session_id' | 'note_type' | 'note_status'>) => void
+  onProcessNoteSkipChange?: (sessionId: string) => void
+  onInvoiceChange?: (invoice: Pick<InvoiceRow, 'id' | 'session_id' | 'patient_id' | 'invoice_status' | 'payment_status' | 'balance_due' | 'invoice_date' | 'confirmed_at' | 'issued_at'>) => void
 }
 
-export function SessionsPage({ embeddedBookingId, onSessionStatusChange, onBookingChange, onClinicalNoteChange }: SessionsPageProps = {}) {
+export function SessionsPage({ embeddedBookingId, onSessionStatusChange, onBookingChange, onClinicalNoteChange, onProcessNoteSkipChange, onInvoiceChange }: SessionsPageProps = {}) {
   const [searchParams, setSearchParams] = useSearchParams()
   const { activeTenant, profile } = useAuth()
   const authorization = useAuthorization()
@@ -203,7 +332,7 @@ export function SessionsPage({ embeddedBookingId, onSessionStatusChange, onBooki
   const canReadPricing = authorization.hasPermission('tenant.finance.view', 'tenant.practice.configure')
   const canViewClinical = authorization.hasPermission('tenant.clinical.view') && !authorization.isSuperAdmin
   const canViewFinance = authorization.hasPermission('tenant.finance.view')
-  const canPrepareDraftInvoice = authorization.hasRole('admin', 'finance')
+  const canConfirmSessionInvoice = authorization.hasRole('admin', 'finance')
   const [patients, setPatients] = useState<PatientRow[]>([])
   const [responsibleParties, setResponsibleParties] = useState<ResponsiblePartyRow[]>([])
   const [therapists, setTherapists] = useState<TherapistRow[]>([])
@@ -215,8 +344,10 @@ export function SessionsPage({ embeddedBookingId, onSessionStatusChange, onBooki
   const [, setSessionHistory] = useState<SessionStatusHistoryRow[]>([])
   const [, setSessionEvents] = useState<SessionWorkflowEventRow[]>([])
   const [sessionNotes, setSessionNotes] = useState<SessionNoteRow[]>([])
+  const [initialPatientNotes, setInitialPatientNotes] = useState<PatientHistoryEventRow[]>([])
   const [priceListItems, setPriceListItems] = useState<PriceListItemRow[]>([])
   const [invoices, setInvoices] = useState<InvoiceRow[]>([])
+  const [billingFlagMetadata, setBillingFlagMetadata] = useState<Json | null>(null)
   const [selectedItemId, setSelectedItemId] = useState('')
   const [search, setSearch] = useState('')
   const [statusFilter, setStatusFilter] = useState('active')
@@ -233,6 +364,7 @@ export function SessionsPage({ embeddedBookingId, onSessionStatusChange, onBooki
     session_outcome: 'completed_as_planned',
     operational_summary: '',
   })
+  const [completionIntent, setCompletionIntent] = useState<'complete' | 'confirm_invoice' | null>(null)
   const [noteBody, setNoteBody] = useState('')
   const [noteId, setNoteId] = useState<string | null>(null)
   const [reopenReason, setReopenReason] = useState('')
@@ -250,6 +382,7 @@ export function SessionsPage({ embeddedBookingId, onSessionStatusChange, onBooki
   const [clinicalNoteBody, setClinicalNoteBody] = useState('')
   const [clinicalNote, setClinicalNote] = useState<ClinicalNoteRow | null>(null)
   const [clinicalNoteVersion, setClinicalNoteVersion] = useState<ClinicalNoteVersionRow | null>(null)
+  const [hasSavedProcessNote, setHasSavedProcessNote] = useState(false)
   const [loadingClinicalNote, setLoadingClinicalNote] = useState(false)
   const [isEditingNoteComposer, setIsEditingNoteComposer] = useState(true)
   const autoCreatedBookingIds = useRef(new Set<string>())
@@ -339,6 +472,12 @@ export function SessionsPage({ embeddedBookingId, onSessionStatusChange, onBooki
       ?? responsibleParties.find((party) => party.patient_id === selectedPatient.id)
       ?? null
     : null
+  const financeFlagByPatientId = useMemo(() => getMonthlyFinanceFlagsByPatient({
+    invoices,
+    billingMetadata: billingFlagMetadata,
+    timeZone: activeTenant?.time_zone,
+  }), [activeTenant?.time_zone, billingFlagMetadata, invoices])
+  const selectedPatientFinanceFlag = selectedPatient ? financeFlagByPatientId.get(selectedPatient.id) ?? null : null
   const selectedSessionProcedures = useMemo(
     () => selectedSession ? sessionProcedures.filter((procedure) => procedure.session_id === selectedSession.id) : [],
     [selectedSession, sessionProcedures],
@@ -371,12 +510,108 @@ export function SessionsPage({ embeddedBookingId, onSessionStatusChange, onBooki
     () => selectedSession ? sessionNotes.filter((note) => note.session_id === selectedSession.id) : [],
     [selectedSession, sessionNotes],
   )
+  const processNoteSkipped = useMemo(
+    () => selectedSessionNotes.some((note) => (
+      note.note_type === 'other'
+      && note.visibility === 'internal'
+      && note.metadata
+      && typeof note.metadata === 'object'
+      && !Array.isArray(note.metadata)
+      && note.metadata.task_type === 'process_note'
+      && note.metadata.disposition === 'skipped'
+    )),
+    [selectedSessionNotes],
+  )
   const selectedInvoice = useMemo(
     () => selectedSession
       ? invoices.find((invoice) => invoice.session_id === selectedSession.id && !invoice.deleted_at && !['cancelled', 'voided'].includes(invoice.invoice_status)) ?? null
       : null,
     [invoices, selectedSession],
   )
+  const selectedInitialPatientNote = useMemo(() => {
+    if (!selectedSession) return null
+    const firstPatientSession = sessions
+      .filter((session) => session.patient_id === selectedSession.patient_id && !session.deleted_at)
+      .sort((left, right) => (left.scheduled_start_at ?? '').localeCompare(right.scheduled_start_at ?? ''))[0]
+    if (firstPatientSession?.id !== selectedSession.id) return null
+    return initialPatientNotes.find((note) => note.patient_id === selectedSession.patient_id) ?? null
+  }, [initialPatientNotes, selectedSession, sessions])
+  const isPostSessionTime = Boolean(
+    selectedSession?.scheduled_end_at
+    && new Date(selectedSession.scheduled_end_at).getTime() <= Date.now(),
+  )
+  const canEditDeliveredProcedures = Boolean(
+    canManageSession
+    && selectedSession
+    && !['cancelled', 'no_show'].includes(selectedSession.session_status)
+    && (!isTerminalSession(selectedSession.session_status) || (selectedSession.session_status === 'completed' && !selectedInvoice)),
+  )
+  const hasUnsavedProcedureChanges = useMemo(() => {
+    const draftIds = new Set(procedureDrafts.flatMap((draft) => draft.id ? [draft.id] : []))
+    if (selectedSessionProcedures.some((procedure) => !draftIds.has(procedure.id))) return true
+
+    return procedureDrafts.some((draft) => {
+      if (!draft.id) return true
+      const existing = selectedSessionProcedures.find((procedure) => procedure.id === draft.id)
+      if (!existing) return true
+      const duration = draft.duration_minutes ? Number(draft.duration_minutes) : null
+      return existing.procedure_name !== draft.procedure_name.trim()
+        || (existing.procedure_code ?? '') !== draft.procedure_code.trim()
+        || (existing.description ?? '') !== draft.description.trim()
+        || Number(existing.unit_price) !== Number(draft.unit_price)
+        || Number(existing.quantity) !== Number(draft.quantity)
+        || (existing.duration_minutes ?? null) !== duration
+        || existing.is_billable !== draft.is_billable
+        || existing.differs_from_booking !== draft.differs_from_booking
+        || (existing.change_reason ?? '') !== (draft.differs_from_booking ? draft.change_reason.trim() : '')
+    })
+  }, [procedureDrafts, selectedSessionProcedures])
+  const notesTaskOutstanding = Boolean(
+    selectedSession
+    && isPostSessionTime
+    && !['cancelled', 'no_show'].includes(selectedSession.session_status)
+    && !processNoteSkipped
+    && !hasSavedProcessNote,
+  )
+  const financeTaskOutstanding = Boolean(
+    selectedSession
+    && isPostSessionTime
+    && !['cancelled', 'no_show'].includes(selectedSession.session_status)
+    && canViewFinance
+    && hasBillableDeliveredServices
+    && !selectedInvoice?.issued_at,
+  )
+
+  useEffect(() => {
+    if (!selectedSession || !activeTenant?.id || !supabase || !canViewClinical) {
+      setHasSavedProcessNote(false)
+      return
+    }
+
+    let cancelled = false
+    const supabaseClient = supabase
+    const tenantId = activeTenant.id
+    const sessionId = selectedSession.id
+    const loadProcessNoteStatus = async () => {
+      const result = await supabaseClient
+        .from('clinical_notes')
+        .select('id')
+        .eq('tenant_id', tenantId)
+        .eq('session_id', sessionId)
+        .eq('note_type', 'process_note')
+        .is('deleted_at', null)
+        .limit(1)
+        .maybeSingle()
+
+      if (!cancelled) setHasSavedProcessNote(Boolean(result.data) && !result.error)
+    }
+
+    setHasSavedProcessNote(false)
+    void loadProcessNoteStatus()
+    return () => {
+      cancelled = true
+    }
+  }, [activeTenant?.id, canViewClinical, selectedSession])
   useEffect(() => {
     if (!selectedSession || !onSessionStatusChange) return
     onSessionStatusChange({
@@ -428,8 +663,10 @@ export function SessionsPage({ embeddedBookingId, onSessionStatusChange, onBooki
         historyResult,
         eventsResult,
         notesResult,
+        initialPatientNotesResult,
         priceItemsResult,
         invoicesResult,
+        billingSettingsResult,
       ] = await Promise.all([
         supabaseClient
           .from('patients')
@@ -493,6 +730,15 @@ export function SessionsPage({ embeddedBookingId, onSessionStatusChange, onBooki
               .is('deleted_at', null)
               .order('created_at', { ascending: false })
           : notesEmptyResult,
+        canReadInternalNotes
+          ? supabaseClient
+              .from('patient_history_events')
+              .select('id, tenant_id, patient_id, event_type, event_title, event_body, source_table, source_id, is_patient_visible, patient_visible_title, patient_visible_body, occurred_at, created_by_profile_id, metadata, deleted_at, created_at, updated_at')
+              .eq('tenant_id', tenantId)
+              .eq('event_type', 'internal_patient_note')
+              .is('deleted_at', null)
+              .order('occurred_at', { ascending: false })
+          : notesEmptyResult,
         canReadPricing
           ? supabaseClient
               .from('price_list_items')
@@ -509,11 +755,19 @@ export function SessionsPage({ embeddedBookingId, onSessionStatusChange, onBooki
               .eq('tenant_id', tenantId)
               .is('deleted_at', null)
           : Promise.resolve({ data: [], error: null }),
+        canViewFinance
+          ? supabaseClient
+              .from('billing_settings')
+              .select('metadata')
+              .eq('tenant_id', tenantId)
+              .is('deleted_at', null)
+              .maybeSingle()
+          : Promise.resolve({ data: null, error: null }),
       ])
 
       if (!isMounted) return
 
-      const firstError = patientsResult.error || responsiblePartiesResult.error || therapistsResult.error || locationsResult.error || bookingsResult.error || bookingProceduresResult.error || sessionsResult.error || proceduresResult.error || historyResult.error || eventsResult.error || notesResult.error || priceItemsResult.error || invoicesResult.error
+      const firstError = patientsResult.error || responsiblePartiesResult.error || therapistsResult.error || locationsResult.error || bookingsResult.error || bookingProceduresResult.error || sessionsResult.error || proceduresResult.error || historyResult.error || eventsResult.error || notesResult.error || initialPatientNotesResult.error || priceItemsResult.error || invoicesResult.error || billingSettingsResult.error
       if (firstError) {
         setLoadError(firstError.message)
         setLoading(false)
@@ -531,8 +785,10 @@ export function SessionsPage({ embeddedBookingId, onSessionStatusChange, onBooki
       setSessionHistory((historyResult.data ?? []) as SessionStatusHistoryRow[])
       setSessionEvents((eventsResult.data ?? []) as SessionWorkflowEventRow[])
       setSessionNotes((notesResult.data ?? []) as SessionNoteRow[])
+      setInitialPatientNotes((initialPatientNotesResult.data ?? []) as PatientHistoryEventRow[])
       setPriceListItems((priceItemsResult.data ?? []) as PriceListItemRow[])
       setInvoices((invoicesResult.data ?? []) as InvoiceRow[])
+      setBillingFlagMetadata((billingSettingsResult.data as { metadata: Json } | null)?.metadata ?? null)
       setLoading(false)
     }
 
@@ -568,6 +824,7 @@ export function SessionsPage({ embeddedBookingId, onSessionStatusChange, onBooki
 
   useEffect(() => {
     setSelectedSection('notes')
+    setCompletionIntent(null)
     setIsEditingSessionDetails(false)
     setActiveNoteComposer(null)
     setClinicalNoteBody('')
@@ -819,7 +1076,7 @@ export function SessionsPage({ embeddedBookingId, onSessionStatusChange, onBooki
 
 
   const saveProcedures = async () => {
-    if (!selectedSession || !supabase || !activeTenant?.id || !canEditSelectedSession || saving) return
+    if (!selectedSession || !supabase || !activeTenant?.id || !canEditDeliveredProcedures || saving) return
     const supabaseClient = supabase
     setSaving(true)
     setActionError('')
@@ -831,7 +1088,7 @@ export function SessionsPage({ embeddedBookingId, onSessionStatusChange, onBooki
         const validationError = validateProcedureDraft(draft)
         if (validationError) throw new Error(validationError)
         const key = (draft.price_list_item_id || draft.procedure_code || draft.procedure_name).trim().toLowerCase()
-        if (key && duplicateKey.has(key)) throw new Error('Duplicate delivered procedure lines are not allowed. Adjust the quantity instead.')
+        if (key && duplicateKey.has(key)) throw new Error('This procedure has already been added.')
         if (key) duplicateKey.add(key)
       }
 
@@ -883,6 +1140,10 @@ export function SessionsPage({ embeddedBookingId, onSessionStatusChange, onBooki
           is_billable: draft.is_billable,
           differs_from_booking: draft.differs_from_booking,
           change_reason: draft.differs_from_booking ? draft.change_reason.trim() : null,
+          metadata: metadataWithIcd10Code(
+            selectedSessionProcedures.find((procedure) => procedure.id === draft.id)?.metadata ?? {},
+            draft.icd10_code,
+          ),
           updated_by_profile_id: profile?.id ?? null,
         }
 
@@ -905,39 +1166,115 @@ export function SessionsPage({ embeddedBookingId, onSessionStatusChange, onBooki
     }
   }
 
-  const prepareDraftInvoice = async () => {
-    if (!selectedSession || !supabase || !activeTenant?.id || !canPrepareDraftInvoice || saving) return
+  const confirmSessionInvoice = async () => {
+    if (!selectedSession || !supabase || !activeTenant?.id || !canConfirmSessionInvoice || saving) return
     setSaving(true)
     setActionError('')
     setSuccessMessage('')
     try {
-      if (selectedSession.session_status !== 'completed') throw new Error('Only completed sessions can prepare a draft invoice.')
-      if (!hasBillableDeliveredServices) throw new Error('Save at least one billable delivered service before preparing the draft invoice.')
+      if (!isPostSessionTime) throw new Error('The invoice can be confirmed after the scheduled session time has ended.')
+      if (['cancelled', 'no_show'].includes(selectedSession.session_status)) throw new Error('Cancelled or no-show sessions cannot use the treatment invoice workflow.')
+      if (!hasBillableDeliveredServices) throw new Error('Save at least one billable delivered service before confirming the invoice.')
+      if (hasUnsavedProcedureChanges) throw new Error('Save delivered service changes before confirming the invoice.')
 
-      const result = await supabase.rpc('create_draft_invoice_from_session', {
-        target_session_id: selectedSession.id,
-      })
-      if (result.error) throw new Error(result.error.message)
+      const supabaseClient = supabase
+      const tenantId = activeTenant.id
+      const loadInvoice = async (invoiceId: string) => {
+        const result = await supabaseClient
+          .from('invoices')
+          .select('*')
+          .eq('id', invoiceId)
+          .eq('tenant_id', tenantId)
+          .single()
+        if (result.error) throw new Error(result.error.message)
+        return result.data as InvoiceRow
+      }
 
-      const rpcRow = result.data?.[0]
-      if (!rpcRow?.invoice_id) throw new Error('The draft invoice could not be verified after preparation.')
+      let completedDuringConfirmation = false
+      if (selectedSession.session_status !== 'completed') {
+        const validationError = validateCompletion()
+        if (validationError) throw new Error(validationError)
+
+        const completionResult = await supabaseClient.rpc('complete_session', {
+          target_session_id: selectedSession.id,
+          actual_start_at_input: fromDateTimeLocal(completionForm.actual_start_at),
+          actual_end_at_input: fromDateTimeLocal(completionForm.actual_end_at),
+          attendance_outcome_input: completionForm.attendance_outcome,
+          session_outcome_input: completionForm.session_outcome,
+          operational_summary_input: completionForm.operational_summary.trim() || undefined,
+        })
+        if (completionResult.error) throw new Error(completionResult.error.message)
+        const completionRow = completionResult.data?.[0]
+        if (completionRow?.session_status !== 'completed') throw new Error('The session could not be completed before invoice confirmation.')
+
+        completedDuringConfirmation = Boolean(completionRow.completed_session)
+        onSessionStatusChange?.({ id: selectedSession.id, booking_id: selectedSession.booking_id, session_status: 'completed' })
+      }
+
+      let invoice = selectedInvoice
+      if (!invoice) {
+        const draftResult = await supabaseClient.rpc('create_draft_invoice_from_session', {
+          target_session_id: selectedSession.id,
+        })
+        if (draftResult.error) throw new Error(draftResult.error.message)
+        const draftRow = draftResult.data?.[0]
+        if (!draftRow?.invoice_id) throw new Error('The invoice could not be created from the delivered services.')
+        invoice = await loadInvoice(draftRow.invoice_id)
+      }
+
+      if (invoice.invoice_status === 'review_required') {
+        throw new Error('This invoice requires review in Finance before it can be confirmed.')
+      }
+
+      if (['draft', 'ready_to_confirm'].includes(invoice.invoice_status)) {
+        const confirmResult = await supabaseClient.rpc('confirm_invoice', { target_invoice_id: invoice.id })
+        if (confirmResult.error) throw new Error(confirmResult.error.message)
+        const confirmedInvoice = await loadInvoice(invoice.id)
+        invoice = confirmedInvoice
+        setInvoices((current) => [confirmedInvoice, ...current.filter((item) => item.id !== confirmedInvoice.id)])
+        onInvoiceChange?.(confirmedInvoice)
+      }
+
+      if (invoice.invoice_status !== 'confirmed' && !invoice.confirmed_at) throw new Error('The invoice was not confirmed. Open Finance to review its current status.')
+
+      setInvoices((current) => [invoice, ...current.filter((item) => item.id !== invoice.id)])
+      onInvoiceChange?.(invoice)
+      await refreshSessionRecords(selectedSession.id)
+      setCompletionIntent(null)
+      setSuccessMessage(`${completedDuringConfirmation ? 'Session completed. ' : ''}Invoice confirmed. Review and issue it when ready.`)
+    } catch (error) {
+      setActionError(getFriendlySessionError(error, 'The invoice could not be confirmed.'))
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  const issueSessionInvoice = async () => {
+    if (!selectedSession || !selectedInvoice || !supabase || !activeTenant?.id || !canConfirmSessionInvoice || saving) return
+    setSaving(true)
+    setActionError('')
+    setSuccessMessage('')
+    try {
+      if (selectedInvoice.invoice_status !== 'confirmed') throw new Error('Only a confirmed invoice can be issued.')
+      const issueResult = await supabase.rpc('issue_invoice', { target_invoice_id: selectedInvoice.id })
+      if (issueResult.error) throw new Error(issueResult.error.message)
 
       const invoiceResult = await supabase
         .from('invoices')
         .select('*')
-        .eq('id', rpcRow.invoice_id)
+        .eq('id', selectedInvoice.id)
         .eq('tenant_id', activeTenant.id)
         .single()
       if (invoiceResult.error) throw new Error(invoiceResult.error.message)
+      const issuedInvoice = invoiceResult.data as InvoiceRow
+      if (!issuedInvoice.issued_at) throw new Error('The invoice was not issued. Open Finance to review its current status.')
 
-      const invoice = invoiceResult.data as InvoiceRow
-      setInvoices((current) => [invoice, ...current.filter((item) => item.id !== invoice.id)])
+      setInvoices((current) => [issuedInvoice, ...current.filter((item) => item.id !== issuedInvoice.id)])
+      onInvoiceChange?.(issuedInvoice)
       await refreshSessionRecords(selectedSession.id)
-      setSuccessMessage(rpcRow.created_invoice
-        ? 'Draft invoice prepared from the saved delivered services. Review it before confirming or issuing.'
-        : 'An active invoice already exists for this session. Open it to continue the Finance review.')
+      setSuccessMessage('Invoice issued. It is available in Finance, the Patient File history and Patient Link. Email delivery is not yet connected.')
     } catch (error) {
-      setActionError(getFriendlySessionError(error, 'The draft invoice could not be prepared.'))
+      setActionError(getFriendlySessionError(error, 'The invoice could not be issued.'))
     } finally {
       setSaving(false)
     }
@@ -955,29 +1292,11 @@ export function SessionsPage({ embeddedBookingId, onSessionStatusChange, onBooki
     return ''
   }
 
-  const addProcedure = () => {
-    setProcedureDrafts((current) => [...current, getEmptyProcedureDraft()])
-  }
-
-  const selectProcedureForDraft = (index: number, priceListItemId: string) => {
-    const priceItem = selectedPriceListItems.find((item) => item.id === priceListItemId)
-    if (!priceItem) return
-    updateProcedureDraft(index, {
-      price_list_item_id: priceItem.id,
-      procedure_name: priceItem.procedure_name,
-      procedure_code: priceItem.procedure_code ?? '',
-      description: priceItem.description ?? '',
-      unit_price: String(priceItem.price),
-      duration_minutes: priceItem.duration_minutes ? String(priceItem.duration_minutes) : '',
-      differs_from_booking: true,
-      change_reason: 'Added during session',
+  const addProcedure = (priceItem: PriceListItemRow) => {
+    setProcedureDrafts((current) => {
+      if (current.some((draft) => draft.price_list_item_id === priceItem.id)) return current
+      return [...current, getEmptyProcedureDraft(priceItem)]
     })
-  }
-
-  const updateProcedureDraft = (index: number, patch: Partial<ProcedureDraft>) => {
-    setProcedureDrafts((current) => current.map((draft, draftIndex) => (
-      draftIndex === index ? { ...draft, ...patch } : draft
-    )))
   }
 
   const removeProcedureDraft = (index: number) => {
@@ -1130,9 +1449,62 @@ export function SessionsPage({ embeddedBookingId, onSessionStatusChange, onBooki
       }
       await refreshSessionRecords(selectedSession.id)
       setIsEditingSessionDetails(false)
+      setCompletionIntent(null)
       setSuccessMessage(rpcRow?.completed_session ? 'Session completed. Draft invoice request recorded.' : 'Session was already completed.')
     } catch (error) {
       setActionError(getFriendlySessionError(error, 'Session completion failed.'))
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  const applyTerminalOutcome = async (outcome: 'cancelled' | 'no_show') => {
+    if (!selectedSession || !supabase || !canCompleteSession || saving) return
+
+    const cancellationReason = outcome === 'cancelled'
+      ? window.prompt('Why is this session being cancelled?')?.trim()
+      : null
+
+    if (outcome === 'cancelled' && !cancellationReason) return
+
+    const confirmed = window.confirm(
+      outcome === 'cancelled'
+        ? 'Cancel this session and remove it from the Calendar? The history will be preserved.'
+        : 'Mark this session as No Show? No treatment or no-show fee will be charged.',
+    )
+    if (!confirmed) return
+
+    setSaving(true)
+    setActionError('')
+    setSuccessMessage('')
+    try {
+      const result = outcome === 'cancelled'
+        ? await supabase.rpc('cancel_session', {
+            target_session_id: selectedSession.id,
+            cancellation_reason_input: cancellationReason ?? '',
+          })
+        : await supabase.rpc('record_session_no_show', {
+            target_session_id: selectedSession.id,
+          })
+
+      if (result.error) throw new Error(result.error.message)
+
+      const bookingResult = await supabase
+        .from('bookings')
+        .select('id, tenant_id, patient_id, therapist_profile_id, practice_location_id, price_list_id, recurrence_rule_id, booking_status, booking_type, booking_source, appointment_mode, start_at, end_at, duration_minutes, timezone, room_label, patient_facing_title, patient_facing_notes, cancellation_reason, cancelled_at, no_show_at, checked_in_at, in_progress_at, completed_at, rescheduled_from_booking_id, session_ready, draft_invoice_ready, patient_link_visible, metadata, created_by_profile_id, updated_by_profile_id, deleted_at, created_at, updated_at')
+        .eq('id', selectedSession.booking_id)
+        .single()
+
+      if (bookingResult.error) throw new Error(bookingResult.error.message)
+      onBookingChange?.(bookingResult.data as BookingRow)
+      await refreshSessionRecords(selectedSession.id)
+      setSuccessMessage(
+        outcome === 'cancelled'
+          ? 'Session cancelled. Its history has been preserved.'
+          : 'No Show recorded. No treatment charge was created.',
+      )
+    } catch (error) {
+      setActionError(getFriendlySessionError(error, outcome === 'cancelled' ? 'Session cancellation failed.' : 'No Show could not be recorded.'))
     } finally {
       setSaving(false)
     }
@@ -1383,6 +1755,7 @@ export function SessionsPage({ embeddedBookingId, onSessionStatusChange, onBooki
       if (refreshedResult.error) throw new Error(refreshedResult.error.message)
       const refreshedNote = refreshedResult.data as ClinicalNoteRow
       setClinicalNote(refreshedNote)
+      if (activeNoteComposer === 'process_note') setHasSavedProcessNote(true)
       const refreshedVersionResult = await supabase
         .from('clinical_note_versions')
         .select('*')
@@ -1400,6 +1773,68 @@ export function SessionsPage({ embeddedBookingId, onSessionStatusChange, onBooki
           : 'Clinical note draft saved.')
     } catch (error) {
       setActionError(error instanceof Error ? error.message : 'Clinical note could not be saved.')
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  const skipProcessNote = async () => {
+    if (!selectedSession || !activeTenant?.id || !supabase || !canManageSession || !canViewClinical || saving || processNoteSkipped) return
+
+    setSaving(true)
+    setActionError('')
+    setSuccessMessage('')
+    try {
+      const savedNoteResult = await supabase
+        .from('clinical_notes')
+        .select('id')
+        .eq('tenant_id', activeTenant.id)
+        .eq('session_id', selectedSession.id)
+        .eq('note_type', 'process_note')
+        .is('deleted_at', null)
+        .limit(1)
+        .maybeSingle()
+      if (savedNoteResult.error) throw new Error(savedNoteResult.error.message)
+      if (savedNoteResult.data) {
+        setHasSavedProcessNote(true)
+        setSuccessMessage('Process Note is already saved.')
+        return
+      }
+
+      const existingSkipResult = await supabase
+        .from('session_notes')
+        .select('id')
+        .eq('tenant_id', activeTenant.id)
+        .eq('session_id', selectedSession.id)
+        .eq('note_type', 'other')
+        .is('deleted_at', null)
+        .contains('metadata', { task_type: 'process_note', disposition: 'skipped' })
+        .limit(1)
+        .maybeSingle()
+      if (existingSkipResult.error) throw new Error(existingSkipResult.error.message)
+
+      if (!existingSkipResult.data) {
+        const insertResult = await supabase.from('session_notes').insert({
+          tenant_id: activeTenant.id,
+          session_id: selectedSession.id,
+          note_type: 'other',
+          visibility: 'internal',
+          title: 'Process Note',
+          body: 'Process Note explicitly skipped.',
+          metadata: { task_type: 'process_note', disposition: 'skipped' },
+          created_by_profile_id: profile?.id ?? null,
+          updated_by_profile_id: profile?.id ?? null,
+        } satisfies SessionNoteInsert)
+        if (insertResult.error) throw new Error(insertResult.error.message)
+      }
+
+      await createPatientHistory(selectedSession, 'process_note_skipped', selectedSession.id)
+      await refreshSessionRecords(selectedSession.id)
+      onProcessNoteSkipChange?.(selectedSession.id)
+      setActiveNoteComposer(null)
+      setSuccessMessage('Process Note skipped for this session.')
+    } catch (error) {
+      setActionError(error instanceof Error ? error.message : 'Process Note could not be skipped.')
     } finally {
       setSaving(false)
     }
@@ -1491,7 +1926,19 @@ export function SessionsPage({ embeddedBookingId, onSessionStatusChange, onBooki
               <div className="session-patient-heading">
                 <span>{selectedSession ? 'Session workspace' : 'Eligible booking'}</span>
                 <h3>{formatPatientName(selectedPatient)}</h3>
-                {selectedSession && <StatusBadge tone={getSessionTone(selectedSession.session_status)}>{formatLabel(selectedSession.session_status)}</StatusBadge>}
+                <div className="session-patient-status-row">
+                  {selectedSession && <StatusBadge tone={getSessionTone(selectedSession.session_status)}>{formatLabel(selectedSession.session_status)}</StatusBadge>}
+                  {selectedPatientFinanceFlag && canViewFinance && (
+                    <span
+                      className={`session-finance-account-flag finance-flag-${selectedPatientFinanceFlag}`}
+                      role="img"
+                      aria-label={`${selectedPatientFinanceFlag} finance flag: patient statement has an unpaid balance`}
+                      title={`${selectedPatientFinanceFlag[0].toUpperCase()}${selectedPatientFinanceFlag.slice(1)} finance flag · unpaid monthly statement balance`}
+                    >
+                      <FinanceIcon size={16} />
+                    </span>
+                  )}
+                </div>
               </div>
               <div className="session-header-actions">
                 <div className="patients-action-row">
@@ -1504,14 +1951,14 @@ export function SessionsPage({ embeddedBookingId, onSessionStatusChange, onBooki
                     >{validateEligibleBooking(selectedItem.booking) ? 'Session unavailable' : 'Create Session'}</Button>
                   )}
                   {selectedSession && canCompleteSession && !isTerminalSession(selectedSession.session_status) && (
-                    <Button disabled={saving} onClick={completeSession}>Completed</Button>
+                    <Button disabled={saving} onClick={() => setCompletionIntent('complete')}>Completed</Button>
                   )}
                 </div>
                 {selectedSession && canCompleteSession && !isTerminalSession(selectedSession.session_status) && (
                   <div className="session-terminal-secondary-actions" aria-label="Other session outcomes">
-                    <button type="button" disabled title="A protected Cancel Session operation is not available yet">Cancelled</button>
+                    <button type="button" disabled={saving} onClick={() => applyTerminalOutcome('cancelled')}>Cancelled</button>
                     <span aria-hidden="true">·</span>
-                    <button type="button" disabled title="A protected No Show operation is not available yet">No Show</button>
+                    <button type="button" disabled={saving} onClick={() => applyTerminalOutcome('no_show')}>No Show</button>
                   </div>
                 )}
               </div>
@@ -1520,8 +1967,14 @@ export function SessionsPage({ embeddedBookingId, onSessionStatusChange, onBooki
             {selectedSession && (
               <div className="session-workspace-tabs" role="tablist" aria-label="Session workspace sections">
                 <button className={selectedSection === 'details' ? 'active' : ''} type="button" role="tab" aria-selected={selectedSection === 'details'} onClick={() => setSelectedSection('details')}>Session Details</button>
-                <button className={selectedSection === 'notes' ? 'active' : ''} type="button" role="tab" aria-selected={selectedSection === 'notes'} onClick={() => setSelectedSection('notes')}>Notes</button>
-                <button className={selectedSection === 'finance' ? 'active' : ''} type="button" role="tab" aria-selected={selectedSection === 'finance'} onClick={() => setSelectedSection('finance')}>Finance</button>
+                <button className={selectedSection === 'notes' ? 'active' : ''} type="button" role="tab" aria-selected={selectedSection === 'notes'} onClick={() => setSelectedSection('notes')}>
+                  Notes
+                  {notesTaskOutstanding && <span className="session-tab-task-dot" aria-label="Process Note outstanding" title="Process Note outstanding" />}
+                </button>
+                <button className={selectedSection === 'finance' ? 'active' : ''} type="button" role="tab" aria-selected={selectedSection === 'finance'} onClick={() => setSelectedSection('finance')}>
+                  Finance
+                  {financeTaskOutstanding && <span className="session-tab-task-dot" aria-label="Invoice issuing outstanding" title="Invoice issuing outstanding" />}
+                </button>
                 {selectedSection === 'details' && canEditSelectedSession && (
                   <div className="session-details-edit-actions">
                     <button className={`ui-icon-action session-details-edit${isEditingSessionDetails ? ' is-active' : ''}`} type="button" onClick={() => setIsEditingSessionDetails((current) => !current)} aria-label={isEditingSessionDetails ? 'Close session detail editing' : 'Edit session details'} title="Edit">
@@ -1574,13 +2027,21 @@ export function SessionsPage({ embeddedBookingId, onSessionStatusChange, onBooki
                 </div>
               </div>
               <div className="session-finance-actions">
-                {canPrepareDraftInvoice && selectedSession?.session_status === 'completed' && !selectedInvoice && (
-                  <Button disabled={saving || !hasBillableDeliveredServices} onClick={prepareDraftInvoice}>
-                    {saving ? 'Preparing' : 'Prepare Draft Invoice'}
-                  </Button>
+                {canConfirmSessionInvoice && selectedSession && isPostSessionTime && !['cancelled', 'no_show'].includes(selectedSession.session_status) && !selectedInvoice?.issued_at && (!selectedInvoice || ['draft', 'ready_to_confirm'].includes(selectedInvoice.invoice_status)) && (
+                  <span title={hasUnsavedProcedureChanges ? 'Save delivered service changes before confirming the invoice' : selectedSession.session_status === 'completed' ? 'Confirm this invoice' : 'Confirm clinical completion, then confirm this invoice'}>
+                    <Button
+                      disabled={saving || !hasBillableDeliveredServices || hasUnsavedProcedureChanges}
+                      onClick={() => selectedSession.session_status === 'completed' ? void confirmSessionInvoice() : setCompletionIntent('confirm_invoice')}
+                    >
+                      {saving ? 'Confirming' : 'Confirm Invoice'}
+                    </Button>
+                  </span>
                 )}
-                {canViewFinance && selectedInvoice && ['draft', 'review_required', 'ready_to_confirm'].includes(selectedInvoice.invoice_status) && (
-                  <Link className="ui-button ui-button-primary" to={`/finance?invoice=${selectedInvoice.id}`}>Review Draft Invoice</Link>
+                {canConfirmSessionInvoice && selectedInvoice?.invoice_status === 'confirmed' && !selectedInvoice.issued_at && (
+                  <Button disabled={saving} onClick={issueSessionInvoice}>{saving ? 'Issuing' : 'Issue Invoice'}</Button>
+                )}
+                {canViewFinance && selectedInvoice?.invoice_status === 'review_required' && (
+                  <Link className="ui-button ui-button-secondary" to={`/finance?invoice=${selectedInvoice.id}`}>Review Invoice</Link>
                 )}
               </div>
             </Card>
@@ -1589,50 +2050,47 @@ export function SessionsPage({ embeddedBookingId, onSessionStatusChange, onBooki
           {selectedSection === 'finance' && selectedSession && (
             <Card className="practice-profile-form-card">
               <div className="practice-profile-form-header session-procedure-actions">
-                <div className="patients-action-row">
-                  {canReadPricing && canEditSelectedSession && <Button variant="secondary" disabled={saving || selectedPriceListItems.length === 0} onClick={addProcedure}>+ Add Procedure</Button>}
-                  {canEditSelectedSession && procedureDrafts.length > 0 && <Button disabled={saving} onClick={saveProcedures}>Save</Button>}
-                </div>
+                {canReadPricing && canEditDeliveredProcedures && (
+                  <label className="booking-procedure-search">
+                    <span>Add procedure</span>
+                    <SessionProcedureCombobox
+                      items={selectedPriceListItems.filter((item) => !procedureDrafts.some((draft) => draft.price_list_item_id === item.id))}
+                      disabled={saving || selectedPriceListItems.length === 0}
+                      onSelect={addProcedure}
+                    />
+                  </label>
+                )}
+                {canEditDeliveredProcedures && procedureDrafts.length > 0 && <Button disabled={saving} onClick={saveProcedures}>Save</Button>}
               </div>
 
-              {procedureDrafts.length === 0 ? (
-                <p className="session-procedure-empty">No procedure lines added.</p>
-              ) : (
-                <div className="session-procedure-table-wrap">
-                  <table className="session-procedure-table">
-                    <thead>
-                      <tr>
-                        <th>Procedure</th>
-                        <th>Qty</th>
-                        <th>Unit price</th>
-                        <th>Total</th>
-                        {canEditSelectedSession && <th aria-label="Actions" />}
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {procedureDrafts.map((procedure, index) => (
-                        <tr key={procedure.id ?? `new-${index}`}>
-                          <td>
-                            <select aria-label="Procedure" value={procedure.price_list_item_id ?? ''} disabled={!canEditSelectedSession || saving} onChange={(event) => selectProcedureForDraft(index, event.target.value)}>
-                              <option value="">Select procedure</option>
-                              {procedure.price_list_item_id && !selectedPriceListItems.some((item) => item.id === procedure.price_list_item_id) && <option value={procedure.price_list_item_id}>{procedure.procedure_name}</option>}
-                              {selectedPriceListItems.map((item) => <option value={item.id} key={item.id}>{item.procedure_name}</option>)}
-                            </select>
+              <div className="session-procedure-table-wrap">
+                <table className="session-procedure-table booking-procedure-table">
+                  <thead>
+                    <tr>
+                      <th>Procedure code</th>
+                      <th>Name</th>
+                      <th>ICD-10 code</th>
+                      <th>Price</th>
+                      {canEditDeliveredProcedures && <th aria-label="Actions" />}
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {procedureDrafts.map((procedure, index) => (
+                      <tr key={procedure.id ?? `new-${index}`}>
+                        <td className="session-procedure-code">{procedure.procedure_code || '—'}</td>
+                        <td>{procedure.procedure_name}</td>
+                        <td className="session-procedure-icd10">{procedure.icd10_code || '—'}</td>
+                        <td className="session-procedure-price">{formatMoney(Number(procedure.unit_price) || 0)}</td>
+                        {canEditDeliveredProcedures && (
+                          <td className="session-procedure-remove-cell">
+                            <button className="ui-icon-action" type="button" disabled={saving} onClick={() => removeProcedureDraft(index)} aria-label="Remove procedure" title="Remove procedure"><TrashIcon /></button>
                           </td>
-                          <td><input aria-label="Quantity" type="number" min="1" step="1" value={procedure.quantity} disabled={!canEditSelectedSession || saving} onChange={(event) => updateProcedureDraft(index, { quantity: event.target.value, differs_from_booking: true, change_reason: procedure.change_reason || 'Adjusted during session' })} /></td>
-                          <td className="session-procedure-price">{formatMoney(Number(procedure.unit_price) || 0)}</td>
-                          <td className="session-procedure-total">{formatMoney((Number(procedure.unit_price) || 0) * (Number(procedure.quantity) || 0))}</td>
-                          {canEditSelectedSession && (
-                            <td className="session-procedure-remove-cell">
-                              <button className="ui-icon-action" type="button" disabled={saving} onClick={() => removeProcedureDraft(index)} aria-label="Remove procedure" title="Remove procedure"><TrashIcon /></button>
-                            </td>
-                          )}
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-              )}
+                        )}
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
               {!canReadPricing && <p className="session-foundation-note">Pricing edits are restricted. Existing session procedure snapshots are still visible for finance readiness.</p>}
             </Card>
           )}
@@ -1654,6 +2112,13 @@ export function SessionsPage({ embeddedBookingId, onSessionStatusChange, onBooki
 
           {selectedSection === 'notes' && selectedSession && canReadInternalNotes && (
             <Card className="practice-profile-form-card">
+              {selectedInitialPatientNote?.event_body && (
+                <aside className="session-initial-patient-note" aria-label="Initial patient note">
+                  <span>Initial patient note</span>
+                  <p>{selectedInitialPatientNote.event_body}</p>
+                  <small>Captured during patient creation · {formatDateTime(selectedInitialPatientNote.occurred_at)}</small>
+                </aside>
+              )}
               <div className="session-note-types">
                 <section>
                   <button className="session-note-add" type="button" disabled={!canManageSession || saving} onClick={() => openNoteComposer('planning')}>+ Add Session Planning</button>
@@ -1696,7 +2161,16 @@ export function SessionsPage({ embeddedBookingId, onSessionStatusChange, onBooki
                   )}
                 </section>
                 <section>
-                  <button className="session-note-add" type="button" disabled={!canViewClinical || saving} onClick={() => openNoteComposer('process_note')}>+ Add Process Note</button>
+                  <div className="session-note-action-line">
+                    <button className="session-note-add" type="button" disabled={!canViewClinical || saving} onClick={() => openNoteComposer('process_note')}>+ Add Process Note</button>
+                    {hasSavedProcessNote ? (
+                      <StatusBadge tone="success">Saved</StatusBadge>
+                    ) : processNoteSkipped ? (
+                      <StatusBadge tone="neutral">Skipped</StatusBadge>
+                    ) : (
+                      <button className="session-note-skip" type="button" disabled={!canViewClinical || !canManageSession || saving} onClick={() => void skipProcessNote()}>Skip</button>
+                    )}
+                  </div>
                   <span>Internal</span>
                   {activeNoteComposer === 'process_note' && (
                     <div className="session-note-composer">
@@ -1720,19 +2194,31 @@ export function SessionsPage({ embeddedBookingId, onSessionStatusChange, onBooki
             </Card>
           )}
 
-          {selectedSection === 'finance' && selectedSession && (
-            <Card className="practice-profile-form-card session-finance-summary-card">
-              <div className="session-billing-strip">
-                <div><span>Planned</span><strong>{formatMoney(plannedTotal)}</strong></div>
-                <div><span>Delivered procedures</span><strong>{selectedSessionProcedures.length}</strong></div>
-                <div><span>Invoice readiness</span><strong>{formatLabel(selectedSession.draft_invoice_request_status)}</strong></div>
-                <div><span>Invoice</span><strong>{canViewFinance ? (selectedInvoice ? formatLabel(selectedInvoice.invoice_status) : 'Not created') : 'Restricted'}</strong></div>
-              </div>
-            </Card>
-          )}
-
         </div>
       </div>
+      {completionIntent && selectedSession && selectedSession.session_status !== 'completed' && (
+        <div className="modal-backdrop nested" role="presentation" onMouseDown={(event) => { if (event.currentTarget === event.target && !saving) setCompletionIntent(null) }}>
+          <section className="modal-card session-completion-modal" role="dialog" aria-modal="true" aria-labelledby="session-completion-title">
+            <button className="modal-close" type="button" disabled={saving} onClick={() => setCompletionIntent(null)} aria-label="Close clinical completion confirmation">X</button>
+            <p>Clinical completion</p>
+            <h2 id="session-completion-title">Confirm attendance and treatment</h2>
+            <div className="settings-form-grid booking-form-grid">
+              <label><span>Actual start</span><input type="datetime-local" value={completionForm.actual_start_at} disabled={saving} onChange={(event) => setCompletionForm((current) => ({ ...current, actual_start_at: event.target.value }))} /></label>
+              <label><span>Actual end</span><input type="datetime-local" value={completionForm.actual_end_at} disabled={saving} onChange={(event) => setCompletionForm((current) => ({ ...current, actual_end_at: event.target.value }))} /></label>
+              <label><span>Attendance</span><select value={completionForm.attendance_outcome} disabled={saving} onChange={(event) => setCompletionForm((current) => ({ ...current, attendance_outcome: event.target.value }))}>{attendanceOutcomes.map((outcome) => <option value={outcome} key={outcome}>{formatLabel(outcome)}</option>)}</select></label>
+              <label><span>Outcome</span><select value={completionForm.session_outcome} disabled={saving} onChange={(event) => setCompletionForm((current) => ({ ...current, session_outcome: event.target.value }))}>{sessionOutcomes.map((outcome) => <option value={outcome} key={outcome}>{formatLabel(outcome)}</option>)}</select></label>
+              <label className="wide-field"><span>Clinical completion summary</span><textarea value={completionForm.operational_summary} disabled={saving} onChange={(event) => setCompletionForm((current) => ({ ...current, operational_summary: event.target.value }))} /></label>
+            </div>
+            <p className="quiet">Confirming records these treatment facts through the protected Session lifecycle.</p>
+            <div className="finance-actions-row">
+              <Button variant="secondary" disabled={saving} onClick={() => setCompletionIntent(null)}>Cancel</Button>
+              <Button disabled={saving} onClick={() => completionIntent === 'confirm_invoice' ? void confirmSessionInvoice() : void completeSession()}>
+                {saving ? 'Saving' : completionIntent === 'confirm_invoice' ? 'Complete & Confirm Invoice' : 'Complete Session'}
+              </Button>
+            </div>
+          </section>
+        </div>
+      )}
     </div>
   )
 }

@@ -7,7 +7,7 @@ import { EmptyState, ErrorState, LoadingState } from '../components/UiState'
 import { Button, Card, StatusBadge } from '../components/ui'
 import { showErrorNotice, showSuccessNotice } from '../lib/appNotice'
 import { isSupabaseConfigured, supabase } from '../lib/supabase'
-import type { Database } from '../lib/database.types'
+import type { Database, Json } from '../lib/database.types'
 
 type PriceListRow = Database['public']['Tables']['price_lists']['Row']
 type PriceListInsert = Database['public']['Tables']['price_lists']['Insert']
@@ -27,9 +27,9 @@ type PriceListFormState = {
 type PriceListItemFormState = {
   procedure_name: string
   procedure_code: string
+  icd10_code: string
   description: string
   price: string
-  duration_minutes: string
   is_active: boolean
 }
 
@@ -44,24 +44,39 @@ const emptyPriceListForm: PriceListFormState = {
 const emptyPriceListItemForm: PriceListItemFormState = {
   procedure_name: '',
   procedure_code: '',
+  icd10_code: '',
   description: '',
   price: '0',
-  duration_minutes: '',
   is_active: true,
 }
 
 const priceListTypeOptions = ['', 'Cash Rates', 'Medical Aid Rates', 'School Rates', 'Contract Rates', 'Assessment Rates']
-const durationOptions = ['', '15', '30', '45', '60', '90', '120', '180']
 
 function emptyToNull(value: string) {
   const trimmedValue = value.trim()
   return trimmedValue.length > 0 ? trimmedValue : null
 }
 
-function numberOrNull(value: string) {
-  if (!value.trim()) return null
-  const parsedValue = Number(value)
-  return Number.isFinite(parsedValue) ? parsedValue : null
+function jsonObject(value: Json): { [key: string]: Json | undefined } {
+  return value && typeof value === 'object' && !Array.isArray(value) ? value : {}
+}
+
+function icd10CodeFromMetadata(metadata: Json) {
+  const value = jsonObject(metadata).icd10_code
+  return typeof value === 'string' ? value : ''
+}
+
+function metadataWithIcd10Code(metadata: Json, value: string): Json {
+  const nextMetadata = { ...jsonObject(metadata) }
+  const icd10Code = value.trim().toUpperCase()
+
+  if (icd10Code) {
+    nextMetadata.icd10_code = icd10Code
+  } else {
+    delete nextMetadata.icd10_code
+  }
+
+  return nextMetadata
 }
 
 function formFromPriceList(priceList: PriceListRow | null): PriceListFormState {
@@ -82,9 +97,9 @@ function formFromPriceListItem(item: PriceListItemRow | null): PriceListItemForm
   return {
     procedure_name: item.procedure_name,
     procedure_code: item.procedure_code ?? '',
+    icd10_code: icd10CodeFromMetadata(item.metadata),
     description: item.description ?? '',
     price: String(item.price),
-    duration_minutes: item.duration_minutes === null ? '' : String(item.duration_minutes),
     is_active: item.is_active,
   }
 }
@@ -99,15 +114,19 @@ function toPriceListPayload(formState: PriceListFormState): Omit<PriceListInsert
   }
 }
 
-function toPriceListItemPayload(formState: PriceListItemFormState, priceListId: string): Omit<PriceListItemInsert, 'tenant_id'> {
+function toPriceListItemPayload(
+  formState: PriceListItemFormState,
+  priceListId: string,
+  existingMetadata: Json,
+): Omit<PriceListItemInsert, 'tenant_id'> {
   return {
     price_list_id: priceListId,
     procedure_name: formState.procedure_name.trim(),
     procedure_code: emptyToNull(formState.procedure_code),
     description: emptyToNull(formState.description),
     price: Number(formState.price || 0),
-    duration_minutes: numberOrNull(formState.duration_minutes),
     is_active: formState.is_active,
+    metadata: metadataWithIcd10Code(existingMetadata, formState.icd10_code),
   }
 }
 
@@ -115,8 +134,13 @@ function formatMoney(value: number) {
   return new Intl.NumberFormat('en-ZA', { style: 'currency', currency: 'ZAR' }).format(value)
 }
 
-function formatDuration(value: number | null) {
-  return value === null ? 'No duration' : `${value} min`
+function formatProcedureCodes(item: PriceListItemRow) {
+  const codes = [
+    item.procedure_code ? `Procedure ${item.procedure_code}` : '',
+    icd10CodeFromMetadata(item.metadata) ? `ICD-10 ${icd10CodeFromMetadata(item.metadata)}` : '',
+  ].filter(Boolean)
+
+  return codes.length > 0 ? codes.join(' · ') : 'No codes'
 }
 
 export function FinancePriceListsPage() {
@@ -384,11 +408,9 @@ export function FinancePriceListsPage() {
 
   const validateItem = () => {
     const price = Number(itemForm.price || 0)
-    const duration = numberOrNull(itemForm.duration_minutes)
 
     if (!itemForm.procedure_name.trim()) return 'Procedure name is required.'
     if (!Number.isFinite(price) || price < 0) return 'Price cannot be negative.'
-    if (itemForm.duration_minutes.trim() && (!duration || duration <= 0)) return 'Duration must be positive if supplied.'
 
     return ''
   }
@@ -404,7 +426,7 @@ export function FinancePriceListsPage() {
 
     setSavingItem(true)
 
-    const payload = toPriceListItemPayload(itemForm, selectedPriceListId)
+    const payload = toPriceListItemPayload(itemForm, selectedPriceListId, selectedItem?.metadata ?? {})
 
     const result = selectedItem?.id
       ? await supabase
@@ -579,7 +601,7 @@ export function FinancePriceListsPage() {
                         key={item.id}
                       >
                         <strong>{item.procedure_name}</strong>
-                        <span>{item.procedure_code || 'No code'} · {formatDuration(item.duration_minutes)}</span>
+                        <span>{formatProcedureCodes(item)}</span>
                         <div>
                           <StatusBadge tone="info">{formatMoney(item.price)}</StatusBadge>
                           <StatusBadge tone={item.is_active ? 'success' : 'neutral'}>
@@ -612,15 +634,15 @@ export function FinancePriceListsPage() {
                   <EditableField label="Procedure code" isEditing={showItemFields} value={itemForm.procedure_code}>
                     <input value={itemForm.procedure_code} disabled={isItemReadOnly} onChange={(event) => updateItemField('procedure_code', event.target.value)} />
                   </EditableField>
+                  <EditableField label="ICD-10 code" isEditing={showItemFields} value={itemForm.icd10_code || 'Not captured'}>
+                    <input
+                      value={itemForm.icd10_code}
+                      disabled={isItemReadOnly}
+                      onChange={(event) => updateItemField('icd10_code', event.target.value)}
+                    />
+                  </EditableField>
                   <EditableField label="Price" isEditing={showItemFields} value={formatMoney(Number(itemForm.price || 0))}>
                     <input type="number" min="0" step="0.01" value={itemForm.price} disabled={isItemReadOnly} onChange={(event) => updateItemField('price', event.target.value)} />
-                  </EditableField>
-                  <EditableField label="Duration" isEditing={showItemFields} value={itemForm.duration_minutes ? `${itemForm.duration_minutes} min` : 'No duration'}>
-                    <select value={itemForm.duration_minutes} disabled={isItemReadOnly} onChange={(event) => updateItemField('duration_minutes', event.target.value)}>
-                      {durationOptions.map((option) => (
-                        <option value={option} key={option}>{option || 'N/A'}</option>
-                      ))}
-                    </select>
                   </EditableField>
                   <EditableField label="Status" isEditing={showItemFields} value={itemForm.is_active ? 'Active' : 'Inactive'}>
                     <select value={itemForm.is_active ? 'active' : 'inactive'} disabled={isItemReadOnly} onChange={(event) => updateItemField('is_active', event.target.value === 'active')}>
